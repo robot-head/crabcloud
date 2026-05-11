@@ -17,10 +17,12 @@ impl Email {
             return Err(UsersError::InvalidEmail("empty".into()));
         }
         if trimmed.len() > 255 {
-            return Err(UsersError::InvalidEmail(format!("length {}", trimmed.len())));
+            return Err(UsersError::InvalidEmail(format!(
+                "length {}",
+                trimmed.len()
+            )));
         }
-        EmailAddress::from_str(&trimmed)
-            .map_err(|e| UsersError::InvalidEmail(e.to_string()))?;
+        EmailAddress::from_str(&trimmed).map_err(|e| UsersError::InvalidEmail(e.to_string()))?;
         Ok(Self(trimmed))
     }
 
@@ -35,14 +37,24 @@ mod tests {
 
     #[test]
     fn valid_emails_parse() {
-        for ok in &["a@b.com", "alice@example.org", "first.last+tag@sub.example.com"] {
+        for ok in &[
+            "a@b.com",
+            "alice@example.org",
+            "first.last+tag@sub.example.com",
+        ] {
             assert!(Email::parse(*ok).is_ok(), "{ok:?}");
         }
     }
 
     #[test]
     fn invalid_emails_rejected() {
-        for bad in &["", "not-an-email", "@missing-local", "missing@", "two@@signs.com"] {
+        for bad in &[
+            "",
+            "not-an-email",
+            "@missing-local",
+            "missing@",
+            "two@@signs.com",
+        ] {
             assert!(Email::parse(*bad).is_err(), "{bad:?}");
         }
     }
