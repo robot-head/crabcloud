@@ -17,10 +17,15 @@ const HSTS: (&str, &str) = (
 const XCTO: (&str, &str) = ("x-content-type-options", "nosniff");
 const REFERRER: (&str, &str) = ("referrer-policy", "strict-origin-when-cross-origin");
 const XFO: (&str, &str) = ("x-frame-options", "SAMEORIGIN");
-const CSP: (&str, &str) = (
-    "content-security-policy",
-    "default-src 'none'; frame-ancestors 'self'; base-uri 'self'",
-);
+const CSP_API: &str = "default-src 'none'; frame-ancestors 'self'; base-uri 'self'";
+const CSP_UI: &str = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'self'; base-uri 'self'";
+
+fn csp_for_content_type(ct: Option<&axum::http::HeaderValue>) -> &'static str {
+    match ct.and_then(|v| v.to_str().ok()) {
+        Some(s) if s.starts_with("text/html") => CSP_UI,
+        _ => CSP_API,
+    }
+}
 
 #[derive(Clone, Default)]
 pub struct SecurityHeadersLayer;
@@ -62,12 +67,17 @@ where
         Box::pin(async move {
             let mut resp = inner.call(req).await?;
             let headers = resp.headers_mut();
-            for (name, value) in &[HSTS, XCTO, REFERRER, XFO, CSP] {
+            for (name, value) in &[HSTS, XCTO, REFERRER, XFO] {
                 headers.insert(
                     HeaderName::from_static(name),
                     HeaderValue::from_static(value),
                 );
             }
+            let csp = csp_for_content_type(headers.get(axum::http::header::CONTENT_TYPE));
+            headers.insert(
+                HeaderName::from_static("content-security-policy"),
+                HeaderValue::from_static(csp),
+            );
             Ok(resp)
         })
     }
@@ -77,19 +87,29 @@ where
 mod tests {
     use super::*;
     use axum::body::Body;
-    use axum::http::Request;
+    use axum::http::{header, HeaderValue, Request, Response, StatusCode};
     use axum::routing::get;
     use axum::Router;
     use tower::ServiceExt;
 
-    async fn ok() -> &'static str {
+    async fn plain_response() -> &'static str {
         "ok"
+    }
+
+    async fn html_response() -> Response<Body> {
+        let mut resp = Response::new(Body::from("<html><body>hi</body></html>"));
+        resp.headers_mut().insert(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("text/html; charset=utf-8"),
+        );
+        *resp.status_mut() = StatusCode::OK;
+        resp
     }
 
     #[tokio::test]
     async fn all_baseline_security_headers_present() {
         let app = Router::new()
-            .route("/", get(ok))
+            .route("/", get(plain_response))
             .layer(SecurityHeadersLayer::new());
         let req = Request::builder().uri("/").body(Body::empty()).unwrap();
         let resp = app.oneshot(req).await.unwrap();
@@ -100,5 +120,38 @@ mod tests {
         assert!(h.get("x-frame-options").is_some());
         assert!(h.get("content-security-policy").is_some());
         assert_eq!(h.get("x-content-type-options").unwrap(), "nosniff");
+    }
+
+    #[tokio::test]
+    async fn non_html_response_gets_restrictive_csp() {
+        let app = Router::new()
+            .route("/", get(plain_response))
+            .layer(SecurityHeadersLayer::new());
+        let req = Request::builder().uri("/").body(Body::empty()).unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        let csp = resp
+            .headers()
+            .get("content-security-policy")
+            .unwrap()
+            .to_str()
+            .unwrap();
+        assert!(csp.starts_with("default-src 'none'"));
+    }
+
+    #[tokio::test]
+    async fn html_response_gets_ui_csp_allowing_wasm() {
+        let app = Router::new()
+            .route("/", get(html_response))
+            .layer(SecurityHeadersLayer::new());
+        let req = Request::builder().uri("/").body(Body::empty()).unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        let csp = resp
+            .headers()
+            .get("content-security-policy")
+            .unwrap()
+            .to_str()
+            .unwrap();
+        assert!(csp.contains("'wasm-unsafe-eval'"));
+        assert!(csp.contains("script-src 'self'"));
     }
 }
