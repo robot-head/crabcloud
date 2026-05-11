@@ -3,6 +3,7 @@
 
 mod context;
 mod hydration;
+pub mod pages;
 
 pub use context::RequestContext;
 pub use hydration::render_hydration_script;
