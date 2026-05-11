@@ -545,6 +545,7 @@ dependencies = [
  "crabcloud-i18n",
  "crabcloud-ocs",
  "crabcloud-ui",
+ "crabcloud-users",
  "futures",
  "hex",
  "hmac",

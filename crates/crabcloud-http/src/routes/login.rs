@@ -22,25 +22,18 @@ pub async fn handler(
     Extension(handle): Extension<SessionHandle>,
     Form(form): Form<LoginForm>,
 ) -> Result<Response, ApiError> {
-    let admin = state
-        .config
-        .bootstrap_admin
-        .as_ref()
-        .ok_or(CoreError::Unauthorized)?;
+    let user = state
+        .users
+        .verify(&form.username, &form.password)
+        .await
+        .map_err(|_| ApiError(CoreError::Unauthorized))?;
 
-    if admin.username != form.username {
-        return Err(ApiError(CoreError::Unauthorized));
-    }
-    let ok = bcrypt::verify(&form.password, &admin.password_hash)
-        .map_err(|e| CoreError::Internal(anyhow::anyhow!("bcrypt verify: {e}")))?;
-    if !ok {
-        return Err(ApiError(CoreError::Unauthorized));
-    }
-
+    let uid_str = user.uid.as_str().to_string();
     handle
         .mutate(|s| {
-            s.user_id = Some(form.username.clone());
+            s.user_id = Some(uid_str.clone());
             s.rotate_csrf();
+            s.two_factor_passed = true;
         })
         .await;
 
@@ -102,6 +95,42 @@ mod tests {
             .unwrap();
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn login_succeeds_against_real_oc_users_row() {
+        use crabcloud_users::{BcryptVerifier, PasswordVerifier, User, UserId};
+        let dir = tempdir().unwrap();
+        let cfg =
+            crabcloud_config::test_support::minimal_sqlite_config(dir.path().join("login.db"));
+        let state = AppStateBuilder::new(cfg).build().await.unwrap();
+
+        let hash = BcryptVerifier::new().hash("hunter2").unwrap();
+        state
+            .users
+            .user_store()
+            .create(
+                &User {
+                    uid: UserId::new("alice").unwrap(),
+                    display_name: "Alice".into(),
+                    email: None,
+                    enabled: true,
+                    last_seen: 0,
+                },
+                Some(&hash),
+            )
+            .await
+            .unwrap();
+
+        let app = build_router(state);
+        let req = Request::builder()
+            .method("POST")
+            .uri("/index.php/login")
+            .header("content-type", "application/x-www-form-urlencoded")
+            .body(Body::from("username=alice&password=hunter2"))
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::SEE_OTHER);
     }
 
     #[tokio::test]
