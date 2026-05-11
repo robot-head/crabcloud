@@ -260,42 +260,8 @@ async fn list_applied(pool: &DbPool, prefix: &str) -> DbResult<BTreeMap<String, 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rustcloud_config::{CacheConfig, DbType, FileConfig};
-    use secrecy::SecretString;
-    use std::net::SocketAddr;
-    use std::path::PathBuf;
+    use rustcloud_config::test_support::minimal_sqlite_config;
     use tempfile::tempdir;
-
-    fn cfg_sqlite(path: PathBuf) -> FileConfig {
-        FileConfig {
-            instanceid: "test".into(),
-            secret: SecretString::new("s".into()),
-            passwordsalt: SecretString::new("ps".into()),
-            installed: true,
-            version: "31.0.0.0".into(),
-            versionstring: "31.0.0".into(),
-            dbtype: DbType::Sqlite,
-            dbhost: None,
-            dbport: None,
-            dbname: path.to_string_lossy().into(),
-            dbuser: None,
-            dbpassword: None,
-            dbtableprefix: "oc_".into(),
-            db_pool_max: 4,
-            datadirectory: "/tmp".into(),
-            trusted_domains: vec!["localhost".into()],
-            trusted_proxies: vec![],
-            overwrite_cli_url: None,
-            overwrite_protocol: None,
-            overwrite_host: None,
-            loglevel: "info".into(),
-            logfile: None,
-            default_language: "en".into(),
-            bind_address: "127.0.0.1:0".parse::<SocketAddr>().unwrap(),
-            cache: CacheConfig::default(),
-            bootstrap_admin: None,
-        }
-    }
 
     const TEST_MIGRATIONS: &[Migration] = &[
         Migration {
@@ -317,7 +283,7 @@ mod tests {
     #[tokio::test]
     async fn applies_migrations_in_order() {
         let dir = tempdir().unwrap();
-        let cfg = cfg_sqlite(dir.path().join("test.db"));
+        let cfg = minimal_sqlite_config(dir.path().join("test.db"));
         let pool = DbPool::connect(&cfg).await.unwrap();
 
         let mut runner = MigrationRunner::new(&pool, "oc_");
@@ -337,7 +303,7 @@ mod tests {
     #[tokio::test]
     async fn second_run_is_idempotent() {
         let dir = tempdir().unwrap();
-        let cfg = cfg_sqlite(dir.path().join("test.db"));
+        let cfg = minimal_sqlite_config(dir.path().join("test.db"));
         let pool = DbPool::connect(&cfg).await.unwrap();
 
         let mut runner = MigrationRunner::new(&pool, "oc_");
@@ -356,7 +322,7 @@ mod tests {
     #[tokio::test]
     async fn separate_namespaces_track_independently() {
         let dir = tempdir().unwrap();
-        let cfg = cfg_sqlite(dir.path().join("test.db"));
+        let cfg = minimal_sqlite_config(dir.path().join("test.db"));
         let pool = DbPool::connect(&cfg).await.unwrap();
 
         static NS_A_MIGRATIONS: &[Migration] = &[Migration {

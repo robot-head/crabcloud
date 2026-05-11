@@ -36,7 +36,7 @@ console_error_panic_hook.workspace = true
 
 [dev-dependencies]
 rustcloud-cache.workspace = true
-rustcloud-config.workspace = true
+rustcloud-config = { workspace = true, features = ["test-support"] }
 rustcloud-core.workspace = true
 rustcloud-db.workspace = true
 rustcloud-http.workspace = true

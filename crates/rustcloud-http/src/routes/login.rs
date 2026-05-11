@@ -56,47 +56,10 @@ mod tests {
     use crate::router::build_router;
     use axum::body::Body;
     use axum::http::Request;
-    use rustcloud_config::{BootstrapAdminConfig, CacheConfig, DbType, FileConfig};
+    use rustcloud_config::test_support::sqlite_config_with_admin;
     use rustcloud_core::AppStateBuilder;
-    use secrecy::SecretString;
-    use std::net::SocketAddr;
-    use std::path::PathBuf;
     use tempfile::tempdir;
     use tower::ServiceExt;
-
-    fn cfg_with_admin(path: PathBuf, hash: &str) -> FileConfig {
-        FileConfig {
-            instanceid: "test".into(),
-            secret: SecretString::new("a-32-byte-or-longer-secret-key!".into()),
-            passwordsalt: SecretString::new("ps".into()),
-            installed: true,
-            version: "31.0.0.0".into(),
-            versionstring: "31.0.0".into(),
-            dbtype: DbType::Sqlite,
-            dbhost: None,
-            dbport: None,
-            dbname: path.to_string_lossy().into(),
-            dbuser: None,
-            dbpassword: None,
-            dbtableprefix: "oc_".into(),
-            db_pool_max: 4,
-            datadirectory: "/tmp".into(),
-            trusted_domains: vec!["localhost".into()],
-            trusted_proxies: vec![],
-            overwrite_cli_url: None,
-            overwrite_protocol: None,
-            overwrite_host: None,
-            loglevel: "info".into(),
-            logfile: None,
-            default_language: "en".into(),
-            bind_address: "127.0.0.1:0".parse::<SocketAddr>().unwrap(),
-            cache: CacheConfig::default(),
-            bootstrap_admin: Some(BootstrapAdminConfig {
-                username: "admin".into(),
-                password_hash: hash.into(),
-            }),
-        }
-    }
 
     fn valid_login_body(user: &str, pass: &str) -> Body {
         Body::from(format!("username={user}&password={pass}"))
@@ -106,7 +69,7 @@ mod tests {
     async fn correct_credentials_set_session_and_redirect() {
         let dir = tempdir().unwrap();
         let hash = bcrypt::hash("hunter2", bcrypt::DEFAULT_COST).unwrap();
-        let cfg = cfg_with_admin(dir.path().join("login.db"), &hash);
+        let cfg = sqlite_config_with_admin(dir.path().join("login.db"), "admin", &hash);
         let state = AppStateBuilder::new(cfg).build().await.unwrap();
         let app = build_router(state);
 
@@ -127,7 +90,7 @@ mod tests {
     async fn wrong_password_returns_401() {
         let dir = tempdir().unwrap();
         let hash = bcrypt::hash("hunter2", bcrypt::DEFAULT_COST).unwrap();
-        let cfg = cfg_with_admin(dir.path().join("login.db"), &hash);
+        let cfg = sqlite_config_with_admin(dir.path().join("login.db"), "admin", &hash);
         let state = AppStateBuilder::new(cfg).build().await.unwrap();
         let app = build_router(state);
 
@@ -144,7 +107,7 @@ mod tests {
     #[tokio::test]
     async fn missing_admin_config_returns_401() {
         let dir = tempdir().unwrap();
-        let mut cfg = cfg_with_admin(dir.path().join("login.db"), "irrelevant");
+        let mut cfg = sqlite_config_with_admin(dir.path().join("login.db"), "admin", "irrelevant");
         cfg.bootstrap_admin = None;
         let state = AppStateBuilder::new(cfg).build().await.unwrap();
         let app = build_router(state);

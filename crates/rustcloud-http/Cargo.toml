@@ -34,6 +34,7 @@ tower-http.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
+rustcloud-config = { workspace = true, features = ["test-support"] }
 rustcloud-db.workspace = true
 tempfile.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

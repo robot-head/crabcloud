@@ -4,43 +4,12 @@
 //! `#[ignore]` by default so contributors without Docker aren't blocked. CI runs
 //! `cargo test -- --include-ignored` to enable them.
 
-use rustcloud_config::{CacheConfig, DbType, FileConfig};
+use rustcloud_config::test_support::minimal_sqlite_config;
+use rustcloud_config::{DbType, FileConfig};
 use rustcloud_db::{core_set, DbPool, MigrationRunner};
 use secrecy::SecretString;
-use std::net::SocketAddr;
 use std::path::PathBuf;
 use tempfile::tempdir;
-
-fn base_config() -> FileConfig {
-    FileConfig {
-        instanceid: "it".into(),
-        secret: SecretString::new("s".into()),
-        passwordsalt: SecretString::new("ps".into()),
-        installed: true,
-        version: "31.0.0.0".into(),
-        versionstring: "31.0.0".into(),
-        dbtype: DbType::Sqlite,
-        dbhost: None,
-        dbport: None,
-        dbname: String::new(),
-        dbuser: None,
-        dbpassword: None,
-        dbtableprefix: "oc_".into(),
-        db_pool_max: 4,
-        datadirectory: PathBuf::from("/tmp"),
-        trusted_domains: vec!["localhost".into()],
-        trusted_proxies: vec![],
-        overwrite_cli_url: None,
-        overwrite_protocol: None,
-        overwrite_host: None,
-        loglevel: "info".into(),
-        logfile: None,
-        default_language: "en".into(),
-        bind_address: "127.0.0.1:0".parse::<SocketAddr>().unwrap(),
-        cache: CacheConfig::default(),
-        bootstrap_admin: None,
-    }
-}
 
 async fn assert_appconfig_table_usable(pool: &DbPool) {
     // Cross-dialect placeholders: SQLite/MySQL use `?`, Postgres uses `$N`.
@@ -112,8 +81,7 @@ async fn assert_appconfig_table_usable(pool: &DbPool) {
 #[tokio::test]
 async fn migrate_sqlite() {
     let dir = tempdir().unwrap();
-    let mut cfg = base_config();
-    cfg.dbname = dir.path().join("it.db").to_string_lossy().into();
+    let cfg = minimal_sqlite_config(dir.path().join("it.db"));
 
     let pool = DbPool::connect(&cfg).await.unwrap();
     let mut runner = MigrationRunner::new(&pool, &cfg.dbtableprefix);
@@ -183,7 +151,7 @@ async fn migrate_postgres() {
 
 fn mysql_config_from_url(url: &str) -> FileConfig {
     let parsed = parse_url(url);
-    let mut cfg = base_config();
+    let mut cfg = minimal_sqlite_config(PathBuf::from("ignored.db"));
     cfg.dbtype = DbType::Mysql;
     cfg.dbhost = Some(parsed.host);
     cfg.dbport = Some(parsed.port);
@@ -195,7 +163,7 @@ fn mysql_config_from_url(url: &str) -> FileConfig {
 
 fn postgres_config_from_url(url: &str) -> FileConfig {
     let parsed = parse_url(url);
-    let mut cfg = base_config();
+    let mut cfg = minimal_sqlite_config(PathBuf::from("ignored.db"));
     cfg.dbtype = DbType::Pgsql;
     cfg.dbhost = Some(parsed.host);
     cfg.dbport = Some(parsed.port);
