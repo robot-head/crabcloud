@@ -82,6 +82,12 @@ dioxus-web = { version = "0.6", default-features = false }
 console_error_panic_hook = "0.1"
 rust-embed = { version = "8", features = ["debug-embed", "include-exclude", "interpolate-folder-path"] }
 
+[workspace.lints.rust]
+unused_crate_dependencies = "warn"
+
+[workspace.lints.clippy]
+all = "warn"
+
 [profile.release]
 lto = "thin"
 codegen-units = 1

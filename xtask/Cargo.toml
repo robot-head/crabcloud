@@ -8,3 +8,6 @@ publish = false
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
+
+[lints]
+workspace = true
