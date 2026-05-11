@@ -16,6 +16,7 @@ rand.workspace = true
 crabcloud-cache.workspace = true
 crabcloud-core.workspace = true
 crabcloud-ocs.workspace = true
+crabcloud-users.workspace = true
 secrecy.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -25,6 +26,7 @@ thiserror.workspace = true
 tokio = { workspace = true, features = ["sync"] }
 tower.workspace = true
 tower-http.workspace = true
+tracing.workspace = true
 
 [dev-dependencies]
 crabcloud-config = { workspace = true, features = ["test-support"] }

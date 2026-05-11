@@ -27,6 +27,8 @@ pub struct AppState {
     pub appconfig: AppConfigService,
     /// Mutable registry of capability providers (filled by bootstrap hooks).
     pub capability_providers: Arc<Mutex<Vec<Arc<dyn CapabilityProvider>>>>,
+    /// Composed users service (lookup, verify, password, groups, prefs).
+    pub users: crabcloud_users::UsersService,
 }
 
 impl std::fmt::Debug for AppState {
@@ -51,6 +53,7 @@ pub struct AppStateBuilder {
     config: Arc<FileConfig>,
     catalog_root: Option<std::path::PathBuf>,
     cache: Option<Arc<dyn Cache>>,
+    custom_users: Option<crabcloud_users::UsersService>,
     registry: BootstrapRegistry,
 }
 
@@ -61,6 +64,7 @@ impl AppStateBuilder {
             config: Arc::new(config),
             catalog_root: None,
             cache: None,
+            custom_users: None,
             registry: BootstrapRegistry::new(),
         }
     }
@@ -74,6 +78,13 @@ impl AppStateBuilder {
     /// Override the cache backend (defaults to `MemoryCache`).
     pub fn with_cache(mut self, c: Arc<dyn Cache>) -> Self {
         self.cache = Some(c);
+        self
+    }
+
+    /// Override the `UsersService` (defaults to SQL-backed stores, optionally
+    /// wrapped in `BootstrapAdminBackend` if `config.bootstrap_admin` is set).
+    pub fn with_users(mut self, service: crabcloud_users::UsersService) -> Self {
+        self.custom_users = Some(service);
         self
     }
 
@@ -132,6 +143,33 @@ impl AppStateBuilder {
             &self.config.instanceid,
         );
 
+        let users = if let Some(svc) = self.custom_users.take() {
+            svc
+        } else {
+            use crabcloud_users::{
+                BcryptVerifier, GroupStore, PreferenceStore, SqlGroupStore, SqlPreferenceStore,
+                SqlUserStore, UserStore, UsersService,
+            };
+            let sql_users: Arc<dyn UserStore> = Arc::new(SqlUserStore::new(pool.clone()));
+            let sql_groups: Arc<dyn GroupStore> = Arc::new(SqlGroupStore::new(pool.clone()));
+            let sql_prefs: Arc<dyn PreferenceStore> =
+                Arc::new(SqlPreferenceStore::new(pool.clone()));
+            let user_store: Arc<dyn UserStore> = match &self.config.bootstrap_admin {
+                Some(admin) => Arc::new(crabcloud_users::BootstrapAdminBackend::new(
+                    sql_users.clone(),
+                    sql_groups.clone(),
+                    admin.clone(),
+                )),
+                None => sql_users,
+            };
+            UsersService::new(
+                user_store,
+                sql_groups,
+                sql_prefs,
+                Arc::new(BcryptVerifier::new()),
+            )
+        };
+
         let state = AppState {
             config: self.config.clone(),
             pool,
@@ -139,6 +177,7 @@ impl AppStateBuilder {
             i18n,
             appconfig,
             capability_providers: Arc::new(Mutex::new(Vec::new())),
+            users,
         };
 
         self.registry.run(&state).await?;
@@ -201,6 +240,21 @@ mod tests {
         let guard = state.capability_providers.lock().await;
         assert_eq!(guard.len(), 1);
         assert_eq!(guard[0].namespace(), "core");
+    }
+
+    #[tokio::test]
+    async fn users_service_assembled_with_bootstrap_admin() {
+        use crabcloud_users::{BcryptVerifier, PasswordVerifier};
+        let dir = tempdir().unwrap();
+        let mut cfg = minimal_sqlite_config(dir.path().join("u.db"));
+        let hash = BcryptVerifier::new().hash("hunter2").unwrap();
+        cfg.bootstrap_admin = Some(crabcloud_config::BootstrapAdminConfig {
+            username: "admin".into(),
+            password_hash: hash,
+        });
+        let state = AppStateBuilder::new(cfg).build().await.unwrap();
+        let admin = state.users.lookup_by_login("admin").await.unwrap();
+        assert!(admin.is_some());
     }
 
     #[tokio::test]

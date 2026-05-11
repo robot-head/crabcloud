@@ -10,6 +10,14 @@ use tracing::info;
 
 use crate::cli::{Cli, Cmd};
 
+fn prompt_password(prompt: &str) -> anyhow::Result<String> {
+    let pw = rpassword::prompt_password(prompt)?;
+    if pw.is_empty() {
+        anyhow::bail!("password cannot be empty");
+    }
+    Ok(pw)
+}
+
 async fn shutdown_signal() {
     let ctrl_c = async {
         tokio::signal::ctrl_c()
@@ -107,6 +115,75 @@ async fn main() -> Result<()> {
             );
             state.pool.close().await;
             info!("migrate complete");
+            Ok(())
+        }
+        Cmd::UserAdd {
+            uid,
+            admin,
+            email,
+            display_name,
+        } => {
+            let config = crabcloud_config::load(&cli.config, &[])?;
+            let pw = prompt_password("New password: ")?;
+            let confirm = prompt_password("Confirm: ")?;
+            if pw != confirm {
+                anyhow::bail!("passwords didn't match");
+            }
+            let state = crabcloud_core::AppStateBuilder::new(config).build().await?;
+            crabcloud_users::cli::user_add(
+                &state.users,
+                &uid,
+                &pw,
+                display_name.as_deref(),
+                email.as_deref(),
+                admin,
+            )
+            .await?;
+            info!(uid, admin, "user created");
+            state.pool.close().await;
+            Ok(())
+        }
+        Cmd::UserSetPassword { uid } => {
+            let config = crabcloud_config::load(&cli.config, &[])?;
+            let pw = prompt_password("New password: ")?;
+            let confirm = prompt_password("Confirm: ")?;
+            if pw != confirm {
+                anyhow::bail!("passwords didn't match");
+            }
+            let state = crabcloud_core::AppStateBuilder::new(config).build().await?;
+            crabcloud_users::cli::user_set_password(&state.users, &uid, &pw).await?;
+            info!(uid, "password reset");
+            state.pool.close().await;
+            Ok(())
+        }
+        Cmd::UserDelete { uid } => {
+            let config = crabcloud_config::load(&cli.config, &[])?;
+            eprint!("Delete user {uid} and all their preferences? (yes/no): ");
+            let mut line = String::new();
+            std::io::stdin().read_line(&mut line)?;
+            if line.trim() != "yes" {
+                anyhow::bail!("aborted");
+            }
+            let state = crabcloud_core::AppStateBuilder::new(config).build().await?;
+            crabcloud_users::cli::user_delete(&state.users, &uid).await?;
+            info!(uid, "user deleted");
+            state.pool.close().await;
+            Ok(())
+        }
+        Cmd::GroupAddMember { gid, uid } => {
+            let config = crabcloud_config::load(&cli.config, &[])?;
+            let state = crabcloud_core::AppStateBuilder::new(config).build().await?;
+            crabcloud_users::cli::group_add_member(&state.users, &gid, &uid).await?;
+            info!(gid, uid, "added to group");
+            state.pool.close().await;
+            Ok(())
+        }
+        Cmd::GroupRemoveMember { gid, uid } => {
+            let config = crabcloud_config::load(&cli.config, &[])?;
+            let state = crabcloud_core::AppStateBuilder::new(config).build().await?;
+            crabcloud_users::cli::group_remove_member(&state.users, &gid, &uid).await?;
+            info!(gid, uid, "removed from group");
+            state.pool.close().await;
             Ok(())
         }
     }

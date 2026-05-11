@@ -49,6 +49,9 @@ pub enum Error {
     /// Wrapped cache backend error.
     #[error(transparent)]
     Cache(#[from] CacheError),
+    /// Wrapped users-crate error.
+    #[error(transparent)]
+    Users(#[from] crabcloud_users::UsersError),
     /// Catch-all for unexpected internal failures. The wrapped `anyhow::Error`
     /// is logged but not exposed to clients.
     #[error("internal error: {0:#}")]
@@ -70,6 +73,7 @@ impl Error {
             Error::Config(_) | Error::ConfigValidation(_) => 500,
             Error::Db(_) => 500,
             Error::Cache(_) => 500,
+            Error::Users(u) => users_status(u),
             Error::Internal(_) => 500,
         }
     }
@@ -90,7 +94,27 @@ impl Error {
             | Error::Db(_)
             | Error::Cache(_)
             | Error::Internal(_) => "Internal Server Error".into(),
+            Error::Users(u) => match u {
+                crabcloud_users::UsersError::Db(_)
+                | crabcloud_users::UsersError::Cache(_)
+                | crabcloud_users::UsersError::Internal(_) => "Internal Server Error".into(),
+                crabcloud_users::UsersError::InvalidCredentials
+                | crabcloud_users::UsersError::Disabled => "Unauthorized".into(),
+                other => other.to_string(),
+            },
         }
+    }
+}
+
+fn users_status(e: &crabcloud_users::UsersError) -> u16 {
+    use crabcloud_users::UsersError::*;
+    match e {
+        NotFound => 404,
+        InvalidCredentials | Disabled => 401,
+        InvalidUid(_) | InvalidEmail(_) | InvalidDisplayName(_) | PasswordTooWeak(_) => 400,
+        UidAlreadyExists | EmailAlreadyTaken => 409,
+        ReadOnly => 403,
+        Db(_) | Cache(_) | Internal(_) => 500,
     }
 }
 
@@ -141,5 +165,24 @@ mod tests {
         let e: Error = dberr.into();
         assert!(matches!(e, Error::Db(_)));
         assert_eq!(e.http_status(), 500);
+    }
+
+    #[test]
+    fn users_error_http_status_mapping() {
+        use crabcloud_users::UsersError;
+        assert_eq!(Error::Users(UsersError::NotFound).http_status(), 404);
+        assert_eq!(
+            Error::Users(UsersError::InvalidCredentials).http_status(),
+            401
+        );
+        assert_eq!(
+            Error::Users(UsersError::UidAlreadyExists).http_status(),
+            409
+        );
+        assert_eq!(Error::Users(UsersError::ReadOnly).http_status(), 403);
+        assert_eq!(
+            Error::Users(UsersError::InvalidUid("x".into())).http_status(),
+            400
+        );
     }
 }

@@ -26,6 +26,13 @@ cargo xtask build
 cargo run --release -p crabcloud-server -- migrate
 cargo run --release -p crabcloud-server -- serve
 
+# 3a. Create your first admin user (interactive password prompt).
+cargo run -p crabcloud-server -- user-add admin --admin
+
+# 3b. (or, for the fresh-install bootstrap path)
+#     Add [bootstrap_admin] to config.toml with a bcrypt hash;
+#     log in, change your password — your account is now a real DB user.
+
 # 4. Visit http://127.0.0.1:8080/ in a browser.
 ```
 
@@ -38,6 +45,7 @@ cargo run --release -p crabcloud-server -- serve
 - `crates/crabcloud-ocs` — OCS envelope (JSON/XML), capabilities aggregator.
 - `crates/crabcloud-core` — `AppState`, `Error`, `AppConfigService`, `BootstrapHook`.
 - `crates/crabcloud-http` — axum router, middleware, session, CSRF, auth extractors, API handlers.
+- `crates/crabcloud-users` — user/group/preference stores, password verifier, `UsersService` façade, bootstrap-admin shim.
 - `crates/crabcloud-ui` — Dioxus 0.6 SSR + WASM hydration UI.
 - `crates/crabcloud-server` — the binary; CLI, tracing, lifecycle.
 - `xtask/` — project automation.

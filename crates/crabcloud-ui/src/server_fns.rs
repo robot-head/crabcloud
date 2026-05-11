@@ -25,7 +25,7 @@ pub struct StatusInfo {
 
 /// `GET /status.php` — Nextcloud-compatible probe used by clients to identify
 /// the server. The endpoint URL is fixed so legacy clients keep working.
-#[server(endpoint = "/status.php")]
+#[server(endpoint = "status.php", prefix = "")]
 pub async fn status() -> Result<StatusInfo, ServerFnError> {
     use dioxus::fullstack::FullstackContext;
     let state = FullstackContext::current()
@@ -43,10 +43,11 @@ pub async fn status() -> Result<StatusInfo, ServerFnError> {
     })
 }
 
-/// `POST /index.php/login` — bootstrap admin login. Verifies bcrypt-hashed
-/// credentials and mutates the session via the request extension installed
-/// by `crabcloud-http`'s `SessionLayer`.
-#[server(endpoint = "/index.php/login")]
+/// `POST /index.php/login` — login via the users service. Mutates the session
+/// (via the request extension installed by `crabcloud-http`'s `SessionLayer`)
+/// to record the authenticated user, rotate the CSRF token, and mark two-
+/// factor as passed.
+#[server(endpoint = "index.php/login", prefix = "")]
 pub async fn login(username: String, password: String) -> Result<(), ServerFnError> {
     use dioxus::fullstack::FullstackContext;
     let fs =
@@ -59,24 +60,21 @@ pub async fn login(username: String, password: String) -> Result<(), ServerFnErr
         .extension::<crabcloud_http::SessionHandle>()
         .ok_or_else(|| ServerFnError::new("session extension missing"))?;
 
-    let admin = state
-        .config
-        .bootstrap_admin
-        .as_ref()
-        .ok_or_else(|| ServerFnError::new("unauthorized"))?;
-    if admin.username != username {
-        return Err(ServerFnError::new("unauthorized"));
-    }
-    let ok = bcrypt::verify(&password, &admin.password_hash)
-        .map_err(|e| ServerFnError::new(format!("bcrypt verify: {e}")))?;
-    if !ok {
-        return Err(ServerFnError::new("unauthorized"));
-    }
+    let user = state
+        .users
+        .verify(&username, &password)
+        .await
+        .map_err(|e| {
+            ::tracing::warn!(username = %username, error = %e, "login verify failed");
+            ServerFnError::new("unauthorized")
+        })?;
+    let uid_str = user.uid.as_str().to_string();
 
     session
         .mutate(|s| {
-            s.user_id = Some(username.clone());
+            s.user_id = Some(uid_str.clone());
             s.rotate_csrf();
+            s.two_factor_passed = true;
         })
         .await;
     Ok(())
