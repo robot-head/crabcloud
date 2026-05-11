@@ -24,7 +24,11 @@ impl BootstrapAdminBackend {
         groups: Arc<dyn GroupStore>,
         admin: BootstrapAdminConfig,
     ) -> Self {
-        Self { inner, groups, admin }
+        Self {
+            inner,
+            groups,
+            admin,
+        }
     }
 
     fn matches_login(&self, login: &str) -> bool {
@@ -84,8 +88,13 @@ impl UserStore for BootstrapAdminBackend {
         if uid.as_str() == self.admin.username {
             let user = self.synthesized_user()?;
             self.inner.create(&user, Some(new_hash)).await?;
-            self.groups.add_to_group(&user.uid, &GroupId::new("admin")?).await?;
-            tracing::info!(uid = uid.as_str(), "promoted bootstrap admin to oc_users; remove [bootstrap_admin] from config.toml");
+            self.groups
+                .add_to_group(&user.uid, &GroupId::new("admin")?)
+                .await?;
+            tracing::info!(
+                uid = uid.as_str(),
+                "promoted bootstrap admin to oc_users; remove [bootstrap_admin] from config.toml"
+            );
             return Ok(());
         }
         Err(UsersError::NotFound)
@@ -136,7 +145,11 @@ mod tests {
     use crabcloud_db::{core_set, DbPool, MigrationRunner};
     use tempfile::tempdir;
 
-    async fn make() -> (BootstrapAdminBackend, Arc<dyn GroupStore>, Arc<dyn UserStore>) {
+    async fn make() -> (
+        BootstrapAdminBackend,
+        Arc<dyn GroupStore>,
+        Arc<dyn UserStore>,
+    ) {
         let dir = tempdir().unwrap();
         let cfg = crabcloud_config::test_support::minimal_sqlite_config(dir.path().join("b.db"));
         std::mem::forget(dir);
@@ -150,7 +163,10 @@ mod tests {
         let shim = BootstrapAdminBackend::new(
             inner.clone(),
             groups.clone(),
-            BootstrapAdminConfig { username: "admin".into(), password_hash: hash },
+            BootstrapAdminConfig {
+                username: "admin".into(),
+                password_hash: hash,
+            },
         );
         (shim, groups, inner)
     }
@@ -158,7 +174,11 @@ mod tests {
     #[tokio::test]
     async fn virtual_admin_visible_via_lookup() {
         let (shim, _, _) = make().await;
-        let u = shim.lookup(&UserId::new("admin").unwrap()).await.unwrap().unwrap();
+        let u = shim
+            .lookup(&UserId::new("admin").unwrap())
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(u.uid.as_str(), "admin");
     }
 
@@ -176,6 +196,9 @@ mod tests {
         let new_hash = BcryptVerifier::new().hash("newpass").unwrap();
         shim.set_password(&uid, &new_hash).await.unwrap();
         assert!(inner.lookup(&uid).await.unwrap().is_some());
-        assert!(groups.is_in_group(&uid, &GroupId::new("admin").unwrap()).await.unwrap());
+        assert!(groups
+            .is_in_group(&uid, &GroupId::new("admin").unwrap())
+            .await
+            .unwrap());
     }
 }

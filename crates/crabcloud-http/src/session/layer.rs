@@ -185,6 +185,9 @@ where
                     .append(SET_COOKIE, make_destroy_cookie(secure));
             } else {
                 let final_session = handle.inner.lock().await.clone();
+                if let Some(uid) = &final_session.user_id {
+                    let _ = store.record_for_user(uid, &handle.id).await;
+                }
                 let _ = store.save(&handle.id, &final_session).await;
                 let cookie_value =
                     encode_cookie(handle.id.as_str(), secret.expose_secret().as_bytes());
