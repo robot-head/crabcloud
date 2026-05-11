@@ -17,7 +17,7 @@ pub struct Cli {
     pub command: Option<Cmd>,
 }
 
-#[derive(Subcommand, Debug)]
+#[derive(Subcommand, Debug, Clone)]
 pub enum Cmd {
     /// Start the HTTP server (implemented in a later phase).
     Serve,
@@ -28,16 +28,8 @@ pub enum Cmd {
 }
 
 impl Cli {
-    pub fn command(&self) -> Cmd {
-        // Default subcommand is `serve` when none specified.
-        match &self.command {
-            Some(c) => match c {
-                Cmd::Serve => Cmd::Serve,
-                Cmd::Migrate => Cmd::Migrate,
-                Cmd::Version => Cmd::Version,
-            },
-            None => Cmd::Serve,
-        }
+    pub fn selected(&self) -> Cmd {
+        self.command.clone().unwrap_or(Cmd::Serve)
     }
 }
 
@@ -49,19 +41,19 @@ mod tests {
     #[test]
     fn cli_command_factory_is_valid() {
         // `debug_assert` panics on invalid clap configuration.
-        <Cli as CommandFactory>::command().debug_assert();
+        Cli::command().debug_assert();
     }
 
     #[test]
     fn default_subcommand_is_serve() {
         let cli = Cli::parse_from(["rustcloud-server"]);
-        assert!(matches!(cli.command(), Cmd::Serve));
+        assert!(matches!(cli.selected(), Cmd::Serve));
     }
 
     #[test]
     fn version_subcommand_parses() {
         let cli = Cli::parse_from(["rustcloud-server", "version"]);
-        assert!(matches!(cli.command(), Cmd::Version));
+        assert!(matches!(cli.selected(), Cmd::Version));
     }
 
     #[test]

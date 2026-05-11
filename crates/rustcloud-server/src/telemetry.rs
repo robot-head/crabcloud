@@ -2,7 +2,7 @@ use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 /// Initialize the global tracing subscriber.
 ///
-/// - `RUST_LOG` (or otherwise `info`) selects the filter.
+/// - Filter defaults to `info`; `RUST_LOG` overrides if set.
 /// - Output is JSON when stdout is not a TTY, plain otherwise.
 pub fn init() {
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));

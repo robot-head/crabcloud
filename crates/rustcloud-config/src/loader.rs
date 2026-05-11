@@ -35,7 +35,10 @@ pub fn load(base: &Path, cli_overrides: &[(&str, &str)]) -> Result<FileConfig, L
 
     // RUSTCLOUD_* env vars override file values. Dotted keys (overwrite.cli.url) are
     // supported via Env::raw().split("__") — i.e., RUSTCLOUD_OVERWRITE__CLI__URL.
-    fig = fig.merge(Env::prefixed("RUSTCLOUD_").split("__"));
+    // RUSTCLOUD_CONFIG is reserved for the clap config-path flag and must be ignored
+    // here, otherwise figment would try to apply it as a config field and fail under
+    // deny_unknown_fields.
+    fig = fig.merge(Env::prefixed("RUSTCLOUD_").split("__").ignore(&["CONFIG"]));
 
     // CLI overrides win last.
     for (key, value) in cli_overrides {
@@ -110,19 +113,33 @@ trusted_domains = ["localhost"]
     }
 
     #[test]
-    fn validation_runs_after_merge() {
+    fn validation_runs_after_cli_merge() {
+        // Base TOML has dbtype=sqlite (valid, no dbhost needed).
+        // CLI override flips dbtype to mysql; merged value is mysql WITHOUT dbhost
+        // (the base never set it), which validate() must reject.
+        // This proves CLI overrides are merged BEFORE validation runs.
         let dir = tempdir().unwrap();
         let path = dir.path().join("config.toml");
-        let mut bad = String::from(MINIMAL_TOML);
-        // Override to invalid: dbtype mysql but no dbhost.
-        bad.push_str("\n[dummy_unused]\n"); // make sure the file still parses
-        let _ = bad;
         fs::write(&path, MINIMAL_TOML).unwrap();
-        // Now force dbtype mysql via CLI without dbhost.
         let err = load(&path, &[("dbtype", "mysql")]).unwrap_err();
         assert!(matches!(
             err,
             LoadError::Validate(FileConfigError::MissingField("dbhost"))
         ));
+    }
+
+    #[test]
+    fn rustcloud_config_env_var_is_ignored_by_loader() {
+        // SAFETY: tests in the same module run on the same thread, but other tests
+        // in the binary may set env vars concurrently. To keep this test reliable,
+        // we set and unset the env var around the load.
+        std::env::set_var("RUSTCLOUD_CONFIG", "/this/should/be/ignored.toml");
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        fs::write(&path, MINIMAL_TOML).unwrap();
+        let result = load(&path, &[]);
+        std::env::remove_var("RUSTCLOUD_CONFIG");
+        let cfg = result.unwrap();
+        assert_eq!(cfg.instanceid, "abc123");
     }
 }

@@ -1,18 +1,18 @@
 mod cli;
-mod tracing;
+mod telemetry;
 
-use ::tracing::info;
 use anyhow::Result;
 use clap::Parser;
+use tracing::info;
 
 use crate::cli::{Cli, Cmd};
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    crate::tracing::init();
+    crate::telemetry::init();
     let cli = Cli::parse();
 
-    match cli.command() {
+    match cli.selected() {
         Cmd::Version => {
             println!(
                 "rustcloud-server {} (build target subproject: platform-core)",
