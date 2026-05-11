@@ -14,6 +14,11 @@ use std::rc::Rc;
 /// Standard `<!DOCTYPE html>` prefix the handler prepends to the SSR document.
 pub const HTML_DOCTYPE: &str = "<!DOCTYPE html>\n";
 
+/// The `<script>` tag dx injects into its generated `index.html` to load the
+/// WASM bundle, extracted at build time by `build.rs`. Empty if dx hasn't been
+/// run yet (e.g. fresh checkout before `dx build`).
+const WASM_SCRIPT_TAG: &str = include_str!(concat!(env!("OUT_DIR"), "/wasm_script_tag.txt"));
+
 /// Render the `<head>` fragment for the SSR shell: meta tags, CSS link, CSRF
 /// `requesttoken` meta, the `__dx_ctx` hydration script, and the WASM module
 /// script tag.
@@ -28,10 +33,14 @@ pub fn render_head_html(ctx: &RequestContext) -> String {
         html_escape(&ctx.request_token)
     ));
     out.push_str(&render_hydration_script(ctx));
-    // The WASM client bundle. dx places it at /assets/dioxus/<name>.js by
-    // default; we mount the assets root at /assets/ so this path resolves
-    // to target/dx/.../public/dioxus/<name>.js.
-    out.push_str("<script type=\"module\" src=\"/assets/dioxus/crabcloud-ui.js\" defer></script>");
+    // dx 0.7 hashes the bundle filename in release mode, so we can't hard-code
+    // the path. `build.rs` parses dx's emitted `index.html` and writes the
+    // exact `<script>` tag dx injects into `OUT_DIR/wasm_script_tag.txt`; we
+    // splice it in verbatim here. (We also serve dx's `public/` under
+    // `/assets/`, which matches the `/{base_path}/...` prefix dx bakes into
+    // the tag.) If dx hasn't been run, the included file is empty and no
+    // bundle tag is emitted — handlers still SSR fine, just without hydration.
+    out.push_str(WASM_SCRIPT_TAG);
     out
 }
 
