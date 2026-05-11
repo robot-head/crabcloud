@@ -1,0 +1,19 @@
+[package]
+name = "rustcloud-db"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+rustcloud-config.workspace = true
+secrecy.workspace = true
+sqlx.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+testcontainers.workspace = true
+testcontainers-modules.workspace = true
