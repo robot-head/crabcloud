@@ -31,12 +31,18 @@ async fn main() -> Result<()> {
         }
         Cmd::Migrate => {
             let config = rustcloud_config::load(&cli.config, &[])?;
-            info!(
-                instanceid = %config.instanceid,
-                dbtype = %config.dbtype.as_str(),
-                "loaded config; migrate subcommand not yet implemented"
-            );
-            anyhow::bail!("`migrate` is implemented in Task 10");
+            info!(dbtype = %config.dbtype.as_str(), "connecting to database");
+
+            let pool = rustcloud_db::DbPool::connect(&config).await?;
+            info!(dialect = pool.dialect(), "connected");
+
+            let mut runner = rustcloud_db::MigrationRunner::new(&pool, &config.dbtableprefix);
+            runner.register(rustcloud_db::core_set());
+            let applied = runner.run().await?;
+            info!(applied, "migrations complete");
+
+            pool.close().await;
+            Ok(())
         }
     }
 }

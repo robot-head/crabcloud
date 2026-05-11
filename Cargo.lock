@@ -1577,6 +1577,7 @@ dependencies = [
  "anyhow",
  "clap",
  "rustcloud-config",
+ "rustcloud-db",
  "tokio",
  "tracing",
  "tracing-subscriber",
