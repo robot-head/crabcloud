@@ -3,6 +3,7 @@ members = [
     "crates/rustcloud-cache",
     "crates/rustcloud-config",
     "crates/rustcloud-db",
+    "crates/rustcloud-i18n",
     "crates/rustcloud-server",
     "xtask",
 ]
@@ -42,10 +43,14 @@ toml = "0.8"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 
+polib = "0.3"
+accept-language = "3.1"
+
 # Internal workspace deps. Entries are added by subsequent tasks when their crate exists.
 rustcloud-cache = { path = "crates/rustcloud-cache" }
 rustcloud-config = { path = "crates/rustcloud-config" }
 rustcloud-db = { path = "crates/rustcloud-db" }
+rustcloud-i18n = { path = "crates/rustcloud-i18n" }
 
 [profile.release]
 lto = "thin"

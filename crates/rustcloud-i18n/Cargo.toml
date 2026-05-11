@@ -1,0 +1,14 @@
+[package]
+name = "rustcloud-i18n"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+accept-language.workspace = true
+polib.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
