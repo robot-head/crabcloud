@@ -18,7 +18,12 @@ const XCTO: (&str, &str) = ("x-content-type-options", "nosniff");
 const REFERRER: (&str, &str) = ("referrer-policy", "strict-origin-when-cross-origin");
 const XFO: (&str, &str) = ("x-frame-options", "SAMEORIGIN");
 const CSP_API: &str = "default-src 'none'; frame-ancestors 'self'; base-uri 'self'";
-const CSP_UI: &str = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'self'; base-uri 'self'";
+// The single inline `<script>` we emit (`render_hydration_data_script` in
+// crabcloud-ui) sets `window.initial_dioxus_hydration_data` to a fixed string
+// for dioxus-web 0.7's hydrator. Its SHA-256 is allow-listed below; the body
+// is the static contents of `EMPTY_HYDRATION_DATA_BASE64` so the hash never
+// changes per response.
+const CSP_UI: &str = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' 'sha256-2Um9bmAkI+7EnHO+y0iR+2Mtb+HfZKZF0ywRt8/LfRI='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'self'; base-uri 'self'";
 
 fn csp_for_content_type(ct: Option<&axum::http::HeaderValue>) -> &'static str {
     match ct.and_then(|v| v.to_str().ok()) {

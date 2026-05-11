@@ -25,6 +25,11 @@ mod web {
     }
 
     pub fn launch() {
+        // Hydrate the SSR-rendered DOM. dioxus-web 0.7's hydrator reads the
+        // serialized server-data envelope from `window.initial_dioxus_hydration_data`
+        // (set by `render_hydration_data_script` on the server) and walks the
+        // pre_render markers in the SSR HTML to anchor components onto existing
+        // DOM nodes — preserving the SSR'd content rather than wiping it.
         dioxus_web::launch::launch(
             AppRoot,
             Vec::new(),

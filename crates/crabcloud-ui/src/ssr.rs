@@ -33,6 +33,8 @@ pub fn render_head_html(ctx: &RequestContext) -> String {
         html_escape(&ctx.request_token)
     ));
     out.push_str(&render_hydration_script(ctx));
+    // dioxus-web 0.7 hydrator reads the server-data envelope from this global.
+    out.push_str(&render_hydration_data_script());
     // dx 0.7 hashes the bundle filename in release mode, so we can't hard-code
     // the path. `build.rs` parses dx's emitted `index.html` and writes the
     // exact `<script>` tag dx injects into `OUT_DIR/wasm_script_tag.txt`; we
@@ -57,11 +59,29 @@ pub fn render_app_html(ctx: RequestContext, path: &str) -> String {
         },
     );
     vdom.rebuild_in_place();
-    // `pre_render` (not `render`) emits the hydration markers dioxus-web 0.7's
-    // client-side hydrator needs to walk the SSR DOM. With plain `render`,
-    // hydration silently fails (no markers to anchor on) and the `App`
-    // component's `use_effect` never fires, so `data-hydrated` stays "false".
+    // `pre_render` emits the per-node hydration markers dioxus-web 0.7's
+    // hydrator walks to anchor onto existing DOM. Pair this with
+    // `render_hydration_data_script` in the document `<head>` so the client
+    // also gets a (currently empty) server-data envelope.
     dioxus_ssr::pre_render(&vdom)
+}
+
+/// Empty dioxus-fullstack server-data envelope, CBOR-encoded then base64'd.
+/// dioxus-web 0.7 reads `window.initial_dioxus_hydration_data` at hydrate
+/// time and atob→ciborium-decodes it into a `Vec<Option<Vec<u8>>>`; the
+/// empty CBOR list (`0x80`) yields an empty `Vec`, which is correct as long
+/// as we don't emit any server-side `use_server_future` / suspense data.
+/// When we adopt `dioxus-fullstack`'s server functions we'll switch to
+/// computing this from `serialize_context().serialized()`.
+const EMPTY_HYDRATION_DATA_BASE64: &str = "gA==";
+
+/// Render the `<script>` tag that bootstraps dioxus-web's client-side
+/// hydrator by exposing the serialized server-data envelope on `window`.
+/// Must appear in the document `<head>` before the WASM module script.
+pub fn render_hydration_data_script() -> String {
+    format!(
+        "<script>window.initial_dioxus_hydration_data=\"{EMPTY_HYDRATION_DATA_BASE64}\";</script>",
+    )
 }
 
 #[component]
