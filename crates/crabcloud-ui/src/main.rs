@@ -35,15 +35,33 @@ mod web {
     pub fn launch() {
         // We deliberately don't enable `dioxus-web/hydrate` (see Cargo.toml).
         // `Config::new()` defaults to `hydrate = false`, so `dioxus_web` takes
-        // the plain client-render branch: it mounts `#main` fresh with the
-        // same `<App />` tree the SSR emitted, and `App`'s `use_effect` fires
-        // post-mount to flip `data-hydrated` to `"true"`. Cost is a brief
-        // CSR flash; SEO/first-paint benefits of SSR are preserved.
+        // the plain client-render branch and renders `<App />` into `#main`.
+        //
+        // `dioxus_web` *appends* the rebuilt tree to its root element rather
+        // than replacing it, so without intervention the SSR'd content and
+        // the client-rendered content stack — `#app-root` ends up duplicated.
+        // Wipe `#main` before launching to make the client mount the
+        // canonical tree. The cost is a brief CSR flash; SEO + first-paint
+        // benefits of SSR are preserved because the response body is still
+        // fully pre-rendered for crawlers and slow connections.
+        clear_main();
         dioxus_web::launch::launch(
             AppRoot,
             Vec::new(),
             vec![Box::new(dioxus_web::Config::new())],
         );
+    }
+
+    fn clear_main() {
+        let Some(window) = web_sys::window() else {
+            return;
+        };
+        let Some(document) = window.document() else {
+            return;
+        };
+        if let Some(main) = document.get_element_by_id("main") {
+            main.set_inner_html("");
+        }
     }
 
     fn read_hydration_context() -> Option<RequestContext> {
