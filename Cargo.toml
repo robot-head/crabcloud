@@ -16,7 +16,7 @@ resolver = "2"
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.85"
+rust-version = "1.95"
 license = "AGPL-3.0-or-later"
 authors = ["Crabcloud Contributors"]
 repository = "https://github.com/robot-head/crabcloud"
@@ -74,11 +74,11 @@ crabcloud-i18n = { path = "crates/crabcloud-i18n" }
 crabcloud-ocs = { path = "crates/crabcloud-ocs" }
 crabcloud-ui = { path = "crates/crabcloud-ui" }
 
-dioxus = { version = "0.6", default-features = false, features = ["macro", "html", "signals", "hooks"] }
-dioxus-history = "0.6"
-dioxus-router = { version = "0.6", default-features = false }
-dioxus-ssr = "0.6"
-dioxus-web = { version = "0.6", default-features = false }
+dioxus = { version = "0.7", default-features = false, features = ["macro", "html", "signals", "hooks"] }
+dioxus-history = "0.7"
+dioxus-router = { version = "0.7", default-features = false }
+dioxus-ssr = "0.7"
+dioxus-web = { version = "0.7", default-features = false }
 console_error_panic_hook = "0.1"
 web-sys = { version = "0.3", features = ["Window", "Document", "Element"] }
 rust-embed = { version = "8", features = ["debug-embed", "include-exclude", "interpolate-folder-path"] }
