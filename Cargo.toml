@@ -52,10 +52,10 @@ sqlx = { version = "0.8", default-features = false, features = [
 subtle = "2.6"
 thiserror = "2"
 tempfile = "3"
-testcontainers = "0.23"
-testcontainers-modules = { version = "0.11", features = ["mysql", "postgres"] }
+testcontainers = "0.27"
+testcontainers-modules = { version = "0.15", features = ["mysql", "postgres"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "fs", "time"] }
-toml = "0.8"
+toml = "0.9"
 tower = { version = "0.5", features = ["util"] }
 tower-http = { version = "0.6", features = ["trace", "limit", "cors", "catch-panic"] }
 tracing = "0.1"
@@ -63,7 +63,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 
 polib = "0.3"
 accept-language = "3.1"
-quick-xml = { version = "0.39", features = ["serialize"] }
+quick-xml = { version = "0.40", features = ["serialize"] }
 
 # Internal workspace deps. Entries are added by subsequent tasks when their crate exists.
 crabcloud-cache = { path = "crates/crabcloud-cache" }
