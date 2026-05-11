@@ -6,6 +6,6 @@ mod catalog;
 mod locale;
 mod service;
 
-pub use catalog::{Catalog, CatalogError};
+pub use catalog::{load_all, Catalog, CatalogError};
 pub use locale::{resolve, Locale};
 pub use service::I18n;
