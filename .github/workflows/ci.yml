@@ -197,34 +197,23 @@ jobs:
           exit 1
       - name: Sanity-check served HTML + bundle
         run: |
-          {
-            echo "## Server diagnostic dump"
-            echo
-            echo "### \`GET /\` response"
-            STATUS=$(curl -s -o /tmp/index.html -w "%{http_code}" http://127.0.0.1:18765/)
-            echo "Status: \`$STATUS\`"
-            echo
-            echo '```html'
-            head -120 /tmp/index.html || true
-            echo '```'
-            echo
-            echo "### Asset references in served HTML"
-            echo '```'
-            grep -oE 'src="[^"]+"|href="[^"]+"' /tmp/index.html | head -20 || true
-            echo '```'
-            echo
-            echo "### First script asset reachability"
-            first_script=$(grep -oE '<script[^>]+src="[^"]+"' /tmp/index.html | head -1 | grep -oE 'src="[^"]+"' | sed 's/src="//;s/"//')
-            if [ -n "$first_script" ]; then
-              asset_url="http://127.0.0.1:18765$first_script"
-              ASTAT=$(curl -s -o /dev/null -w "%{http_code}" "$asset_url")
-              echo "First script: \`$first_script\` → status \`$ASTAT\`"
-            else
-              echo "(no <script src=> in served HTML)"
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
-          # Also echo to step log
-          cat "$GITHUB_STEP_SUMMARY"
+          STATUS=$(curl -s -o /tmp/index.html -w "%{http_code}" http://127.0.0.1:18765/)
+          BYTES=$(wc -c < /tmp/index.html)
+          HEAD=$(head -c 600 /tmp/index.html | tr '\n' ' ' | tr -s ' ' | tr -d '\r')
+          SCRIPTS=$(grep -oE '<script[^>]*src="[^"]+"' /tmp/index.html | head -3 | tr '\n' ' ')
+          first_script=$(grep -oE '<script[^>]+src="[^"]+"' /tmp/index.html | head -1 | grep -oE 'src="[^"]+"' | sed 's/src="//;s/"//')
+          if [ -n "$first_script" ]; then
+            asset_url="http://127.0.0.1:18765$first_script"
+            ASTAT=$(curl -s -o /dev/null -w "%{http_code}" "$asset_url")
+          else
+            ASTAT="(no script)"
+          fi
+          # Emit via ::error:: so the message is visible in the public job page
+          # annotation panel — step logs are auth-walled, annotations are not.
+          echo "::error title=Served HTML diagnostic::status=$STATUS bytes=$BYTES head=$HEAD"
+          echo "::error title=Asset diagnostic::scripts=$SCRIPTS first_script=$first_script first_script_status=$ASTAT"
+          echo "--- full HTML ---"
+          cat /tmp/index.html
       - name: Run Playwright tests
         working-directory: e2e
         env:
