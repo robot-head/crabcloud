@@ -64,15 +64,16 @@ async fn main() -> Result<()> {
             let local_addr = listener.local_addr()?;
             info!(addr = %local_addr, "listening");
 
-            axum::serve(
+            let res = axum::serve(
                 listener,
                 router.into_make_service_with_connect_info::<std::net::SocketAddr>(),
             )
             .with_graceful_shutdown(shutdown_signal())
-            .await?;
+            .await;
 
             info!("server stopped");
             state.pool.close().await;
+            res?;
             Ok(())
         }
         Cmd::Migrate => {
