@@ -8,18 +8,28 @@
 
 #[cfg(target_arch = "wasm32")]
 mod web {
-    use crabcloud_ui::{RequestContext, Route};
+    use crabcloud_ui::{App, RequestContext};
     use dioxus::prelude::*;
 
     /// Top-level component. Reads the hydration payload from the DOM on first
-    /// render, installs it as the request context, then mounts the router.
+    /// render, installs it as the request context, then mounts the **same**
+    /// `App` component the SSR side rendered.
+    ///
+    /// Hydration requires the WASM tree to match the SSR tree element-for-
+    /// element. SSR renders `<App />` (which wraps `Router::<Route>` inside
+    /// a `<div id="app-root" data-hydrated="...">` host with a use_effect
+    /// that flips the marker post-mount). If this entry point mounted
+    /// `<Router>` directly, the WASM tree would skip that wrapper div and
+    /// Dioxus would refuse to hydrate — leaving `data-hydrated="false"`
+    /// frozen in the DOM (which is exactly what the Playwright suite watches
+    /// for as the hydration signal).
     #[component]
     pub fn AppRoot() -> Element {
         let ctx = use_hook(|| {
             read_hydration_context().unwrap_or_else(|| RequestContext::anonymous("en", ""))
         });
         use_context_provider(|| ctx.clone());
-        rsx! { Router::<Route> {} }
+        rsx! { App {} }
     }
 
     pub fn launch() {
