@@ -1,0 +1,47 @@
+[workspace]
+# Members are added by subsequent tasks as the corresponding crates are created.
+members = []
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.83"
+license = "AGPL-3.0-or-later"
+authors = ["Rustcloud Contributors"]
+repository = "https://github.com/mdstone/rustcloud"
+
+[workspace.dependencies]
+anyhow = "1.0"
+async-trait = "0.1"
+clap = { version = "4.5", features = ["derive", "env"] }
+figment = { version = "0.10", features = ["toml", "env"] }
+secrecy = { version = "0.10", features = ["serde"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sqlx = { version = "0.8", default-features = false, features = [
+    "runtime-tokio-rustls",
+    "sqlite",
+    "mysql",
+    "postgres",
+    "chrono",
+    "macros",
+    "migrate",
+] }
+thiserror = "2"
+tempfile = "3"
+testcontainers = "0.23"
+testcontainers-modules = { version = "0.11", features = ["mysql", "postgres"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "fs", "time"] }
+toml = "0.8"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Internal workspace deps. Entries are added by subsequent tasks when their crate exists.
+# rustcloud-config = { path = "crates/rustcloud-config" }   # Task 4
+# rustcloud-db     = { path = "crates/rustcloud-db" }       # Task 7
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "debuginfo"

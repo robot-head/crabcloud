@@ -1,0 +1,18 @@
+/target
+**/*.rs.bk
+Cargo.lock.bak
+
+# Local dev secrets / overrides
+config/config.local.toml
+.env
+.env.local
+
+# sqlx offline cache is committed; nothing to ignore.
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
