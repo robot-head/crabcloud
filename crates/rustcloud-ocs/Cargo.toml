@@ -1,0 +1,15 @@
+[package]
+name = "rustcloud-ocs"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+quick-xml.workspace = true
+rustcloud-cache.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
