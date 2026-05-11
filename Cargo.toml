@@ -23,7 +23,7 @@ repository = "https://github.com/mdstone/rustcloud"
 [workspace.dependencies]
 anyhow = "1.0"
 async-trait = "0.1"
-axum = { version = "0.8", default-features = false, features = ["http1", "json", "tokio", "tower-log", "matched-path", "original-uri", "query"] }
+axum = { version = "0.8", default-features = false, features = ["http1", "json", "tokio", "tower-log", "matched-path", "original-uri", "query", "form"] }
 base64 = "0.22"
 bcrypt = "0.16"
 clap = { version = "4.5", features = ["derive", "env"] }
