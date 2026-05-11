@@ -41,7 +41,7 @@ jobs:
         working-directory: crates/crabcloud-ui
         run: dx build --release --platform web
       - name: Upload built bundle
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dx-public
           path: target/dx/crabcloud-ui-web/release/web/public
@@ -56,7 +56,7 @@ jobs:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
       - name: Download built bundle
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: dx-public
           path: target/dx/crabcloud-ui-web/release/web/public
@@ -113,7 +113,7 @@ jobs:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
       - name: Download WASM bundle
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: dx-public
           path: target/dx/crabcloud-ui-web/release/web/public
@@ -196,7 +196,7 @@ jobs:
           fi
       - name: Upload Playwright report on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-report
           path: e2e/playwright-report
