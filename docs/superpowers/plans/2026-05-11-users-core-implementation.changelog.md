@@ -40,7 +40,7 @@ Completed: 2026-05-11
 - `sessions_by_user` index in `MemoryCache` grows linearly per user — fine single-node; revisit when the Redis cache backend lands.
 - `BootstrapAdminBackend::set_display_name` / `set_email` return `ReadOnly` for the virtual admin — promote-then-set is a polish item.
 - CLI `user-add` prompts password on stdin; no `--password-stdin` flag. Add when scripted provisioning is a real need.
-- **Playwright E2E is currently broken on master from a pre-existing Dioxus 0.7 hashed-bundle hydration regression (introduced in PR #10 and not yet resolved). All in-process integration tests pass. Tracking PR #14 (draft) has a partial fix.**
+- **True client-side hydration** is not enabled: dioxus-web 0.7's `hydrate` feature requires a base64 hydration blob (`window.initial_dioxus_hydration_data`) produced only by the dx 0.7 *fullstack* server pipeline, which Crabcloud doesn't run. Pages SSR fully, then the WASM client wipes `#main` and rebuilds the same tree on top — there's a brief client-side render flash, and Playwright cannot assert against the live DOM for paths whose client-router resolution differs from the SSR. Migrating to the dx 0.7 fullstack feature is the planned fix (tracked separately).
 
 ## Acceptance status
 
@@ -53,6 +53,6 @@ Completed: 2026-05-11
 | 5 | Disabled user gets 401 | OK (`service::tests::verify_fails_for_disabled_user`) |
 | 6 | `PUT /ocs/v2.php/cloud/user key=password` updates hash + kicks other sessions, keeps current | OK (`routes::ocs::user::tests::put_self_password_change_destroys_other_sessions`) |
 | 7 | `GET /ocs/v2.php/cloud/user` returns the expected envelope | OK (`tests/users_flow.rs::get_self_returns_payload`) |
-| 8 | Playwright E2E still passes | DEFERRED — pre-existing dx 0.7 hashed-bundle hydration regression on master (PR #14 draft). Sub-project 2a does not regress the bootstrap-admin shim path that the suite covers; resolution tracked separately. |
+| 8 | Playwright E2E still passes | OK (resolved post-merge in PR #29: ignore build-script env vars in figment loader; splice dx 0.7 hashed-bundle script tag into SSR head; disable client hydration + wipe `#main` on mount; assert 404 page text against SSR response not live DOM) |
 | 9 | `git grep -i rustcloud` empty | OK |
 | 10 | `[workspace.lints]` `-D warnings` clean for `crabcloud-users` | OK |
