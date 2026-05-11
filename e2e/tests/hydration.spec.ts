@@ -1,69 +1,93 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 
 const BASE_URL = process.env.CRABCLOUD_E2E_URL ?? "http://127.0.0.1:18765";
 
+// Capture browser console + page errors so they appear in CI annotations
+// when a hydration assertion times out (otherwise the failure is opaque).
+function watchPage(page: Page): { dump: () => void } {
+    const msgs: string[] = [];
+    page.on("console", (m) => {
+        msgs.push(`[console.${m.type()}] ${m.text()}`);
+    });
+    page.on("pageerror", (e) => {
+        msgs.push(`[pageerror] ${e.name}: ${e.message}\n${e.stack ?? ""}`);
+    });
+    page.on("requestfailed", (req) => {
+        msgs.push(`[requestfailed] ${req.method()} ${req.url()} - ${req.failure()?.errorText ?? "unknown"}`);
+    });
+    page.on("response", (res) => {
+        if (res.status() >= 400) {
+            msgs.push(`[response>=400] ${res.status()} ${res.url()}`);
+        }
+    });
+    return {
+        dump() {
+            for (const m of msgs) {
+                console.log(`::error title=Browser event::${m.replace(/\n/g, " | ")}`);
+            }
+        },
+    };
+}
+
 test.describe("Crabcloud SSR + hydration", () => {
     test("home page SSRs with hydration marker and hydrates", async ({ page }) => {
-        // Capture the response before JS executes to verify the SSR snapshot.
-        const response = await page.goto("/");
-        expect(response).not.toBeNull();
-        expect(response!.status()).toBe(200);
+        const watcher = watchPage(page);
+        try {
+            const response = await page.goto("/");
+            expect(response).not.toBeNull();
+            expect(response!.status()).toBe(200);
 
-        const htmlBeforeJs = await response!.text();
-        expect(htmlBeforeJs).toContain("Welcome, guest");
-        expect(htmlBeforeJs).toContain("data-hydrated=\"false\"");
-        // CSRF token surfaces as a <meta requesttoken> tag in the document
-        // head; the custom __dx_ctx JSON payload is gone — context now rides
-        // the standard Dioxus 0.7 hydration data channel via use_server_cached.
-        expect(htmlBeforeJs).toContain("name=\"requesttoken\"");
+            const htmlBeforeJs = await response!.text();
+            expect(htmlBeforeJs).toContain("Welcome, guest");
+            expect(htmlBeforeJs).toContain("data-hydrated=\"false\"");
+            expect(htmlBeforeJs).toContain("name=\"requesttoken\"");
 
-        // After the WASM bundle loads + use_effect runs, the marker flips.
-        await expect(page.locator("#app-root")).toHaveAttribute(
-            "data-hydrated",
-            "true",
-            { timeout: 10_000 },
-        );
+            await expect(page.locator("#app-root")).toHaveAttribute(
+                "data-hydrated",
+                "true",
+                { timeout: 10_000 },
+            );
+        } finally {
+            watcher.dump();
+        }
     });
 
     test("login flow then home shows authenticated greeting", async ({ page, request }) => {
-        // /index.php/login is a Dioxus #[server] function (JSON codec, 200 on
-        // success). SessionLayer still attaches the session cookie via
-        // Set-Cookie regardless of the body shape.
-        const loginResp = await request.post("/index.php/login", {
-            data: { username: "admin", password: "hunter2" },
-            headers: { "content-type": "application/json" },
-        });
-        expect(loginResp.status()).toBe(200);
+        const watcher = watchPage(page);
+        try {
+            const loginResp = await request.post("/index.php/login", {
+                data: { username: "admin", password: "hunter2" },
+                headers: { "content-type": "application/json" },
+            });
+            expect(loginResp.status()).toBe(200);
 
-        const cookie = loginResp.headers()["set-cookie"];
-        expect(cookie).toContain("oc_sessionPassphrase=");
+            const cookie = loginResp.headers()["set-cookie"];
+            expect(cookie).toContain("oc_sessionPassphrase=");
 
-        // Visit `/` with the new session cookie.
-        const sessionValue = /oc_sessionPassphrase=([^;]+)/.exec(cookie!)![1];
-        await page.context().addCookies([{
-            name: "oc_sessionPassphrase",
-            value: sessionValue,
-            url: new URL("/", BASE_URL).toString(),
-        }]);
+            const sessionValue = /oc_sessionPassphrase=([^;]+)/.exec(cookie!)![1];
+            await page.context().addCookies([{
+                name: "oc_sessionPassphrase",
+                value: sessionValue,
+                url: new URL("/", BASE_URL).toString(),
+            }]);
 
-        const homeResp = await page.goto("/");
-        expect(homeResp!.status()).toBe(200);
-        await expect(page.locator("body")).toContainText("Welcome, admin");
+            const homeResp = await page.goto("/");
+            expect(homeResp!.status()).toBe(200);
+            await expect(page.locator("body")).toContainText("Welcome, admin");
 
-        // And hydration still happens.
-        await expect(page.locator("#app-root")).toHaveAttribute(
-            "data-hydrated",
-            "true",
-            { timeout: 10_000 },
-        );
+            await expect(page.locator("#app-root")).toHaveAttribute(
+                "data-hydrated",
+                "true",
+                { timeout: 10_000 },
+            );
+        } finally {
+            watcher.dump();
+        }
     });
 
     test("404 path returns 404 status with rendered NotFound page", async ({ page }) => {
         const response = await page.goto("/this/does/not/exist");
         expect(response!.status()).toBe(404);
-        // Assert against the SSR response body (what crawlers see) rather
-        // than the live DOM. The status code is set by the NotFoundRoute
-        // component via `FullstackContext::commit_http_status`.
         const html = await response!.text();
         expect(html).toContain("404 — Not Found");
     });
