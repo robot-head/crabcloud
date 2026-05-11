@@ -7,6 +7,11 @@ use crate::group::GroupId;
 use crate::service::UsersService;
 use crate::user::{User, UserId};
 
+/// Create a user (and optionally add to the admin group). Not atomic: if the
+/// process dies between `inner.create` and `add_to_group`, the user lands in
+/// `oc_users` without admin membership. The state is recoverable by re-running
+/// `user-add` (which fails fast with `UidAlreadyExists`) and then running
+/// `group-add-member admin <uid>` manually.
 pub async fn user_add(
     svc: &UsersService,
     uid: &str,
@@ -46,9 +51,11 @@ pub async fn user_set_password(svc: &UsersService, uid: &str, new: &str) -> User
 }
 
 pub async fn user_delete(svc: &UsersService, uid: &str) -> UsersResult<()> {
+    // `SqlUserStore::delete` cascades to oc_group_user + oc_preferences + oc_users
+    // atomically (sequentially under the same pool). Keeping cascade ownership inside
+    // the store is more atomic than composing two awaits from here.
     let user_id = UserId::new(uid)?;
     svc.user_store().delete(&user_id).await?;
-    svc.preferences().delete_all_for(&user_id).await?;
     Ok(())
 }
 
