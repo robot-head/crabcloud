@@ -10,19 +10,24 @@
 mod web {
     use crabcloud_ui::{RequestContext, Route};
     use dioxus::prelude::*;
-    use dioxus_router::prelude::*;
 
+    /// Top-level component. Reads the hydration payload from the DOM on first
+    /// render, installs it as the request context, then mounts the router.
     #[component]
-    fn AppRoot(ctx: RequestContext) -> Element {
+    pub fn AppRoot() -> Element {
+        let ctx = use_hook(|| {
+            read_hydration_context().unwrap_or_else(|| RequestContext::anonymous("en", ""))
+        });
         use_context_provider(|| ctx.clone());
         rsx! { Router::<Route> {} }
     }
 
     pub fn launch() {
-        let ctx = read_hydration_context().unwrap_or_else(|| RequestContext::anonymous("en", ""));
-        dioxus::launch(move || {
-            rsx! { AppRoot { ctx: ctx.clone() } }
-        });
+        dioxus_web::launch::launch(
+            AppRoot,
+            Vec::new(),
+            vec![Box::new(dioxus_web::Config::new().hydrate(true))],
+        );
     }
 
     fn read_hydration_context() -> Option<RequestContext> {

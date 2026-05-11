@@ -29,7 +29,7 @@ dioxus-ssr.workspace = true
 
 # Browser WASM — only compile when targeting wasm32.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-dioxus-web.workspace = true
+dioxus-web = { workspace = true, features = ["hydrate"] }
 console_error_panic_hook.workspace = true
 web-sys.workspace = true
 
