@@ -43,14 +43,6 @@ jobs:
         # a no-op stub bin (the real server is `crabcloud-server`).
         working-directory: crates/crabcloud-ui
         run: dx build --release --platform web
-      - name: Inspect dx output
-        run: |
-          echo "=== files under target/dx ==="
-          find target/dx -maxdepth 6 -type f -not -path "*captured-args*" | head -40
-          echo "=== release/web/public contents ==="
-          ls -la target/dx/crabcloud-ui/release/web/public/ 2>/dev/null || echo "(missing)"
-          echo "=== index.html head ==="
-          head -40 target/dx/crabcloud-ui/release/web/public/index.html 2>/dev/null || echo "(no index.html)"
       - name: Upload built bundle
         uses: actions/upload-artifact@v4
         with:
@@ -212,40 +204,6 @@ jobs:
           done
           echo "Server did not become ready"
           exit 1
-      - name: Sanity-check served HTML + bundle
-        shell: bash --noprofile --norc {0}
-        run: |
-          set +e +o pipefail
-          # Dump on-disk public directory (including symlinks).
-          PUBLIC_FILES=$(find target/dx/crabcloud-ui/release/web/public \( -type f -o -type l \) 2>/dev/null | sed "s|target/dx/crabcloud-ui/release/web/public/||" | tr '\n' ' ')
-          echo "::error title=Public dir files::$PUBLIC_FILES"
-          # Probe both the un-hashed and hashed wasm URLs to verify the
-          # workaround actually wired both names.
-          UNHASHED_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:18765/assets/crabcloud-ui_bg.wasm")
-          echo "::error title=Wasm URL probes::unhashed=/assets/crabcloud-ui_bg.wasm -> $UNHASHED_STATUS"
-          STATUS=$(curl -s -o /tmp/index.html -w "%{http_code}" http://127.0.0.1:18765/)
-          BYTES=$(wc -c < /tmp/index.html)
-          HEAD=$(head -c 600 /tmp/index.html | tr '\n' ' ' | tr -s ' ' | tr -d '\r')
-          SCRIPTS=$(grep -oE '<script[^>]*src="[^"]+"' /tmp/index.html | head -3 | tr '\n' ' ')
-          first_script=$(grep -oE '<script[^>]+src="[^"]+"' /tmp/index.html | head -1 | grep -oE 'src="[^"]+"' | sed 's/src="//;s/"//')
-          if [ -n "$first_script" ]; then
-            asset_url="http://127.0.0.1:18765$first_script"
-            ASTAT=$(curl -s -o /tmp/bundle.js -w "%{http_code}" "$asset_url")
-            BUNDLE_BYTES=$(wc -c < /tmp/bundle.js)
-            wasm_ref=$(grep -oE '[A-Za-z0-9._/-]+\.wasm' /tmp/bundle.js | head -3 | tr '\n' ' ')
-            INIT=$(head -c 600 /tmp/bundle.js | tr '\n' ' ' | tr -d '\r')
-          else
-            ASTAT="(no script)"
-            BUNDLE_BYTES=0
-            INIT=""
-            wasm_ref="(no wasm ref)"
-          fi
-          echo "::error title=Served HTML diagnostic::status=$STATUS bytes=$BYTES head=$HEAD"
-          echo "::error title=Asset diagnostic::scripts=$SCRIPTS first_script=$first_script first_script_status=$ASTAT bundle_bytes=$BUNDLE_BYTES wasm_refs=$wasm_ref"
-          echo "::error title=Bundle head::$INIT"
-          echo "--- full HTML ---"
-          cat /tmp/index.html
-          exit 0
       - name: Run Playwright tests
         working-directory: e2e
         env:
