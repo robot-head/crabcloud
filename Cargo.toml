@@ -81,7 +81,7 @@ assert_cmd = "2"
 
 # Dioxus 0.7 fullstack. Sub-features `server` and `web` are mutually exclusive
 # and are selected by the consuming crate (or by `dx serve`), not here.
-dioxus = { version = "0.7", default-features = false, features = ["macro", "html", "signals", "hooks", "router", "fullstack", "document"] }
+dioxus = { version = "0.7", default-features = false, features = ["macro", "html", "signals", "hooks", "router", "fullstack", "document", "launch"] }
 rust-embed = { version = "8", features = ["debug-embed", "include-exclude", "interpolate-folder-path"] }
 
 [workspace.lints.rust]
