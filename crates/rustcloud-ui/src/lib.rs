@@ -6,6 +6,11 @@
 // own test build. Quiet those here so the genuine signal stays visible.
 #![cfg_attr(test, allow(unused_crate_dependencies))]
 
+// `dioxus_router` is referenced indirectly via `dioxus::prelude::*` re-exports.
+// Keep an explicit crate-level use so the unused-crate-dependencies lint
+// recognizes the dependency.
+use dioxus_router as _;
+
 mod app;
 mod context;
 mod hydration;

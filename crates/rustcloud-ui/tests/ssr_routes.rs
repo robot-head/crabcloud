@@ -51,6 +51,10 @@ async fn home_returns_ssr_html_with_hydration_payload() {
         "missing welcome text for anonymous user"
     );
     assert!(html.contains("href=\"/login\""), "missing login link");
+    assert!(
+        html.contains("data-hydrated=\"false\""),
+        "missing hydration marker"
+    );
 }
 
 #[tokio::test]

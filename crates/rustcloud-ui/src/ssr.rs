@@ -4,12 +4,11 @@
 //! defined there — `OptionalUser` / `SessionHandle`). Keeping these helpers
 //! here means `rustcloud-ui` has no cyclic dependency on `rustcloud-http`.
 
-use crate::app::Route;
+use crate::app::App;
 use crate::context::RequestContext;
 use crate::hydration::render_hydration_script;
 use dioxus::prelude::*;
 use dioxus_history::{History, MemoryHistory};
-use dioxus_router::prelude::Router;
 use std::rc::Rc;
 
 /// Standard `<!DOCTYPE html>` prefix the handler prepends to the SSR document.
@@ -63,7 +62,7 @@ fn AppWithContext(ctx: RequestContext, initial_path: String) -> Element {
             Rc::new(MemoryHistory::with_initial_path(initial_path.clone()));
         provide_context(history);
     });
-    rsx! { Router::<Route> {} }
+    rsx! { App {} }
 }
 
 /// Minimal HTML attribute/text escape. Used by the head renderer for the

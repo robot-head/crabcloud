@@ -38,9 +38,19 @@ pub fn NotFoundRoute(segments: Vec<String>) -> Element {
     rsx! { NotFound {} }
 }
 
-/// Root component. Renders the `Router<Route>`. Callers must install
-/// `RequestContext` into the context before rendering (see `ssr.rs`).
+/// Root component. Renders the `Router<Route>` inside a hydration marker div.
+/// The `data-hydrated` attribute flips from "false" (SSR) to "true" once the
+/// WASM client mounts and runs the effect — Playwright E2E waits on this.
 #[component]
 pub fn App() -> Element {
-    rsx! { Router::<Route> {} }
+    let mut hydrated = use_signal(|| false);
+    use_effect(move || {
+        hydrated.set(true);
+    });
+    let value = if hydrated() { "true" } else { "false" };
+    rsx! {
+        div { id: "app-root", "data-hydrated": "{value}",
+            Router::<Route> {}
+        }
+    }
 }
