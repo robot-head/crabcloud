@@ -50,10 +50,20 @@ pub fn load(base: &Path, cli_overrides: &[(&str, &str)]) -> Result<FileConfig, L
 
     // CRABCLOUD_* env vars override file values. Dotted keys (overwrite.cli.url) are
     // supported via Env::raw().split("__") — i.e., CRABCLOUD_OVERWRITE__CLI__URL.
-    // CRABCLOUD_CONFIG is reserved for the clap config-path flag and must be ignored
-    // here, otherwise figment would try to apply it as a config field and fail under
-    // deny_unknown_fields.
-    fig = fig.merge(Env::prefixed("CRABCLOUD_").split("__").ignore(&["CONFIG"]));
+    // Some CRABCLOUD_* vars are NOT config fields and must be ignored, otherwise
+    // figment fails under deny_unknown_fields:
+    //   CONFIG    — reserved for the clap config-path flag
+    //   GIT_SHA   — emitted by crabcloud-server's build.rs via cargo:rustc-env;
+    //               propagates into the runtime env when launched via `cargo run`
+    //               (e.g. our CI's `cargo run --release -p crabcloud-server -- migrate`).
+    //   TEST_MYSQL_URL, TEST_POSTGRES_URL, E2E_URL — reserved for test/CI tooling.
+    fig = fig.merge(Env::prefixed("CRABCLOUD_").split("__").ignore(&[
+        "CONFIG",
+        "GIT_SHA",
+        "TEST_MYSQL_URL",
+        "TEST_POSTGRES_URL",
+        "E2E_URL",
+    ]));
 
     // CLI overrides win last.
     for (key, value) in cli_overrides {
@@ -155,6 +165,35 @@ trusted_domains = ["localhost"]
         let result = load(&path, &[]);
         std::env::remove_var("CRABCLOUD_CONFIG");
         let cfg = result.unwrap();
+        assert_eq!(cfg.instanceid, "abc123");
+    }
+
+    #[test]
+    fn build_script_env_vars_are_ignored_by_loader() {
+        // crabcloud-server's build.rs emits cargo:rustc-env=CRABCLOUD_GIT_SHA=...
+        // which propagates into the runtime env under `cargo run` (CI's e2e path).
+        // Figment would reject it under deny_unknown_fields without the ignore list.
+        for (k, v) in [
+            ("CRABCLOUD_GIT_SHA", "deadbeef"),
+            ("CRABCLOUD_TEST_MYSQL_URL", "mysql://x"),
+            ("CRABCLOUD_TEST_POSTGRES_URL", "postgres://x"),
+            ("CRABCLOUD_E2E_URL", "http://localhost:8080"),
+        ] {
+            std::env::set_var(k, v);
+        }
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        fs::write(&path, MINIMAL_TOML).unwrap();
+        let result = load(&path, &[]);
+        for k in [
+            "CRABCLOUD_GIT_SHA",
+            "CRABCLOUD_TEST_MYSQL_URL",
+            "CRABCLOUD_TEST_POSTGRES_URL",
+            "CRABCLOUD_E2E_URL",
+        ] {
+            std::env::remove_var(k);
+        }
+        let cfg = result.expect("loader must ignore build-script + CI env vars");
         assert_eq!(cfg.instanceid, "abc123");
     }
 }

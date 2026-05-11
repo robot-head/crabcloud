@@ -14,6 +14,14 @@ use std::rc::Rc;
 /// Standard `<!DOCTYPE html>` prefix the handler prepends to the SSR document.
 pub const HTML_DOCTYPE: &str = "<!DOCTYPE html>\n";
 
+/// The `<script>` tag dx 0.7 injects into its generated `index.html` to load
+/// the WASM bundle, extracted at build time by `build.rs`. dx 0.7 hashes the
+/// bundle filename in release mode, so a hard-coded path no longer works.
+/// Empty if `dx build --release --platform web` hasn't been run yet (e.g.
+/// fresh checkout running unit tests) — SSR handlers still produce valid
+/// HTML in that case, just without client hydration.
+const WASM_SCRIPT_TAG: &str = include_str!(concat!(env!("OUT_DIR"), "/wasm_script_tag.txt"));
+
 /// Render the `<head>` fragment for the SSR shell: meta tags, CSS link, CSRF
 /// `requesttoken` meta, the `__dx_ctx` hydration script, and the WASM module
 /// script tag.
@@ -28,10 +36,10 @@ pub fn render_head_html(ctx: &RequestContext) -> String {
         html_escape(&ctx.request_token)
     ));
     out.push_str(&render_hydration_script(ctx));
-    // The WASM client bundle. dx places it at /assets/dioxus/<name>.js by
-    // default; we mount the assets root at /assets/ so this path resolves
-    // to target/dx/.../public/dioxus/<name>.js.
-    out.push_str("<script type=\"module\" src=\"/assets/dioxus/crabcloud-ui.js\" defer></script>");
+    // dx 0.7's hashed-bundle script tag, spliced in verbatim from index.html.
+    // dx bakes the `/assets/` server base path into the `src` URL, which
+    // matches where the asset handler is mounted.
+    out.push_str(WASM_SCRIPT_TAG);
     out
 }
 
@@ -48,7 +56,14 @@ pub fn render_app_html(ctx: RequestContext, path: &str) -> String {
         },
     );
     vdom.rebuild_in_place();
-    dioxus_ssr::render(&vdom)
+    // `pre_render` (vs plain `render`) is what emits `data-node-hydration`
+    // markers on every element. The WASM client's `dioxus_web` runtime reads
+    // them on launch to map the existing DOM tree back to its virtual-DOM
+    // nodes; without them, hydration silently no-ops and `use_effect`s never
+    // fire — so e.g. our `App` component's `data-hydrated` signal stays
+    // stuck at `"false"`. This is the dx 0.7 split that bit us after the
+    // Dioxus 0.6 → 0.7 upgrade.
+    dioxus_ssr::pre_render(&vdom)
 }
 
 #[component]

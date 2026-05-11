@@ -54,9 +54,15 @@ test.describe("Crabcloud SSR + hydration", () => {
         );
     });
 
-    test("404 path returns 404 status", async ({ page }) => {
+    test("404 path returns 404 status with rendered NotFound page", async ({ page }) => {
         const response = await page.goto("/this/does/not/exist");
         expect(response!.status()).toBe(404);
-        await expect(page.locator("body")).toContainText("Not Found");
+        // Assert against the SSR response body (what crawlers see) rather than
+        // the live DOM: post-mount, the WASM client wipes `#main` before
+        // re-rendering, so the DOM state during retry-loop sampling depends on
+        // dx-router's client-side catchall resolution — exercised separately
+        // in `crabcloud_ui::ssr::resolve_tests::unknown_path_resolves_to_not_found`.
+        const html = await response!.text();
+        expect(html).toContain("404 — Not Found");
     });
 });

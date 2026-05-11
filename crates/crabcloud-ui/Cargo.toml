@@ -28,8 +28,19 @@ axum.workspace = true
 dioxus-ssr.workspace = true
 
 # Browser WASM — only compile when targeting wasm32.
+#
+# dioxus-web's `hydrate` feature is OFF by default: enabling it forces the
+# launch loop into the hydration path even when `Config::hydrate(false)` is
+# passed at runtime (`should_hydrate = config.hydrate || cfg!(feature = "hydrate")`).
+# The hydration path requires a base64 blob in
+# `window.initial_dioxus_hydration_data` that only dx 0.7's *fullstack*
+# server pipeline produces, so with the feature on the WASM bundle's first
+# call is `atob(undefined)` — JS-panicking before any virtual-DOM work runs.
+# We render via `dioxus_ssr::pre_render` and then let `dioxus_web` plainly
+# rebuild the same tree on top of `#main`; the fullstack migration that
+# unlocks true hydration is tracked separately.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-dioxus-web = { workspace = true, features = ["hydrate"] }
+dioxus-web.workspace = true
 console_error_panic_hook.workspace = true
 web-sys.workspace = true
 
