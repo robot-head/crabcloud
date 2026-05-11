@@ -6,5 +6,6 @@ mod memory;
 mod trait_def;
 mod typed;
 
-// `MemoryCache` is re-exported in Task 2; `TypedCache` in Task 3.
+pub use memory::MemoryCache;
 pub use trait_def::{Cache, CacheError, CacheResult};
+// `TypedCache` is re-exported in Task 3.
