@@ -43,11 +43,20 @@ jobs:
         # a no-op stub bin (the real server is `crabcloud-server`).
         working-directory: crates/crabcloud-ui
         run: dx build --release --platform web
+      - name: Inspect dx output
+        run: |
+          echo "=== files under target/dx ==="
+          find target/dx -maxdepth 6 -type f -not -path "*captured-args*" | head -40
+          echo "=== release/web/public contents ==="
+          ls -la target/dx/crabcloud-ui/release/web/public/ 2>/dev/null || echo "(missing)"
+          echo "=== index.html head ==="
+          head -40 target/dx/crabcloud-ui/release/web/public/index.html 2>/dev/null || echo "(no index.html)"
       - name: Upload built bundle
         uses: actions/upload-artifact@v4
         with:
           name: dx-public
           path: target/dx/crabcloud-ui/release/web/public
+          if-no-files-found: error
 
   test-sqlite:
     runs-on: ubuntu-latest
