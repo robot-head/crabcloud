@@ -195,6 +195,18 @@ jobs:
           done
           echo "Server did not become ready"
           exit 1
+      - name: Sanity-check served HTML + bundle
+        run: |
+          set -x
+          curl -s -o /tmp/index.html -w "status=%{http_code}\n" http://127.0.0.1:18765/
+          head -100 /tmp/index.html || true
+          echo "=== fetched assets (referenced by index.html) ==="
+          grep -oE 'src="[^"]+"|href="[^"]+"' /tmp/index.html | head -10 || true
+          echo "=== status of wasm-bindgen glue (first <script src>) ==="
+          first_script=$(grep -oE '<script[^>]+src="[^"]+"' /tmp/index.html | head -1 | grep -oE 'src="[^"]+"' | sed 's/src="//;s/"//')
+          if [ -n "$first_script" ]; then
+            curl -s -o /dev/null -w "asset $first_script status=%{http_code}\n" "http://127.0.0.1:18765$first_script"
+          fi
       - name: Run Playwright tests
         working-directory: e2e
         env:
