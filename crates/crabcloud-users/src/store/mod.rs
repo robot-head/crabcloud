@@ -1,6 +1,7 @@
 //! Backend traits. SQL implementation in `sql.rs`; future LDAP/SAML backends
 //! plug in via the same traits.
 
+pub mod bootstrap_shim;
 pub mod sql;
 
 use crate::error::UsersResult;

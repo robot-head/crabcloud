@@ -9,6 +9,7 @@ anyhow.workspace = true
 async-trait.workspace = true
 bcrypt.workspace = true
 crabcloud-cache.workspace = true
+crabcloud-config.workspace = true
 crabcloud-db.workspace = true
 email_address.workspace = true
 serde.workspace = true
