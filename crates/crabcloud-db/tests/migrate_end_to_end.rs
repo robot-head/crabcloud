@@ -91,7 +91,7 @@ async fn migrate_sqlite() {
     let mut runner = MigrationRunner::new(&pool, &cfg.dbtableprefix);
     runner.register(core_set());
     let applied = runner.run().await.unwrap();
-    assert_eq!(applied, 1);
+    assert_eq!(applied, 2);
 
     assert_appconfig_table_usable(&pool).await;
     pool.close().await;
@@ -107,18 +107,24 @@ async fn migrate_mysql() {
 
     // Tests may share a database; drop our migration tracking + appconfig first.
     if let DbPool::MySql(p) = &pool {
-        let _ = sqlx::query("DROP TABLE IF EXISTS oc_appconfig")
-            .execute(p)
-            .await;
-        let _ = sqlx::query("DROP TABLE IF EXISTS oc_migrations")
-            .execute(p)
-            .await;
+        for table in [
+            "oc_preferences",
+            "oc_group_user",
+            "oc_groups",
+            "oc_users",
+            "oc_appconfig",
+            "oc_migrations",
+        ] {
+            let _ = sqlx::query(&format!("DROP TABLE IF EXISTS {table}"))
+                .execute(p)
+                .await;
+        }
     }
 
     let mut runner = MigrationRunner::new(&pool, &cfg.dbtableprefix);
     runner.register(core_set());
     let applied = runner.run().await.unwrap();
-    assert_eq!(applied, 1);
+    assert_eq!(applied, 2);
 
     assert_appconfig_table_usable(&pool).await;
     pool.close().await;
@@ -133,18 +139,24 @@ async fn migrate_postgres() {
     let pool = DbPool::connect(&cfg).await.unwrap();
 
     if let DbPool::Postgres(p) = &pool {
-        let _ = sqlx::query("DROP TABLE IF EXISTS oc_appconfig")
-            .execute(p)
-            .await;
-        let _ = sqlx::query("DROP TABLE IF EXISTS oc_migrations")
-            .execute(p)
-            .await;
+        for table in [
+            "oc_preferences",
+            "oc_group_user",
+            "oc_groups",
+            "oc_users",
+            "oc_appconfig",
+            "oc_migrations",
+        ] {
+            let _ = sqlx::query(&format!("DROP TABLE IF EXISTS {table}"))
+                .execute(p)
+                .await;
+        }
     }
 
     let mut runner = MigrationRunner::new(&pool, &cfg.dbtableprefix);
     runner.register(core_set());
     let applied = runner.run().await.unwrap();
-    assert_eq!(applied, 1);
+    assert_eq!(applied, 2);
 
     assert_appconfig_table_usable(&pool).await;
     pool.close().await;

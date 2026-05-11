@@ -9,6 +9,7 @@ members = [
     "crates/crabcloud-ocs",
     "crates/crabcloud-server",
     "crates/crabcloud-ui",
+    "crates/crabcloud-users",
     "xtask",
 ]
 resolver = "2"
@@ -73,6 +74,10 @@ crabcloud-http = { path = "crates/crabcloud-http" }
 crabcloud-i18n = { path = "crates/crabcloud-i18n" }
 crabcloud-ocs = { path = "crates/crabcloud-ocs" }
 crabcloud-ui = { path = "crates/crabcloud-ui" }
+crabcloud-users = { path = "crates/crabcloud-users" }
+email_address = "0.2"
+rpassword = "7"
+assert_cmd = "2"
 
 dioxus = { version = "0.7", default-features = false, features = ["macro", "html", "signals", "hooks"] }
 dioxus-history = "0.7"
