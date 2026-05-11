@@ -119,7 +119,7 @@ jobs:
           path: target/dx/crabcloud-ui-web/release/web/public
       - name: Build release server
         run: cargo build --release -p crabcloud-server
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: "20"
           cache: "npm"
