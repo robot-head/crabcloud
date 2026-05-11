@@ -509,6 +509,7 @@ dependencies = [
  "crabcloud-db",
  "crabcloud-i18n",
  "crabcloud-ocs",
+ "crabcloud-users",
  "sqlx",
  "tempfile",
  "thiserror",

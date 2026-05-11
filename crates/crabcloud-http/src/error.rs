@@ -67,6 +67,13 @@ impl OcsError {
             | CoreError::Db(_)
             | CoreError::Cache(_)
             | CoreError::Internal(_) => OcsStatus::ServerError,
+            CoreError::Users(_) => match self.error.http_status() {
+                401 => OcsStatus::Unauthorized,
+                403 => OcsStatus::Forbidden,
+                404 => OcsStatus::NotFound,
+                400 | 409 => OcsStatus::BadRequest,
+                _ => OcsStatus::ServerError,
+            },
         }
     }
 }
