@@ -50,10 +50,16 @@ pub fn load(base: &Path, cli_overrides: &[(&str, &str)]) -> Result<FileConfig, L
 
     // CRABCLOUD_* env vars override file values. Dotted keys (overwrite.cli.url) are
     // supported via Env::raw().split("__") — i.e., CRABCLOUD_OVERWRITE__CLI__URL.
-    // CRABCLOUD_CONFIG is reserved for the clap config-path flag and must be ignored
-    // here, otherwise figment would try to apply it as a config field and fail under
-    // deny_unknown_fields.
-    fig = fig.merge(Env::prefixed("CRABCLOUD_").split("__").ignore(&["CONFIG"]));
+    // CRABCLOUD_CONFIG is reserved for the clap config-path flag.
+    // CRABCLOUD_GIT_SHA is emitted by crabcloud-server's build.rs as a
+    // compile-time `cargo:rustc-env=…`; `cargo run` leaks it into the process
+    // environment, which would otherwise trip `deny_unknown_fields` here.
+    // Both must be ignored so figment doesn't try to apply them as config fields.
+    fig = fig.merge(
+        Env::prefixed("CRABCLOUD_")
+            .split("__")
+            .ignore(&["CONFIG", "GIT_SHA"]),
+    );
 
     // CLI overrides win last.
     for (key, value) in cli_overrides {
