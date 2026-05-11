@@ -20,6 +20,6 @@ pub mod session;
 
 pub use csrf::CsrfLayer;
 pub use error::{ApiError, OcsError};
-pub use extractors::auth::{AuthMethod, AuthenticatedUser, OptionalUser};
+pub use extractors::auth::{AdminUser, AuthMethod, AuthenticatedUser, OptionalUser};
 pub use router::build_router;
 pub use session::{Session, SessionHandle, SessionId, SessionLayer, SessionStore};
