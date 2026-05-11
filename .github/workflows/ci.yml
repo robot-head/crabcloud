@@ -136,9 +136,11 @@ jobs:
           HASH=$(python3 -c "import bcrypt; print(bcrypt.hashpw(b'hunter2', bcrypt.gensalt(12)).decode())")
           echo "hash=$HASH" >> "$GITHUB_OUTPUT"
       - name: Write fixture config
+        env:
+          BCRYPT_HASH: ${{ steps.bcrypt.outputs.hash }}
         run: |
           mkdir -p config
-          cat > config/e2e.toml <<EOF
+          cat > config/e2e.toml <<'EOF'
           instanceid     = "e2e"
           secret         = "a-32-byte-or-longer-secret-key!"
           passwordsalt   = "ps"
@@ -146,9 +148,9 @@ jobs:
           version        = "31.0.0.0"
           versionstring  = "31.0.0"
           dbtype         = "sqlite"
-          dbname         = "$GITHUB_WORKSPACE/e2e.db"
+          dbname         = "__WS__/e2e.db"
           dbtableprefix  = "oc_"
-          datadirectory  = "$GITHUB_WORKSPACE/data"
+          datadirectory  = "__WS__/data"
           trusted_domains = ["localhost", "127.0.0.1"]
           loglevel       = "info"
           bind_address   = "127.0.0.1:18765"
@@ -159,13 +161,17 @@ jobs:
 
           [bootstrap_admin]
           username      = "admin"
-          password_hash = "${{ steps.bcrypt.outputs.hash }}"
+          password_hash = "__HASH__"
           EOF
+          # Substitute placeholders without letting bash touch the values.
+          sed -i "s|__WS__|$GITHUB_WORKSPACE|g" config/e2e.toml
+          # Use python (already available + has bcrypt installed) so we don't have to escape $ for sed.
+          python3 -c "import os, pathlib; p = pathlib.Path('config/e2e.toml'); p.write_text(p.read_text().replace('__HASH__', os.environ['BCRYPT_HASH']))"
       - name: Migrate
         run: cargo run --release -p rustcloud-server -- --config config/e2e.toml migrate
       - name: Start server
         run: |
-          cargo run --release -p rustcloud-server -- --config config/e2e.toml serve &
+          ./target/release/rustcloud-server --config config/e2e.toml serve &
           echo "SERVER_PID=$!" >> "$GITHUB_ENV"
           # Wait for the server to become ready.
           for i in $(seq 1 30); do
