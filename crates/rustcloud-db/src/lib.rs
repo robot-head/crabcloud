@@ -8,4 +8,5 @@ mod pool;
 pub mod migrate;
 
 pub use error::{DbError, DbResult};
+pub use migrate::{Migration, MigrationRunner, MigrationSet};
 pub use pool::DbPool;
