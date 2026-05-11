@@ -1,6 +1,8 @@
 [application]
 name = "crabcloud-ui"
-default_platform = "web"
+# Dioxus 0.7 fullstack: one crate compiles to both server (native) and web
+# (wasm32). `dx serve` / `dx build --platform fullstack` orchestrates both.
+default_platform = "fullstack"
 out_dir = "public"
 
 [web.app]

@@ -1,5 +1,8 @@
-//! Root `App` component + Dioxus `Route` enum. Provides `RequestContext` via
-//! context so any descendant component can call `use_context::<RequestContext>()`.
+//! Root `App` component + Dioxus `Route` enum. The App pulls per-request
+//! data from the server via `use_server_cached` (the closure runs only on the
+//! server; the result is replayed into the hydration payload), exposes it to
+//! descendants through `use_context`, and emits `<meta name="requesttoken">`
+//! so legacy client code that reads the CSRF token from the DOM keeps working.
 
 use crate::context::RequestContext;
 use crate::pages::{home::Home, login::Login, not_found::NotFound};
@@ -30,13 +33,13 @@ pub enum Route {
 #[component]
 pub fn HomeRoute() -> Element {
     let ctx = use_context::<RequestContext>();
-    rsx! { Home { ctx: ctx.clone() } }
+    rsx! { Home { ctx } }
 }
 
 #[component]
 pub fn LoginRoute() -> Element {
     let ctx = use_context::<RequestContext>();
-    rsx! { Login { ctx: ctx.clone() } }
+    rsx! { Login { ctx } }
 }
 
 #[component]
@@ -45,17 +48,33 @@ pub fn NotFoundRoute(segments: Vec<String>) -> Element {
     rsx! { NotFound {} }
 }
 
-/// Root component. Renders the `Router<Route>` inside a hydration marker div.
-/// The `data-hydrated` attribute flips from "false" (SSR) to "true" once the
-/// WASM client mounts and runs the effect — Playwright E2E waits on this.
+/// Root component. Captures the per-request context on the server, replays it
+/// on the client via the hydration payload, and provides it to descendants.
+/// Emits `<meta name="requesttoken">` and the `data-hydrated` marker the
+/// Playwright suite waits on.
 #[component]
 pub fn App() -> Element {
+    let ctx = use_server_cached(|| {
+        #[cfg(feature = "server")]
+        {
+            crate::server::current_request_context()
+        }
+        #[cfg(not(feature = "server"))]
+        {
+            RequestContext::anonymous("en", "")
+        }
+    });
+    use_context_provider(|| ctx.clone());
+
     let mut hydrated = use_signal(|| false);
     use_effect(move || {
         hydrated.set(true);
     });
     let value = if hydrated() { "true" } else { "false" };
+    let request_token = ctx.request_token.clone();
+
     rsx! {
+        document::Meta { name: "requesttoken", content: request_token }
         div { id: "app-root", "data-hydrated": "{value}",
             Router::<Route> {}
         }

@@ -70,7 +70,7 @@ mod tests {
             .build()
             .await
             .unwrap();
-        let app = build_router(state);
+        let app = build_router(state, axum::Router::new());
 
         let req = Request::builder()
             .uri("/ocs/v2.php/cloud/capabilities")
@@ -103,7 +103,7 @@ mod tests {
             .build()
             .await
             .unwrap();
-        let app = build_router(state);
+        let app = build_router(state, axum::Router::new());
 
         let req = Request::builder()
             .uri("/ocs/v2.php/cloud/capabilities?format=json")

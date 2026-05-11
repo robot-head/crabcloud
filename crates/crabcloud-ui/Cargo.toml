@@ -3,46 +3,40 @@ name = "crabcloud-ui"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-build = "build.rs"
 
 [lib]
 crate-type = ["rlib"]
 
-# A native `[[bin]]` target for the WASM client. `dx` compiles this against
-# `wasm32-unknown-unknown` for the browser.
-[[bin]]
-name = "crabcloud-ui-web"
-path = "src/main.rs"
+[features]
+# Sub-features are mutually exclusive and selected by the consumer:
+# - `dx` (or `cargo build --target wasm32-...`) enables `web` for the WASM client.
+# - Native server binaries that link `crabcloud-ui` enable `server`.
+default = []
+server = [
+    "dioxus/server",
+    "dep:axum",
+    "dep:bcrypt",
+    "dep:crabcloud-core",
+    "dep:crabcloud-http",
+    "dep:crabcloud-i18n",
+]
+web = ["dioxus/web"]
 
 [dependencies]
-dioxus = { workspace = true, features = ["router"] }
-dioxus-history.workspace = true
-dioxus-router.workspace = true
-rust-embed.workspace = true
+dioxus = { workspace = true }
 serde.workspace = true
-serde_json.workspace = true
 
-# Server-side rendering + asset serving — only compile on non-wasm targets.
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-axum.workspace = true
-dioxus-ssr.workspace = true
-
-# Browser WASM — only compile when targeting wasm32.
-[target.'cfg(target_arch = "wasm32")'.dependencies]
-dioxus-web = { workspace = true, features = ["hydrate"] }
-console_error_panic_hook.workspace = true
-web-sys.workspace = true
+# Server-only deps used inside `#[server]` function bodies and the server-side
+# context bridge. Gated behind the `server` feature so the WASM build never
+# sees them.
+axum = { workspace = true, optional = true }
+bcrypt = { workspace = true, optional = true }
+crabcloud-core = { workspace = true, optional = true }
+crabcloud-http = { workspace = true, optional = true }
+crabcloud-i18n = { workspace = true, optional = true }
 
 [dev-dependencies]
-crabcloud-cache.workspace = true
-crabcloud-config = { workspace = true, features = ["test-support"] }
-crabcloud-core.workspace = true
-crabcloud-db.workspace = true
-crabcloud-http.workspace = true
-secrecy = { workspace = true, features = ["serde"] }
-tempfile.workspace = true
-tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
-tower = { workspace = true, features = ["util"] }
+serde_json.workspace = true
 
 [lints]
 workspace = true

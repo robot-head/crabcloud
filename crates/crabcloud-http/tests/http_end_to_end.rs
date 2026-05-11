@@ -1,48 +1,33 @@
-//! End-to-end Phase 3 HTTP flow: /status.php → capabilities → login → use session.
+//! End-to-end HTTP flow for the OCS surface and the shared middleware stack.
+//!
+//! `/status.php` and `/index.php/login` migrated to Dioxus `#[server]`
+//! functions in `crabcloud-ui` and are now exercised by the Playwright suite;
+//! this test focuses on what `build_router` still serves directly (the OCS
+//! REST routes) plus the shared headers/security stack.
 
 #![allow(unused_crate_dependencies)]
 
 use axum::body::{to_bytes, Body};
 use axum::http::{Request, StatusCode};
-use crabcloud_config::test_support::sqlite_config_with_admin;
+use axum::Router;
+use crabcloud_config::test_support::minimal_sqlite_config;
 use crabcloud_core::AppStateBuilder;
 use crabcloud_http::build_router;
 use tempfile::tempdir;
 use tower::ServiceExt;
 
 #[tokio::test]
-async fn phase3_full_flow() {
+async fn ocs_capabilities_and_security_headers() {
     let dir = tempdir().unwrap();
-    let hash = bcrypt::hash("hunter2", bcrypt::DEFAULT_COST).unwrap();
-    let state = AppStateBuilder::new(sqlite_config_with_admin(
-        dir.path().join("e2e.db"),
-        "admin",
-        &hash,
-    ))
-    .with_core_capabilities()
-    .build()
-    .await
-    .unwrap();
-    let app = build_router(state);
-
-    // 1. status.php returns Nextcloud shape.
-    let resp = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .uri("/status.php")
-                .body(Body::empty())
-                .unwrap(),
-        )
+    let state = AppStateBuilder::new(minimal_sqlite_config(dir.path().join("e2e.db")))
+        .with_core_capabilities()
+        .build()
         .await
         .unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
-    let body = to_bytes(resp.into_body(), 8192).await.unwrap();
-    let parsed: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    assert_eq!(parsed["productname"], "Nextcloud");
-    assert_eq!(parsed["version"], "31.0.0.0");
+    // `build_router` now expects a Dioxus fullstack router to merge with;
+    // for OCS-only tests an empty router stands in.
+    let app = build_router(state, Router::new());
 
-    // 2. capabilities returns the core namespace.
     let resp = app
         .clone()
         .oneshot(
@@ -64,65 +49,12 @@ async fn phase3_full_flow() {
     );
     assert_eq!(parsed["ocs"]["data"]["version"]["major"], 31);
 
-    // 3. login with correct creds → 303 + Set-Cookie.
+    // Security headers attached by the shared middleware stack.
     let resp = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/index.php/login")
-                .header("content-type", "application/x-www-form-urlencoded")
-                .body(Body::from("username=admin&password=hunter2"))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), StatusCode::SEE_OTHER);
-    let setc = resp
-        .headers()
-        .get("set-cookie")
-        .unwrap()
-        .to_str()
-        .unwrap()
-        .to_string();
-    let cookie = setc.split(';').next().unwrap().to_string();
-    assert!(cookie.starts_with("oc_sessionPassphrase="));
-
-    // 4. login with wrong creds → 401.
-    let resp = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/index.php/login")
-                .header("content-type", "application/x-www-form-urlencoded")
-                .body(Body::from("username=admin&password=WRONG"))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
-
-    // 5. capabilities again with cookie → still 200 (auth-optional route).
-    let resp = app
-        .clone()
         .oneshot(
             Request::builder()
                 .uri("/ocs/v2.php/cloud/capabilities?format=json")
                 .header("ocs-apirequest", "true")
-                .header("cookie", &cookie)
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
-
-    // 6. Security headers present on status.php.
-    let resp = app
-        .oneshot(
-            Request::builder()
-                .uri("/status.php")
                 .body(Body::empty())
                 .unwrap(),
         )

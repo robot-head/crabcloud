@@ -22,7 +22,7 @@ enum Cmd {
     Up,
     /// Stop the dev docker compose stack.
     Down,
-    /// Build WASM client (`dx build --release`) then server (`cargo build --release`).
+    /// Build the Dioxus fullstack bundle (server binary + WASM client + assets).
     Build,
     /// Stub — implemented in a later phase.
     Dev,
@@ -66,13 +66,17 @@ fn check_all() -> Result<()> {
 }
 
 fn build_all() -> Result<()> {
-    // 1. Build the WASM client + bundle assets.
+    // Dioxus fullstack: a single `dx build` invocation produces the server
+    // binary, the WASM client bundle, and the generated index.html. The
+    // legacy two-step (dx → cargo) flow doesn't apply once SSR runs through
+    // `dioxus::server::router(App)` instead of rust-embed.
     run_in_dir(
         "crates/crabcloud-ui",
         "dx",
-        &["build", "--release", "--platform", "web"],
+        &["build", "--release", "--platform", "fullstack"],
     )?;
-    // 2. Build the server binary (which embeds the assets via rust-embed).
+    // Server binary builds standalone too, for non-dx deploys (uses the
+    // bundle dx produced above for asset serving at runtime).
     run("cargo", &["build", "--release", "-p", "crabcloud-server"])?;
     Ok(())
 }
