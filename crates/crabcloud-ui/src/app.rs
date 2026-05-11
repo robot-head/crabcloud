@@ -45,6 +45,14 @@ pub fn LoginRoute() -> Element {
 #[component]
 pub fn NotFoundRoute(segments: Vec<String>) -> Element {
     let _ = segments;
+    // Tell the fullstack runtime to set the HTTP status to 404 on the SSR
+    // response. Without this the SSR path always returns 200 for the
+    // catch-all route, breaking Nextcloud-compatible 404 detection.
+    #[cfg(feature = "server")]
+    {
+        use dioxus::fullstack::FullstackContext;
+        FullstackContext::commit_http_status(axum::http::StatusCode::NOT_FOUND, None);
+    }
     rsx! { NotFound {} }
 }
 
