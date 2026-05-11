@@ -52,8 +52,14 @@ pub fn load(base: &Path, cli_overrides: &[(&str, &str)]) -> Result<FileConfig, L
     // supported via Env::raw().split("__") — i.e., CRABCLOUD_OVERWRITE__CLI__URL.
     // CRABCLOUD_CONFIG is reserved for the clap config-path flag and must be ignored
     // here, otherwise figment would try to apply it as a config field and fail under
-    // deny_unknown_fields.
-    fig = fig.merge(Env::prefixed("CRABCLOUD_").split("__").ignore(&["CONFIG"]));
+    // deny_unknown_fields. CRABCLOUD_GIT_SHA is emitted by the server's build.rs via
+    // `cargo:rustc-env` and can leak into the runtime environment; it is not a config
+    // field. CRABCLOUD_TEST_* and CRABCLOUD_E2E_* are reserved for test/CI tooling.
+    fig = fig.merge(
+        Env::prefixed("CRABCLOUD_")
+            .split("__")
+            .ignore(&["CONFIG", "GIT_SHA", "TEST_MYSQL_URL", "TEST_POSTGRES_URL", "E2E_URL"]),
+    );
 
     // CLI overrides win last.
     for (key, value) in cli_overrides {
