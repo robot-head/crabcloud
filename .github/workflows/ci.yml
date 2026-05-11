@@ -44,7 +44,7 @@ jobs:
         working-directory: crates/crabcloud-ui
         run: dx build --release --platform web
       - name: Upload built bundle
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v8
         with:
           name: dx-public
           path: target/dx/crabcloud-ui/release/web/public
