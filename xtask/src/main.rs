@@ -13,9 +13,13 @@ struct Cli {
 enum Cmd {
     /// Run `cargo fmt --check && cargo clippy && cargo test`.
     CheckAll,
-    /// Stub — implemented in a later task.
+    /// Start MySQL + Postgres via docker compose.
+    Up,
+    /// Stop the dev docker compose stack.
+    Down,
+    /// Stub — implemented in a later phase.
     Build,
-    /// Stub — implemented in a later task.
+    /// Stub — implemented in a later phase.
     Dev,
     /// Stub — implemented in a later phase (no query! macros yet).
     Prepare,
@@ -25,10 +29,18 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
         Cmd::CheckAll => check_all(),
+        Cmd::Up => compose(&["up", "-d", "--wait"]),
+        Cmd::Down => compose(&["down", "-v"]),
         Cmd::Build => bail!("`build` is implemented in a later phase"),
         Cmd::Dev => bail!("`dev` is implemented in a later phase"),
         Cmd::Prepare => bail!("`prepare` is implemented in a later phase"),
     }
+}
+
+fn compose(args: &[&str]) -> Result<()> {
+    let mut all = vec!["compose", "-f", "dev/docker-compose.yml"];
+    all.extend_from_slice(args);
+    run("docker", &all)
 }
 
 fn check_all() -> Result<()> {
