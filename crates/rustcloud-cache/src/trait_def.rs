@@ -3,12 +3,11 @@
 use async_trait::async_trait;
 use std::time::Duration;
 
-/// Cache errors. Most are I/O-shaped; future backends (Redis) may surface
-/// transport errors. The memory backend returns only `CasMismatch`.
+/// Cache errors. Future backends (Redis, Memcached) may surface transport
+/// errors; the memory backend only produces `Io` for I/O-shaped failures
+/// such as a value that can't be parsed during `incr`.
 #[derive(Debug, thiserror::Error)]
 pub enum CacheError {
-    #[error("compare-and-swap failed: value did not match")]
-    CasMismatch,
     #[error("cache I/O error: {0}")]
     Io(String),
 }
@@ -30,6 +29,10 @@ pub trait Cache: Send + Sync {
 
     /// Atomic numeric increment. Returns the new value. If the key is absent,
     /// treats it as `0` and writes `by` (or sets to `by` for negative `by`).
+    ///
+    /// Saturates at `i64::MAX` / `i64::MIN`; do not rely on `incr` for exact
+    /// counters near those bounds. Backends are not required to surface
+    /// overflow; the memory backend silently caps.
     async fn incr(&self, key: &str, by: i64) -> CacheResult<i64>;
 
     /// Compare-and-swap. Sets `new` only if the current value equals `old`.

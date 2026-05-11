@@ -18,6 +18,12 @@ pub struct TypedCache<T> {
 }
 
 impl<T> TypedCache<T> {
+    /// Construct a typed view with the given key `prefix`.
+    ///
+    /// `prefix` is concatenated with each key as-is. Include any separator
+    /// you want in the prefix string (`"users:"`, `"caps/"`, etc.) — callers
+    /// that pass `"users"` and key `"alice"` will collide with `"user"` +
+    /// `"salice"`.
     pub fn new(inner: Arc<dyn Cache>, prefix: impl Into<String>) -> Self {
         Self {
             inner,
