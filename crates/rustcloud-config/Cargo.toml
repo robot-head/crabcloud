@@ -5,6 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+figment = { workspace = true, features = ["toml", "env"] }
 secrecy.workspace = true
 serde.workspace = true
 thiserror.workspace = true

@@ -1,0 +1,38 @@
+# Rustcloud configuration. Copy to config/config.toml and edit.
+# Most keys match Nextcloud's config.php semantically; the file format is TOML.
+
+instanceid     = "REPLACE_WITH_RANDOM_STRING"
+secret         = "REPLACE_WITH_RANDOM_32_BYTES_HEX"
+passwordsalt   = "REPLACE_WITH_RANDOM_32_BYTES_HEX"
+
+installed      = false
+version        = "31.0.0.0"
+versionstring  = "31.0.0"
+
+dbtype         = "sqlite"
+dbname         = "rustcloud.db"
+dbtableprefix  = "oc_"
+# For mysql/pgsql, set these and remove the comment characters:
+# dbhost       = "127.0.0.1"
+# dbport       = 3307
+# dbuser       = "rustcloud"
+# dbpassword   = "rustcloud"
+
+datadirectory  = "./data"
+
+trusted_domains = ["localhost", "127.0.0.1"]
+# trusted_proxies = ["10.0.0.0/8"]
+
+# Logging
+loglevel = "info"
+
+# Rustcloud-specific
+bind_address = "127.0.0.1:8080"
+db_pool_max  = 16
+
+# overwrite.cli.url, overwrite.protocol, overwrite.host are supported via dotted keys:
+# "overwrite.cli.url" = "https://cloud.example.com"
+# "overwrite.protocol" = "https"
+
+[cache]
+backend = "memory"
