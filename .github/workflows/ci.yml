@@ -36,7 +36,7 @@ jobs:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
       - name: Install dioxus-cli
-        run: cargo install dioxus-cli --version "^0.6" --locked
+        run: cargo install dioxus-cli --version "^0.7" --locked
       - name: Build WASM bundle
         working-directory: crates/crabcloud-ui
         run: dx build --release --platform web
