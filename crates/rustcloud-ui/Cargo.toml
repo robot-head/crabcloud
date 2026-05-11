@@ -21,8 +21,6 @@ dioxus-router.workspace = true
 rust-embed.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-thiserror.workspace = true
-tracing.workspace = true
 
 # Server-side rendering + asset serving — only compile on non-wasm targets.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]

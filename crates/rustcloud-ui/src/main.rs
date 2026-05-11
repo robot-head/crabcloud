@@ -1,6 +1,11 @@
 //! WASM browser entry point. `dx build` compiles this against
 //! `wasm32-unknown-unknown` and emits the hydration bundle.
 
+// On non-wasm targets this binary collapses to a single eprintln! so the
+// `[dependencies]` block looks fully unused — they're consumed only by the
+// `#[cfg(target_arch = "wasm32")]` branch above.
+#![allow(unused_crate_dependencies)]
+
 #[cfg(target_arch = "wasm32")]
 mod web {
     use dioxus::prelude::*;

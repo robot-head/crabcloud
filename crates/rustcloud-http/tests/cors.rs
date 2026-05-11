@@ -1,3 +1,5 @@
+#![allow(unused_crate_dependencies)]
+
 use axum::body::Body;
 use axum::http::{Method, Request};
 use rustcloud_config::test_support::minimal_sqlite_config;

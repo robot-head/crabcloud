@@ -4,6 +4,10 @@
 //! `#[ignore]` by default so contributors without Docker aren't blocked. CI runs
 //! `cargo test -- --include-ignored` to enable them.
 
+// Integration tests pull in all the crate's deps even when they only exercise a
+// narrow surface — quiet the workspace `unused_crate_dependencies` lint here.
+#![allow(unused_crate_dependencies)]
+
 use rustcloud_config::test_support::minimal_sqlite_config;
 use rustcloud_config::{DbType, FileConfig};
 use rustcloud_db::{core_set, DbPool, MigrationRunner};

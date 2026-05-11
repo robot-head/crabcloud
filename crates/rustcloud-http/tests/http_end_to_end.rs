@@ -1,5 +1,7 @@
 //! End-to-end Phase 3 HTTP flow: /status.php → capabilities → login → use session.
 
+#![allow(unused_crate_dependencies)]
+
 use axum::body::{to_bytes, Body};
 use axum::http::{Request, StatusCode};
 use rustcloud_config::test_support::sqlite_config_with_admin;

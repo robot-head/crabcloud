@@ -1,5 +1,7 @@
 //! End-to-end assembly proof for `AppStateBuilder`.
 
+#![allow(unused_crate_dependencies)]
+
 use rustcloud_config::test_support::minimal_sqlite_config;
 use rustcloud_core::{AppState, AppStateBuilder};
 use rustcloud_i18n::Locale;

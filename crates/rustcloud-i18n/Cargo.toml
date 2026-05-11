@@ -8,7 +8,6 @@ rust-version.workspace = true
 accept-language.workspace = true
 polib.workspace = true
 thiserror.workspace = true
-tracing.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

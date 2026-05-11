@@ -1,6 +1,8 @@
 //! SSR integration tests. Spin up a real `AppState`, build the full router,
 //! and exercise the UI routes via `tower::ServiceExt::oneshot`.
 
+#![allow(unused_crate_dependencies)]
+
 use axum::body::{to_bytes, Body};
 use axum::http::{Request, StatusCode};
 use rustcloud_config::test_support::sqlite_config_with_admin;

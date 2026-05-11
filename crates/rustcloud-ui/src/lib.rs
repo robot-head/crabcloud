@@ -1,6 +1,11 @@
 //! Rustcloud UI — Dioxus 0.6 application. SSR-first; the WASM client hydrates
 //! the same component tree.
 
+// Integration-test fixtures pull in many sibling crates; their deps appear in
+// `[dev-dependencies]` and surface as `unused_crate_dependencies` for the lib's
+// own test build. Quiet those here so the genuine signal stays visible.
+#![cfg_attr(test, allow(unused_crate_dependencies))]
+
 mod app;
 mod context;
 mod hydration;
