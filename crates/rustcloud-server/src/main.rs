@@ -31,17 +31,20 @@ async fn main() -> Result<()> {
         }
         Cmd::Migrate => {
             let config = rustcloud_config::load(&cli.config, &[])?;
-            info!(dbtype = %config.dbtype.as_str(), "connecting to database");
+            info!(
+                dbtype = %config.dbtype.as_str(),
+                "assembling AppState (this runs migrations)"
+            );
 
-            let pool = rustcloud_db::DbPool::connect(&config).await?;
-            info!(dialect = pool.dialect(), "connected");
-
-            let mut runner = rustcloud_db::MigrationRunner::new(&pool, &config.dbtableprefix);
-            runner.register(rustcloud_db::core_set());
-            let applied = runner.run().await?;
-            info!(applied, "migrations complete");
-
-            pool.close().await;
+            // The builder runs migrations internally; we don't need to call the
+            // MigrationRunner separately. Build, then close the pool and exit.
+            let state = rustcloud_core::AppStateBuilder::new(config).build().await?;
+            info!(
+                dialect = state.pool.dialect(),
+                "AppState ready; closing pool"
+            );
+            state.pool.close().await;
+            info!("migrate complete");
             Ok(())
         }
     }
