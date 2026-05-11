@@ -5,6 +5,7 @@
 //! explicit `endpoint` attributes so external Nextcloud-compatible clients
 //! keep working.
 
+use dioxus::fullstack::get;
 use dioxus::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -23,9 +24,11 @@ pub struct StatusInfo {
     pub extended_support: bool,
 }
 
-/// `GET /status.php` — Nextcloud-compatible probe used by clients to identify
-/// the server. The endpoint URL is fixed so legacy clients keep working.
-#[server(endpoint = "status.php", prefix = "")]
+/// `GET /status.php` — Nextcloud-compatible probe used by clients (and CI
+/// readiness checks) to identify the server. The endpoint URL and HTTP method
+/// are fixed so legacy clients keep working; `#[get]` overrides the
+/// `#[server]` macro's default of POST.
+#[get("/status.php")]
 pub async fn status() -> Result<StatusInfo, ServerFnError> {
     use dioxus::fullstack::FullstackContext;
     let state = FullstackContext::current()
