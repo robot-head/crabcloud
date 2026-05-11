@@ -1,6 +1,6 @@
-# Contributing to Rustcloud
+# Contributing to Crabcloud
 
-Thanks for your interest! Rustcloud is an early-stage Rust port of
+Thanks for your interest! Crabcloud is an early-stage Rust port of
 [Nextcloud server](https://github.com/nextcloud/server) with a Dioxus frontend.
 The platform-core substrate (HTTP, DB, sessions, OCS envelope, SSR UI) is
 nearing completion; per-feature sub-projects (users, storage, WebDAV, sharing,
@@ -32,14 +32,14 @@ cargo xtask check-all
 
 # Start MySQL + Postgres for the multi-dialect db tests
 cargo xtask up
-cargo test -p rustcloud-db --test migrate_end_to_end -- --include-ignored
+cargo test -p crabcloud-db --test migrate_end_to_end -- --include-ignored
 cargo xtask down
 
 # Build the WASM bundle + release server
 cargo xtask build
 
 # Run the server
-cargo run --release -p rustcloud-server -- --config config/config.toml serve
+cargo run --release -p crabcloud-server -- --config config/config.toml serve
 
 # Playwright E2E (requires server already running on :18765)
 cd e2e
@@ -68,5 +68,5 @@ contributed to the change.
 ## Filing issues / PRs
 
 This is an early-stage repo. File issues at
-<https://github.com/robot-head/rustcloud/issues>. Before opening a PR, run
+<https://github.com/robot-head/crabcloud/issues>. Before opening a PR, run
 `cargo xtask check-all` locally; expect CI to also exercise the E2E job.

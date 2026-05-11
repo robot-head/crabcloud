@@ -1,0 +1,19 @@
+[application]
+name = "crabcloud-ui"
+default_platform = "web"
+out_dir = "public"
+
+[web.app]
+title = "Crabcloud"
+base_path = "assets"
+
+[web.watcher]
+reload_html = false
+watch_path = ["src", "assets"]
+
+[web.resource]
+style = ["assets/app.css"]
+script = []
+
+[web.resource.dev]
+script = []

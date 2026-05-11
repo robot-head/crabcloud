@@ -1,0 +1,25 @@
+[package]
+name = "crabcloud-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+crabcloud-cache.workspace = true
+crabcloud-config.workspace = true
+crabcloud-db.workspace = true
+crabcloud-i18n.workspace = true
+crabcloud-ocs.workspace = true
+sqlx.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["sync"] }
+tracing.workspace = true
+
+[dev-dependencies]
+crabcloud-config = { workspace = true, features = ["test-support"] }
+tempfile.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+
+[lints]
+workspace = true

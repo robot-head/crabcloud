@@ -1,6 +1,6 @@
-# Rustcloud E2E (Playwright)
+# Crabcloud E2E (Playwright)
 
-End-to-end tests for the Rustcloud HTTP surface, including real WASM hydration
+End-to-end tests for the Crabcloud HTTP surface, including real WASM hydration
 in a headless Chromium.
 
 ## Prerequisites
@@ -22,8 +22,8 @@ python3 -c "import bcrypt; print(bcrypt.hashpw(b'hunter2', bcrypt.gensalt(12)).d
 # and a [bootstrap_admin] section using the hash above.
 
 cargo xtask build
-cargo run --release -p rustcloud-server -- --config fixture.toml migrate
-cargo run --release -p rustcloud-server -- --config fixture.toml serve
+cargo run --release -p crabcloud-server -- --config fixture.toml migrate
+cargo run --release -p crabcloud-server -- --config fixture.toml serve
 ```
 
 In another terminal:

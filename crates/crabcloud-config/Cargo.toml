@@ -1,0 +1,22 @@
+[package]
+name = "crabcloud-config"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+figment = { workspace = true, features = ["toml", "env"] }
+secrecy.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+
+[features]
+test-support = []
+
+[dev-dependencies]
+serde_json.workspace = true
+tempfile.workspace = true
+toml.workspace = true
+
+[lints]
+workspace = true

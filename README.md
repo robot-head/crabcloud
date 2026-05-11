@@ -1,4 +1,4 @@
-# Rustcloud
+# Crabcloud
 
 A Rust port of [Nextcloud server](https://github.com/nextcloud/server), with a Dioxus frontend.
 
@@ -23,23 +23,23 @@ cp config/config.toml.example config/config.toml
 cargo xtask build
 
 # 3. Run migrations + serve.
-cargo run --release -p rustcloud-server -- migrate
-cargo run --release -p rustcloud-server -- serve
+cargo run --release -p crabcloud-server -- migrate
+cargo run --release -p crabcloud-server -- serve
 
 # 4. Visit http://127.0.0.1:8080/ in a browser.
 ```
 
 ## Workspace layout
 
-- `crates/rustcloud-config` — layered TOML config loader.
-- `crates/rustcloud-cache` — `Cache` trait + `MemoryCache` + `TypedCache<T>`.
-- `crates/rustcloud-db` — `DbPool` enum, `MigrationRunner`, core schema.
-- `crates/rustcloud-i18n` — gettext `.po` loader, `Locale`, `I18n`.
-- `crates/rustcloud-ocs` — OCS envelope (JSON/XML), capabilities aggregator.
-- `crates/rustcloud-core` — `AppState`, `Error`, `AppConfigService`, `BootstrapHook`.
-- `crates/rustcloud-http` — axum router, middleware, session, CSRF, auth extractors, API handlers.
-- `crates/rustcloud-ui` — Dioxus 0.6 SSR + WASM hydration UI.
-- `crates/rustcloud-server` — the binary; CLI, tracing, lifecycle.
+- `crates/crabcloud-config` — layered TOML config loader.
+- `crates/crabcloud-cache` — `Cache` trait + `MemoryCache` + `TypedCache<T>`.
+- `crates/crabcloud-db` — `DbPool` enum, `MigrationRunner`, core schema.
+- `crates/crabcloud-i18n` — gettext `.po` loader, `Locale`, `I18n`.
+- `crates/crabcloud-ocs` — OCS envelope (JSON/XML), capabilities aggregator.
+- `crates/crabcloud-core` — `AppState`, `Error`, `AppConfigService`, `BootstrapHook`.
+- `crates/crabcloud-http` — axum router, middleware, session, CSRF, auth extractors, API handlers.
+- `crates/crabcloud-ui` — Dioxus 0.6 SSR + WASM hydration UI.
+- `crates/crabcloud-server` — the binary; CLI, tracing, lifecycle.
 - `xtask/` — project automation.
 - `e2e/` — Playwright tests (real-browser SSR + hydration verification).
 - `migrations/core/` — core SQL migrations, per-dialect.

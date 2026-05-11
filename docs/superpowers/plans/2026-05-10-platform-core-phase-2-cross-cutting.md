@@ -2,15 +2,15 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add the cross-cutting building blocks every later phase will share — cache, i18n, OCS envelope + capabilities aggregator, runtime app-config service, and a `rustcloud-core` facade defining `AppState`, the unified `Error` type, and the `BootstrapHook` extension point — all unit-tested and provably wired together by an `AppState::build()` integration test.
+**Goal:** Add the cross-cutting building blocks every later phase will share — cache, i18n, OCS envelope + capabilities aggregator, runtime app-config service, and a `crabcloud-core` facade defining `AppState`, the unified `Error` type, and the `BootstrapHook` extension point — all unit-tested and provably wired together by an `AppState::build()` integration test.
 
-**Architecture:** Each concern lives in its own focused crate (`rustcloud-cache`, `rustcloud-i18n`, `rustcloud-ocs`), all flowing into `rustcloud-core` which composes them with the Phase 1 crates (`rustcloud-config`, `rustcloud-db`) into a clone-cheap `AppState`. No HTTP, no UI yet — the OCS envelope produces strings + content-type pairs that Phase 3 will wrap in axum `IntoResponse`; the `Error` type ships with status-code mapping (also a pure function) that Phase 3 turns into HTTP responses. The `BootstrapHook` registration vector lands so that future apps (Phase 3+) have an unchanging extension point.
+**Architecture:** Each concern lives in its own focused crate (`crabcloud-cache`, `crabcloud-i18n`, `crabcloud-ocs`), all flowing into `crabcloud-core` which composes them with the Phase 1 crates (`crabcloud-config`, `crabcloud-db`) into a clone-cheap `AppState`. No HTTP, no UI yet — the OCS envelope produces strings + content-type pairs that Phase 3 will wrap in axum `IntoResponse`; the `Error` type ships with status-code mapping (also a pure function) that Phase 3 turns into HTTP responses. The `BootstrapHook` registration vector lands so that future apps (Phase 3+) have an unchanging extension point.
 
 **Tech Stack:** Rust 1.85, `tokio` (Mutex for cache state), `async-trait` (for the `Cache` and `CapabilityProvider` traits), `serde_json` / `quick-xml` (OCS envelope rendering), `polib` (gettext `.po` parsing), `serde` for typed cache wrapper, `chrono` for timestamps (already a sqlx feature), `bytes::Bytes` for cache payloads (or `Vec<u8>` — see §9.1 of spec; we use `Vec<u8>` for ergonomic ownership).
 
 **Parent spec:** `docs/superpowers/specs/2026-05-10-platform-core-design.md` — Phase 2 implements sections §5.2 (runtime app-config), §7.6 (Error type, status-mapping only), §9 (Cache, i18n, OCS envelope + capabilities), and the `AppState` + `BootstrapHook` machinery from §4.1 / §10.1.
 
-**Previous phase:** Phase 1 (Foundations) shipped `rustcloud-config`, `rustcloud-db`, `rustcloud-server`, `xtask`, CI, multi-dialect integration tests. End-state of Phase 1 is at commit `29706dc` on `master`.
+**Previous phase:** Phase 1 (Foundations) shipped `crabcloud-config`, `crabcloud-db`, `crabcloud-server`, `xtask`, CI, multi-dialect integration tests. End-state of Phase 1 is at commit `29706dc` on `master`.
 
 ---
 
@@ -20,7 +20,7 @@
 - **TDD:** Write failing test → verify it fails → implement → verify it passes → commit. For brand-new crates the first verification may be a build check; meaningful tests follow immediately.
 - **rustfmt:** The plan's verbatim code may have lines that exceed rustfmt's default width. After writing files, run `cargo fmt --all` and commit the formatted version. Authorized at all task boundaries.
 - **No mocks for the DB or cache.** Tests hit a real in-process `SqlitePool` and a real `MemoryCache`. Multi-dialect tests for DB-backed code run in CI via the Phase 1 testcontainers/service-container path.
-- **Errors:** Library crates expose typed errors via `thiserror`. `rustcloud-core::Error` aggregates errors from sibling crates via `#[from]` and adds variants the HTTP layer (Phase 3) will need.
+- **Errors:** Library crates expose typed errors via `thiserror`. `crabcloud-core::Error` aggregates errors from sibling crates via `#[from]` and adds variants the HTTP layer (Phase 3) will need.
 - **Async traits:** Use `async-trait` (already in `[workspace.dependencies]`). Native async-fn-in-trait is stable on rustc 1.75+ but `Send` bounds require boilerplate; `async-trait` is mature and cheap.
 - **Plan-bug protocol:** If the verbatim code from this plan fails to compile or test, fix the minimal issue, report it as DONE_WITH_CONCERNS with the diff explained.
 
@@ -29,24 +29,24 @@
 ## File Structure (Phase 2 additions)
 
 ```
-rustcloud/
+crabcloud/
 ├── Cargo.toml                                     # workspace.members + workspace.dependencies extended
 ├── crates/
-│   ├── rustcloud-cache/                           # NEW
+│   ├── crabcloud-cache/                           # NEW
 │   │   ├── Cargo.toml
 │   │   └── src/
 │   │       ├── lib.rs                             # re-exports
 │   │       ├── trait_def.rs                       # Cache trait
 │   │       ├── memory.rs                          # MemoryCache + Entry + lazy TTL expiry
 │   │       └── typed.rs                           # TypedCache<T> serde wrapper
-│   ├── rustcloud-i18n/                            # NEW
+│   ├── crabcloud-i18n/                            # NEW
 │   │   ├── Cargo.toml
 │   │   └── src/
 │   │       ├── lib.rs
 │   │       ├── locale.rs                          # Locale type + Accept-Language parser
 │   │       ├── catalog.rs                         # PO catalog loader (uses polib)
 │   │       └── service.rs                         # I18n struct, t() / tn() with fallback
-│   ├── rustcloud-ocs/                             # NEW
+│   ├── crabcloud-ocs/                             # NEW
 │   │   ├── Cargo.toml
 │   │   └── src/
 │   │       ├── lib.rs
@@ -55,7 +55,7 @@ rustcloud/
 │   │       ├── format.rs                          # Format + content negotiation
 │   │       ├── capabilities.rs                    # CapabilityProvider trait + aggregator + ETag
 │   │       └── core_caps.rs                       # CoreCapabilities impl
-│   ├── rustcloud-core/                            # NEW
+│   ├── crabcloud-core/                            # NEW
 │   │   ├── Cargo.toml
 │   │   └── src/
 │   │       ├── lib.rs
@@ -65,7 +65,7 @@ rustcloud/
 │   │       └── state.rs                           # AppState struct + build()
 │   │   └── tests/
 │   │       └── app_state_build.rs                 # integration test for full assembly
-│   └── rustcloud-server/                          # MODIFIED
+│   └── crabcloud-server/                          # MODIFIED
 │       └── src/main.rs                            # bootstrap path uses AppState::build()
 ├── l10n/                                          # NEW (translations root)
 │   └── core/
@@ -84,27 +84,27 @@ We'll add **only** `quick-xml` and `polib` and `accept-language` to workspace de
 
 ---
 
-## Task 1: rustcloud-cache — workspace setup + Cache trait
+## Task 1: crabcloud-cache — workspace setup + Cache trait
 
 **Files:**
-- Create: `crates/rustcloud-cache/Cargo.toml`
-- Create: `crates/rustcloud-cache/src/lib.rs`
-- Create: `crates/rustcloud-cache/src/trait_def.rs`
-- Modify: `Cargo.toml` (add `crates/rustcloud-cache` to `members`; add `rustcloud-cache = { path = "crates/rustcloud-cache" }` under `[workspace.dependencies]`)
+- Create: `crates/crabcloud-cache/Cargo.toml`
+- Create: `crates/crabcloud-cache/src/lib.rs`
+- Create: `crates/crabcloud-cache/src/trait_def.rs`
+- Modify: `Cargo.toml` (add `crates/crabcloud-cache` to `members`; add `crabcloud-cache = { path = "crates/crabcloud-cache" }` under `[workspace.dependencies]`)
 
 The `Cache` trait is the core abstraction; implementations live in their own modules. Phase 2 ships `MemoryCache`; Redis lands in its own micro-sub-project later.
 
-- [ ] **Step 1: Add `crates/rustcloud-cache` to the workspace**
+- [ ] **Step 1: Add `crates/crabcloud-cache` to the workspace**
 
-Modify `Cargo.toml` — append `crates/rustcloud-cache` to `members` (keep alphabetical order with the existing entries):
+Modify `Cargo.toml` — append `crates/crabcloud-cache` to `members` (keep alphabetical order with the existing entries):
 
 ```toml
 [workspace]
 members = [
-    "crates/rustcloud-cache",
-    "crates/rustcloud-config",
-    "crates/rustcloud-db",
-    "crates/rustcloud-server",
+    "crates/crabcloud-cache",
+    "crates/crabcloud-config",
+    "crates/crabcloud-db",
+    "crates/crabcloud-server",
     "xtask",
 ]
 ```
@@ -112,14 +112,14 @@ members = [
 Under `[workspace.dependencies]`, add (alphabetical):
 
 ```toml
-rustcloud-cache  = { path = "crates/rustcloud-cache" }
+crabcloud-cache  = { path = "crates/crabcloud-cache" }
 ```
 
-- [ ] **Step 2: Write `crates/rustcloud-cache/Cargo.toml`**
+- [ ] **Step 2: Write `crates/crabcloud-cache/Cargo.toml`**
 
 ```toml
 [package]
-name = "rustcloud-cache"
+name = "crabcloud-cache"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -135,7 +135,7 @@ tokio.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time", "test-util"] }
 ```
 
-- [ ] **Step 3: Write `crates/rustcloud-cache/src/trait_def.rs`**
+- [ ] **Step 3: Write `crates/crabcloud-cache/src/trait_def.rs`**
 
 ```rust
 //! Cache trait. See `docs/superpowers/specs/2026-05-10-platform-core-design.md` §9.1.
@@ -178,10 +178,10 @@ pub trait Cache: Send + Sync {
 }
 ```
 
-- [ ] **Step 4: Write `crates/rustcloud-cache/src/lib.rs`**
+- [ ] **Step 4: Write `crates/crabcloud-cache/src/lib.rs`**
 
 ```rust
-//! Cache abstraction for Rustcloud.
+//! Cache abstraction for Crabcloud.
 //!
 //! See `docs/superpowers/specs/2026-05-10-platform-core-design.md` §9.1.
 
@@ -196,12 +196,12 @@ pub use typed::TypedCache;
 
 (`memory` and `typed` are added in Tasks 2 and 3; create empty placeholder files now so this `mod` declaration compiles.)
 
-Create `crates/rustcloud-cache/src/memory.rs`:
+Create `crates/crabcloud-cache/src/memory.rs`:
 ```rust
 // Implemented in Task 2.
 ```
 
-Create `crates/rustcloud-cache/src/typed.rs`:
+Create `crates/crabcloud-cache/src/typed.rs`:
 ```rust
 // Implemented in Task 3.
 ```
@@ -210,7 +210,7 @@ Create `crates/rustcloud-cache/src/typed.rs`:
 
 Run:
 ```
-cargo build -p rustcloud-cache
+cargo build -p crabcloud-cache
 ```
 
 Expected: the crate compiles. (No tests yet; the trait is dead code but `pub` items are fine.)
@@ -218,7 +218,7 @@ Expected: the crate compiles. (No tests yet; the trait is dead code but `pub` it
 - [ ] **Step 6: Commit**
 
 ```
-git add Cargo.toml crates/rustcloud-cache
+git add Cargo.toml crates/crabcloud-cache
 git commit -m "feat(cache): add Cache trait and crate scaffolding
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
@@ -226,16 +226,16 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 
 ---
 
-## Task 2: rustcloud-cache — MemoryCache implementation
+## Task 2: crabcloud-cache — MemoryCache implementation
 
 **Files:**
-- Modify: `crates/rustcloud-cache/src/memory.rs` (replace placeholder)
+- Modify: `crates/crabcloud-cache/src/memory.rs` (replace placeholder)
 
 The `MemoryCache` uses `tokio::sync::Mutex<HashMap<String, Entry>>`. TTL expiry is **lazy on read** — no background sweeper. The spec §9.1 mentions a sweeper but explicitly notes "Memory backend works for single-node dev"; lazy expiry is sufficient and simpler. Background sweeping is a Phase 3+ optimization.
 
 - [ ] **Step 1: Write the failing tests**
 
-Write `crates/rustcloud-cache/src/memory.rs`:
+Write `crates/crabcloud-cache/src/memory.rs`:
 
 ```rust
 //! In-process `Cache` implementation. Single-node use only.
@@ -419,7 +419,7 @@ mod tests {
 - [ ] **Step 2: Run the tests**
 
 ```
-cargo test -p rustcloud-cache --lib
+cargo test -p crabcloud-cache --lib
 ```
 
 Expected: 10 tests pass.
@@ -427,7 +427,7 @@ Expected: 10 tests pass.
 - [ ] **Step 3: Commit**
 
 ```
-git add crates/rustcloud-cache/src/memory.rs
+git add crates/crabcloud-cache/src/memory.rs
 git commit -m "feat(cache): add MemoryCache with lazy TTL expiry
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
@@ -435,10 +435,10 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 
 ---
 
-## Task 3: rustcloud-cache — TypedCache<T> serde wrapper
+## Task 3: crabcloud-cache — TypedCache<T> serde wrapper
 
 **Files:**
-- Modify: `crates/rustcloud-cache/src/typed.rs` (replace placeholder)
+- Modify: `crates/crabcloud-cache/src/typed.rs` (replace placeholder)
 
 A thin generic wrapper that handles serde + key prefixing. Callers wrap any `Cache` impl with a typed view:
 
@@ -450,7 +450,7 @@ let alice: Option<User> = users_cache.get("alice").await?;
 
 - [ ] **Step 1: Write the failing tests and the impl**
 
-Write `crates/rustcloud-cache/src/typed.rs`:
+Write `crates/crabcloud-cache/src/typed.rs`:
 
 ```rust
 //! Typed `serde`-backed convenience wrapper around any `Cache` impl.
@@ -565,7 +565,7 @@ mod tests {
 - [ ] **Step 2: Run the tests**
 
 ```
-cargo test -p rustcloud-cache --lib
+cargo test -p crabcloud-cache --lib
 ```
 
 Expected: 14 tests pass (10 from memory + 4 typed).
@@ -573,7 +573,7 @@ Expected: 14 tests pass (10 from memory + 4 typed).
 - [ ] **Step 3: Commit**
 
 ```
-git add crates/rustcloud-cache/src/typed.rs
+git add crates/crabcloud-cache/src/typed.rs
 git commit -m "feat(cache): add TypedCache<T> serde wrapper with key prefixing
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
@@ -581,12 +581,12 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 
 ---
 
-## Task 4: rustcloud-i18n — workspace setup + Locale + Accept-Language parser
+## Task 4: crabcloud-i18n — workspace setup + Locale + Accept-Language parser
 
 **Files:**
-- Create: `crates/rustcloud-i18n/Cargo.toml`
-- Create: `crates/rustcloud-i18n/src/lib.rs`
-- Create: `crates/rustcloud-i18n/src/locale.rs`
+- Create: `crates/crabcloud-i18n/Cargo.toml`
+- Create: `crates/crabcloud-i18n/src/lib.rs`
+- Create: `crates/crabcloud-i18n/src/locale.rs`
 - Modify: `Cargo.toml` (add member + workspace dep entry; add `polib` and `accept-language` to `[workspace.dependencies]`)
 
 The `Locale` type is a typed wrapper around a short language tag (`"en"`, `"de"`, `"fr_FR"`). The Accept-Language parser is small enough to roll inline (parse the header into `(locale, q-weight)` pairs, sort descending).
@@ -598,11 +598,11 @@ Modify `Cargo.toml`:
 ```toml
 [workspace]
 members = [
-    "crates/rustcloud-cache",
-    "crates/rustcloud-config",
-    "crates/rustcloud-db",
-    "crates/rustcloud-i18n",
-    "crates/rustcloud-server",
+    "crates/crabcloud-cache",
+    "crates/crabcloud-config",
+    "crates/crabcloud-db",
+    "crates/crabcloud-i18n",
+    "crates/crabcloud-server",
     "xtask",
 ]
 ```
@@ -612,14 +612,14 @@ Append to `[workspace.dependencies]`:
 ```toml
 polib = "0.4"
 accept-language = "3.1"
-rustcloud-i18n = { path = "crates/rustcloud-i18n" }
+crabcloud-i18n = { path = "crates/crabcloud-i18n" }
 ```
 
-- [ ] **Step 2: Write `crates/rustcloud-i18n/Cargo.toml`**
+- [ ] **Step 2: Write `crates/crabcloud-i18n/Cargo.toml`**
 
 ```toml
 [package]
-name = "rustcloud-i18n"
+name = "crabcloud-i18n"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -634,7 +634,7 @@ tracing.workspace = true
 tempfile.workspace = true
 ```
 
-- [ ] **Step 3: Write `crates/rustcloud-i18n/src/locale.rs`**
+- [ ] **Step 3: Write `crates/crabcloud-i18n/src/locale.rs`**
 
 ```rust
 //! `Locale` type and Accept-Language resolution.
@@ -764,10 +764,10 @@ mod tests {
 }
 ```
 
-- [ ] **Step 4: Write `crates/rustcloud-i18n/src/lib.rs`**
+- [ ] **Step 4: Write `crates/crabcloud-i18n/src/lib.rs`**
 
 ```rust
-//! Internationalization for Rustcloud.
+//! Internationalization for Crabcloud.
 //!
 //! See `docs/superpowers/specs/2026-05-10-platform-core-design.md` §9.2.
 
@@ -782,7 +782,7 @@ pub use service::I18n;
 
 Create empty placeholders so the `mod` declarations parse:
 
-`crates/rustcloud-i18n/src/catalog.rs`:
+`crates/crabcloud-i18n/src/catalog.rs`:
 ```rust
 // Implemented in Task 5.
 
@@ -796,7 +796,7 @@ pub enum CatalogError {
 }
 ```
 
-`crates/rustcloud-i18n/src/service.rs`:
+`crates/crabcloud-i18n/src/service.rs`:
 ```rust
 // Implemented in Task 6.
 
@@ -807,7 +807,7 @@ pub struct I18n;
 - [ ] **Step 5: Run tests**
 
 ```
-cargo test -p rustcloud-i18n --lib
+cargo test -p crabcloud-i18n --lib
 ```
 
 Expected: 8 tests pass (all from `locale::tests`).
@@ -815,7 +815,7 @@ Expected: 8 tests pass (all from `locale::tests`).
 - [ ] **Step 6: Commit**
 
 ```
-git add Cargo.toml crates/rustcloud-i18n
+git add Cargo.toml crates/crabcloud-i18n
 git commit -m "feat(i18n): add Locale type and Accept-Language resolver
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
@@ -823,16 +823,16 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 
 ---
 
-## Task 5: rustcloud-i18n — Catalog loader (polib)
+## Task 5: crabcloud-i18n — Catalog loader (polib)
 
 **Files:**
-- Modify: `crates/rustcloud-i18n/src/catalog.rs`
+- Modify: `crates/crabcloud-i18n/src/catalog.rs`
 
 Scans `l10n/<app>/<locale>.po` files and produces in-memory catalogs. Uses `polib` for parsing. Returns a `HashMap<(app, locale), Catalog>` ready for the `I18n` service in Task 6.
 
 - [ ] **Step 1: Write the failing tests**
 
-Replace `crates/rustcloud-i18n/src/catalog.rs`:
+Replace `crates/crabcloud-i18n/src/catalog.rs`:
 
 ```rust
 //! Gettext `.po` catalog loader.
@@ -1010,7 +1010,7 @@ msgstr "Tschüss"
 - [ ] **Step 2: Run the tests**
 
 ```
-cargo test -p rustcloud-i18n --lib
+cargo test -p crabcloud-i18n --lib
 ```
 
 Expected: 12 tests pass (8 locale + 4 catalog).
@@ -1020,7 +1020,7 @@ Note: if polib's API differs from what's shown above (`msg.msgstr()` returns `Re
 - [ ] **Step 3: Commit**
 
 ```
-git add crates/rustcloud-i18n/src/catalog.rs
+git add crates/crabcloud-i18n/src/catalog.rs
 git commit -m "feat(i18n): add gettext .po catalog loader via polib
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
@@ -1028,16 +1028,16 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 
 ---
 
-## Task 6: rustcloud-i18n — I18n service with t() / tn()
+## Task 6: crabcloud-i18n — I18n service with t() / tn()
 
 **Files:**
-- Modify: `crates/rustcloud-i18n/src/service.rs`
+- Modify: `crates/crabcloud-i18n/src/service.rs`
 
 `I18n` is the public service. Construct once at startup with all catalogs loaded; clone-cheap (`Arc` inside). `t(app, msgid)` and `tn(app, singular, plural, n)` perform the lookup with source-string fallback. Format-argument substitution is a printf-style `%s` / `%d` replacement.
 
 - [ ] **Step 1: Write the failing tests + impl**
 
-Replace `crates/rustcloud-i18n/src/service.rs`:
+Replace `crates/crabcloud-i18n/src/service.rs`:
 
 ```rust
 //! Top-level i18n service.
@@ -1219,7 +1219,7 @@ msgstr "Hallo %s"
 - [ ] **Step 2: Run the tests**
 
 ```
-cargo test -p rustcloud-i18n --lib
+cargo test -p crabcloud-i18n --lib
 ```
 
 Expected: 18 tests pass (8 locale + 4 catalog + 6 service).
@@ -1227,7 +1227,7 @@ Expected: 18 tests pass (8 locale + 4 catalog + 6 service).
 - [ ] **Step 3: Commit**
 
 ```
-git add crates/rustcloud-i18n/src/service.rs
+git add crates/crabcloud-i18n/src/service.rs
 git commit -m "feat(i18n): add I18n service with t()/tn() and printf substitution
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
@@ -1250,7 +1250,7 @@ Create `l10n/core/README.md`:
 ```markdown
 # Core translations
 
-Gettext `.po` files for the Rustcloud `core` namespace. Each file is named
+Gettext `.po` files for the Crabcloud `core` namespace. Each file is named
 `<locale>.po` (e.g. `de.po`, `fr_FR.po`). New locales: drop in a new file with the
 same `msgid` keys.
 
@@ -1264,14 +1264,14 @@ Create `l10n/core/de.po`:
 ```po
 msgid ""
 msgstr ""
-"Project-Id-Version: rustcloud-core 0.1.0\n"
+"Project-Id-Version: crabcloud-core 0.1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Language: de\n"
 "Plural-Forms: nplurals=2; plural=(n != 1);\n"
 
-msgid "Welcome to Rustcloud"
-msgstr "Willkommen bei Rustcloud"
+msgid "Welcome to Crabcloud"
+msgstr "Willkommen bei Crabcloud"
 
 msgid "Logged in as %s"
 msgstr "Angemeldet als %s"
@@ -1282,7 +1282,7 @@ msgstr "Angemeldet als %s"
 Confirm the file loads by running:
 
 ```
-cargo test -p rustcloud-i18n --lib
+cargo test -p crabcloud-i18n --lib
 ```
 
 Expected: still 18 tests passing (no change). The file exists for future integration tests in Task 14.
@@ -1298,14 +1298,14 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 
 ---
 
-## Task 8: rustcloud-ocs — workspace + OcsStatus + envelope skeleton
+## Task 8: crabcloud-ocs — workspace + OcsStatus + envelope skeleton
 
 **Files:**
-- Create: `crates/rustcloud-ocs/Cargo.toml`
-- Create: `crates/rustcloud-ocs/src/lib.rs`
-- Create: `crates/rustcloud-ocs/src/status.rs`
-- Create: `crates/rustcloud-ocs/src/envelope.rs`
-- Create: `crates/rustcloud-ocs/src/format.rs`
+- Create: `crates/crabcloud-ocs/Cargo.toml`
+- Create: `crates/crabcloud-ocs/src/lib.rs`
+- Create: `crates/crabcloud-ocs/src/status.rs`
+- Create: `crates/crabcloud-ocs/src/envelope.rs`
+- Create: `crates/crabcloud-ocs/src/format.rs`
 - Modify: `Cargo.toml` (add member + dep + `quick-xml`)
 
 `OcsStatus` codifies the Nextcloud OCS status codes; `OcsResponse<T>` is the envelope; `Format` selects JSON vs XML. Phase 2's `render()` returns `(body: String, content_type: &'static str)` — no axum yet.
@@ -1317,12 +1317,12 @@ Modify `Cargo.toml`:
 ```toml
 [workspace]
 members = [
-    "crates/rustcloud-cache",
-    "crates/rustcloud-config",
-    "crates/rustcloud-db",
-    "crates/rustcloud-i18n",
-    "crates/rustcloud-ocs",
-    "crates/rustcloud-server",
+    "crates/crabcloud-cache",
+    "crates/crabcloud-config",
+    "crates/crabcloud-db",
+    "crates/crabcloud-i18n",
+    "crates/crabcloud-ocs",
+    "crates/crabcloud-server",
     "xtask",
 ]
 ```
@@ -1331,14 +1331,14 @@ Append under `[workspace.dependencies]`:
 
 ```toml
 quick-xml = { version = "0.36", features = ["serialize"] }
-rustcloud-ocs = { path = "crates/rustcloud-ocs" }
+crabcloud-ocs = { path = "crates/crabcloud-ocs" }
 ```
 
-- [ ] **Step 2: Write `crates/rustcloud-ocs/Cargo.toml`**
+- [ ] **Step 2: Write `crates/crabcloud-ocs/Cargo.toml`**
 
 ```toml
 [package]
-name = "rustcloud-ocs"
+name = "crabcloud-ocs"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -1346,7 +1346,7 @@ rust-version.workspace = true
 [dependencies]
 async-trait.workspace = true
 quick-xml.workspace = true
-rustcloud-cache.workspace = true
+crabcloud-cache.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
@@ -1354,7 +1354,7 @@ tokio.workspace = true
 tracing.workspace = true
 ```
 
-- [ ] **Step 3: Write `crates/rustcloud-ocs/src/status.rs`**
+- [ ] **Step 3: Write `crates/crabcloud-ocs/src/status.rs`**
 
 ```rust
 //! Nextcloud OCS status codes. Hand-mapped to match upstream behavior so
@@ -1474,7 +1474,7 @@ mod tests {
 }
 ```
 
-- [ ] **Step 4: Write `crates/rustcloud-ocs/src/format.rs`**
+- [ ] **Step 4: Write `crates/crabcloud-ocs/src/format.rs`**
 
 ```rust
 //! Response format selection. Mirrors Nextcloud's content negotiation.
@@ -1548,7 +1548,7 @@ mod tests {
 }
 ```
 
-- [ ] **Step 5: Write `crates/rustcloud-ocs/src/lib.rs`**
+- [ ] **Step 5: Write `crates/crabcloud-ocs/src/lib.rs`**
 
 ```rust
 //! OCS envelope and capabilities aggregator.
@@ -1572,7 +1572,7 @@ pub use status::{OcsStatus, OcsVersion};
 
 Create placeholder stubs (replaced in Tasks 9–11):
 
-`crates/rustcloud-ocs/src/envelope.rs`:
+`crates/crabcloud-ocs/src/envelope.rs`:
 ```rust
 // Implemented in Task 9.
 
@@ -1592,7 +1592,7 @@ pub fn render<T>(_resp: &OcsResponse<T>, _format: Format) -> (String, &'static s
 }
 ```
 
-`crates/rustcloud-ocs/src/capabilities.rs`:
+`crates/crabcloud-ocs/src/capabilities.rs`:
 ```rust
 // Implemented in Task 10.
 
@@ -1626,7 +1626,7 @@ pub struct CapabilitiesPayload {
 pub async fn aggregate(
     _providers: &[Arc<dyn CapabilityProvider>],
     _ctx: &CapabilityContext<'_>,
-    _cache: Arc<dyn rustcloud_cache::Cache>,
+    _cache: Arc<dyn crabcloud_cache::Cache>,
     _version: &str,
     _instance_id: &str,
 ) -> Result<CapabilitiesPayload, CapabilityError> {
@@ -1634,7 +1634,7 @@ pub async fn aggregate(
 }
 ```
 
-`crates/rustcloud-ocs/src/core_caps.rs`:
+`crates/crabcloud-ocs/src/core_caps.rs`:
 ```rust
 // Implemented in Task 11.
 
@@ -1660,7 +1660,7 @@ impl CapabilityProvider for CoreCapabilities {
 - [ ] **Step 6: Run the tests**
 
 ```
-cargo test -p rustcloud-ocs --lib
+cargo test -p crabcloud-ocs --lib
 ```
 
 Expected: 7 tests pass (3 status + 4 format).
@@ -1668,7 +1668,7 @@ Expected: 7 tests pass (3 status + 4 format).
 - [ ] **Step 7: Commit**
 
 ```
-git add Cargo.toml crates/rustcloud-ocs
+git add Cargo.toml crates/crabcloud-ocs
 git commit -m "feat(ocs): add OcsStatus and Format with content negotiation
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
@@ -1676,10 +1676,10 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 
 ---
 
-## Task 9: rustcloud-ocs — OcsResponse envelope rendering
+## Task 9: crabcloud-ocs — OcsResponse envelope rendering
 
 **Files:**
-- Modify: `crates/rustcloud-ocs/src/envelope.rs`
+- Modify: `crates/crabcloud-ocs/src/envelope.rs`
 
 Renders `OcsResponse<T>` to either JSON or XML, matching Nextcloud's wire format:
 
@@ -1701,7 +1701,7 @@ Renders `OcsResponse<T>` to either JSON or XML, matching Nextcloud's wire format
 
 - [ ] **Step 1: Write the impl + tests**
 
-Replace `crates/rustcloud-ocs/src/envelope.rs`:
+Replace `crates/crabcloud-ocs/src/envelope.rs`:
 
 ```rust
 //! OCS envelope rendering. JSON via `serde_json`; XML hand-rolled via `quick-xml`'s
@@ -1866,23 +1866,23 @@ mod tests {
 
     #[test]
     fn json_payload_round_trip() {
-        let payload = VersionPayload { major: 31, minor: 0, edition: "Rustcloud".into() };
+        let payload = VersionPayload { major: 31, minor: 0, edition: "Crabcloud".into() };
         let r = OcsResponse::ok(payload, OcsVersion::V2);
         let (body, _) = render(&r, Format::Json);
         let parsed: serde_json::Value = serde_json::from_str(&body).unwrap();
         assert_eq!(parsed["ocs"]["data"]["major"], 31);
         assert_eq!(parsed["ocs"]["data"]["minor"], 0);
-        assert_eq!(parsed["ocs"]["data"]["edition"], "Rustcloud");
+        assert_eq!(parsed["ocs"]["data"]["edition"], "Crabcloud");
     }
 
     #[test]
     fn xml_payload_emits_nested_tags() {
-        let payload = VersionPayload { major: 31, minor: 0, edition: "Rustcloud".into() };
+        let payload = VersionPayload { major: 31, minor: 0, edition: "Crabcloud".into() };
         let r = OcsResponse::ok(payload, OcsVersion::V2);
         let (body, _) = render(&r, Format::Xml);
         assert!(body.contains("<major>31</major>"));
         assert!(body.contains("<minor>0</minor>"));
-        assert!(body.contains("<edition>Rustcloud</edition>"));
+        assert!(body.contains("<edition>Crabcloud</edition>"));
     }
 
     #[test]
@@ -1897,7 +1897,7 @@ mod tests {
 - [ ] **Step 2: Run the tests**
 
 ```
-cargo test -p rustcloud-ocs --lib
+cargo test -p crabcloud-ocs --lib
 ```
 
 Expected: 13 tests pass (3 status + 4 format + 6 envelope).
@@ -1905,7 +1905,7 @@ Expected: 13 tests pass (3 status + 4 format + 6 envelope).
 - [ ] **Step 3: Commit**
 
 ```
-git add crates/rustcloud-ocs/src/envelope.rs
+git add crates/crabcloud-ocs/src/envelope.rs
 git commit -m "feat(ocs): render OcsResponse to JSON and XML envelopes
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
@@ -1913,16 +1913,16 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 
 ---
 
-## Task 10: rustcloud-ocs — CapabilityProvider trait + aggregator with ETag
+## Task 10: crabcloud-ocs — CapabilityProvider trait + aggregator with ETag
 
 **Files:**
-- Modify: `crates/rustcloud-ocs/src/capabilities.rs`
+- Modify: `crates/crabcloud-ocs/src/capabilities.rs`
 
-The aggregator iterates registered providers, merges their contributions under their namespaces, and caches the assembled payload with a stable ETag (hash of provider list + version + instance_id + locale + user_id). Result lives in `rustcloud-cache` for 60s.
+The aggregator iterates registered providers, merges their contributions under their namespaces, and caches the assembled payload with a stable ETag (hash of provider list + version + instance_id + locale + user_id). Result lives in `crabcloud-cache` for 60s.
 
 - [ ] **Step 1: Write the impl + tests**
 
-Replace `crates/rustcloud-ocs/src/capabilities.rs`:
+Replace `crates/crabcloud-ocs/src/capabilities.rs`:
 
 ```rust
 //! Capabilities aggregator. Iterates registered providers, merges JSON, caches.
@@ -1930,7 +1930,7 @@ Replace `crates/rustcloud-ocs/src/capabilities.rs`:
 //! See spec §9.3.
 
 use async_trait::async_trait;
-use rustcloud_cache::{Cache, CacheError};
+use crabcloud_cache::{Cache, CacheError};
 use serde_json::{json, Map, Value};
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -2041,7 +2041,7 @@ fn compute_etag(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rustcloud_cache::MemoryCache;
+    use crabcloud_cache::MemoryCache;
     use serde_json::json;
 
     struct FakeProvider {
@@ -2133,7 +2133,7 @@ mod tests {
 - [ ] **Step 2: Run the tests**
 
 ```
-cargo test -p rustcloud-ocs --lib
+cargo test -p crabcloud-ocs --lib
 ```
 
 Expected: 17 tests pass (3 status + 4 format + 6 envelope + 4 capabilities).
@@ -2141,7 +2141,7 @@ Expected: 17 tests pass (3 status + 4 format + 6 envelope + 4 capabilities).
 - [ ] **Step 3: Commit**
 
 ```
-git add crates/rustcloud-ocs/src/capabilities.rs
+git add crates/crabcloud-ocs/src/capabilities.rs
 git commit -m "feat(ocs): aggregate capability providers with cache-backed ETag
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
@@ -2149,16 +2149,16 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 
 ---
 
-## Task 11: rustcloud-ocs — CoreCapabilities implementation
+## Task 11: crabcloud-ocs — CoreCapabilities implementation
 
 **Files:**
-- Modify: `crates/rustcloud-ocs/src/core_caps.rs`
+- Modify: `crates/crabcloud-ocs/src/core_caps.rs`
 
 The `core` namespace contribution: the keys Nextcloud clients expect to find — `pollinterval`, `webdav-root`, `mod-rewrite-working`. Returned values are configurable so theming / overrides can vary.
 
 - [ ] **Step 1: Write the impl + tests**
 
-Replace `crates/rustcloud-ocs/src/core_caps.rs`:
+Replace `crates/crabcloud-ocs/src/core_caps.rs`:
 
 ```rust
 //! Built-in `core` namespace capabilities. Matches Nextcloud's shape.
@@ -2212,7 +2212,7 @@ impl CapabilityProvider for CoreCapabilities {
 mod tests {
     use super::*;
     use crate::capabilities::{aggregate, CapabilityProvider};
-    use rustcloud_cache::{Cache, MemoryCache};
+    use crabcloud_cache::{Cache, MemoryCache};
     use std::sync::Arc;
 
     #[test]
@@ -2254,7 +2254,7 @@ mod tests {
 - [ ] **Step 2: Run the tests**
 
 ```
-cargo test -p rustcloud-ocs --lib
+cargo test -p crabcloud-ocs --lib
 ```
 
 Expected: 20 tests pass (3 status + 4 format + 6 envelope + 4 capabilities + 3 core_caps).
@@ -2262,7 +2262,7 @@ Expected: 20 tests pass (3 status + 4 format + 6 envelope + 4 capabilities + 3 c
 - [ ] **Step 3: Commit**
 
 ```
-git add crates/rustcloud-ocs/src/core_caps.rs
+git add crates/crabcloud-ocs/src/core_caps.rs
 git commit -m "feat(ocs): add CoreCapabilities provider with Nextcloud-shaped defaults
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
@@ -2270,18 +2270,18 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 
 ---
 
-## Task 12: rustcloud-core — workspace + Error + AppConfigService
+## Task 12: crabcloud-core — workspace + Error + AppConfigService
 
 **Files:**
-- Create: `crates/rustcloud-core/Cargo.toml`
-- Create: `crates/rustcloud-core/src/lib.rs`
-- Create: `crates/rustcloud-core/src/error.rs`
-- Create: `crates/rustcloud-core/src/appconfig.rs`
-- Create: `crates/rustcloud-core/src/bootstrap.rs` (stub for Task 13)
-- Create: `crates/rustcloud-core/src/state.rs` (stub for Task 13)
+- Create: `crates/crabcloud-core/Cargo.toml`
+- Create: `crates/crabcloud-core/src/lib.rs`
+- Create: `crates/crabcloud-core/src/error.rs`
+- Create: `crates/crabcloud-core/src/appconfig.rs`
+- Create: `crates/crabcloud-core/src/bootstrap.rs` (stub for Task 13)
+- Create: `crates/crabcloud-core/src/state.rs` (stub for Task 13)
 - Modify: `Cargo.toml` (add member + workspace dep)
 
-`rustcloud-core` is the facade. Phase 2 lays down the `Error` enum (with status-code mapping for Phase 3 to use), the runtime `AppConfigService` backed by the `oc_appconfig` table + cache, and stubs for `AppState` + `BootstrapHook` (filled in by Task 13).
+`crabcloud-core` is the facade. Phase 2 lays down the `Error` enum (with status-code mapping for Phase 3 to use), the runtime `AppConfigService` backed by the `oc_appconfig` table + cache, and stubs for `AppState` + `BootstrapHook` (filled in by Task 13).
 
 - [ ] **Step 1: Add workspace member + dep**
 
@@ -2290,13 +2290,13 @@ Modify `Cargo.toml`:
 ```toml
 [workspace]
 members = [
-    "crates/rustcloud-cache",
-    "crates/rustcloud-config",
-    "crates/rustcloud-core",
-    "crates/rustcloud-db",
-    "crates/rustcloud-i18n",
-    "crates/rustcloud-ocs",
-    "crates/rustcloud-server",
+    "crates/crabcloud-cache",
+    "crates/crabcloud-config",
+    "crates/crabcloud-core",
+    "crates/crabcloud-db",
+    "crates/crabcloud-i18n",
+    "crates/crabcloud-ocs",
+    "crates/crabcloud-server",
     "xtask",
 ]
 ```
@@ -2304,14 +2304,14 @@ members = [
 Append under `[workspace.dependencies]`:
 
 ```toml
-rustcloud-core = { path = "crates/rustcloud-core" }
+crabcloud-core = { path = "crates/crabcloud-core" }
 ```
 
-- [ ] **Step 2: Write `crates/rustcloud-core/Cargo.toml`**
+- [ ] **Step 2: Write `crates/crabcloud-core/Cargo.toml`**
 
 ```toml
 [package]
-name = "rustcloud-core"
+name = "crabcloud-core"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -2319,11 +2319,11 @@ rust-version.workspace = true
 [dependencies]
 anyhow.workspace = true
 async-trait.workspace = true
-rustcloud-cache.workspace = true
-rustcloud-config.workspace = true
-rustcloud-db.workspace = true
-rustcloud-i18n.workspace = true
-rustcloud-ocs.workspace = true
+crabcloud-cache.workspace = true
+crabcloud-config.workspace = true
+crabcloud-db.workspace = true
+crabcloud-i18n.workspace = true
+crabcloud-ocs.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sqlx.workspace = true
@@ -2335,7 +2335,7 @@ tracing.workspace = true
 tempfile.workspace = true
 ```
 
-- [ ] **Step 3: Write `crates/rustcloud-core/src/error.rs`**
+- [ ] **Step 3: Write `crates/crabcloud-core/src/error.rs`**
 
 ```rust
 //! Unified `Error` type for the core surface.
@@ -2343,9 +2343,9 @@ tempfile.workspace = true
 //! Each kind has a HTTP status mapping (used by Phase 3's HTTP layer) that lives
 //! here as a pure function — no axum types are pulled in.
 
-use rustcloud_cache::CacheError;
-use rustcloud_config::{FileConfigError, LoadError};
-use rustcloud_db::DbError;
+use crabcloud_cache::CacheError;
+use crabcloud_config::{FileConfigError, LoadError};
+use crabcloud_db::DbError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -2453,7 +2453,7 @@ mod tests {
 }
 ```
 
-- [ ] **Step 4: Write `crates/rustcloud-core/src/appconfig.rs`**
+- [ ] **Step 4: Write `crates/crabcloud-core/src/appconfig.rs`**
 
 ```rust
 //! Runtime app-config service backed by `oc_appconfig` + a write-through cache.
@@ -2463,8 +2463,8 @@ mod tests {
 //! invalidate the cache key.
 
 use crate::error::{CoreResult, Error};
-use rustcloud_cache::Cache;
-use rustcloud_db::DbPool;
+use crabcloud_cache::Cache;
+use crabcloud_db::DbPool;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -2541,19 +2541,19 @@ impl AppConfigService {
                 .bind(key)
                 .fetch_optional(p)
                 .await
-                .map_err(|e| Error::Db(rustcloud_db::DbError::Sqlx(e)))?,
+                .map_err(|e| Error::Db(crabcloud_db::DbError::Sqlx(e)))?,
             DbPool::MySql(p) => sqlx::query_as(&select_q)
                 .bind(appid)
                 .bind(key)
                 .fetch_optional(p)
                 .await
-                .map_err(|e| Error::Db(rustcloud_db::DbError::Sqlx(e)))?,
+                .map_err(|e| Error::Db(crabcloud_db::DbError::Sqlx(e)))?,
             DbPool::Postgres(p) => sqlx::query_as(&select_q)
                 .bind(appid)
                 .bind(key)
                 .fetch_optional(p)
                 .await
-                .map_err(|e| Error::Db(rustcloud_db::DbError::Sqlx(e)))?,
+                .map_err(|e| Error::Db(crabcloud_db::DbError::Sqlx(e)))?,
         };
         Ok(row.map(|(v,)| v))
     }
@@ -2573,7 +2573,7 @@ impl AppConfigService {
                     .bind(value)
                     .execute(p)
                     .await
-                    .map_err(|e| Error::Db(rustcloud_db::DbError::Sqlx(e)))?;
+                    .map_err(|e| Error::Db(crabcloud_db::DbError::Sqlx(e)))?;
             }
             DbPool::MySql(p) => {
                 let q = format!(
@@ -2587,7 +2587,7 @@ impl AppConfigService {
                     .bind(value)
                     .execute(p)
                     .await
-                    .map_err(|e| Error::Db(rustcloud_db::DbError::Sqlx(e)))?;
+                    .map_err(|e| Error::Db(crabcloud_db::DbError::Sqlx(e)))?;
             }
             DbPool::Postgres(p) => {
                 let q = format!(
@@ -2601,7 +2601,7 @@ impl AppConfigService {
                     .bind(value)
                     .execute(p)
                     .await
-                    .map_err(|e| Error::Db(rustcloud_db::DbError::Sqlx(e)))?;
+                    .map_err(|e| Error::Db(crabcloud_db::DbError::Sqlx(e)))?;
             }
         }
         Ok(())
@@ -2611,9 +2611,9 @@ impl AppConfigService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rustcloud_cache::MemoryCache;
-    use rustcloud_config::{CacheConfig, DbType, FileConfig};
-    use rustcloud_db::{core_set, MigrationRunner};
+    use crabcloud_cache::MemoryCache;
+    use crabcloud_config::{CacheConfig, DbType, FileConfig};
+    use crabcloud_db::{core_set, MigrationRunner};
     use secrecy::SecretString;
     use std::net::SocketAddr;
     use std::path::PathBuf;
@@ -2712,10 +2712,10 @@ mod tests {
 }
 ```
 
-- [ ] **Step 5: Write `crates/rustcloud-core/src/lib.rs`**
+- [ ] **Step 5: Write `crates/crabcloud-core/src/lib.rs`**
 
 ```rust
-//! Composition crate for the Rustcloud substrate. Holds `AppState`, the
+//! Composition crate for the Crabcloud substrate. Holds `AppState`, the
 //! unified `Error` type, the runtime `AppConfigService`, and the
 //! `BootstrapHook` extension point.
 //!
@@ -2734,7 +2734,7 @@ pub use state::{AppState, AppStateBuilder};
 
 Create placeholder stubs for Task 13:
 
-`crates/rustcloud-core/src/bootstrap.rs`:
+`crates/crabcloud-core/src/bootstrap.rs`:
 ```rust
 // Implemented in Task 13.
 
@@ -2743,7 +2743,7 @@ pub struct BootstrapRegistry;
 pub type BootstrapHook = Box<dyn Send>;
 ```
 
-`crates/rustcloud-core/src/state.rs`:
+`crates/crabcloud-core/src/state.rs`:
 ```rust
 // Implemented in Task 13.
 
@@ -2757,7 +2757,7 @@ pub struct AppStateBuilder;
 - [ ] **Step 6: Run the tests**
 
 ```
-cargo test -p rustcloud-core --lib
+cargo test -p crabcloud-core --lib
 ```
 
 Expected: 9 tests pass (4 error + 5 appconfig).
@@ -2765,7 +2765,7 @@ Expected: 9 tests pass (4 error + 5 appconfig).
 - [ ] **Step 7: Commit**
 
 ```
-git add Cargo.toml crates/rustcloud-core
+git add Cargo.toml crates/crabcloud-core
 git commit -m "feat(core): add Error type and cache-backed AppConfigService
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
@@ -2773,22 +2773,22 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 
 ---
 
-## Task 13: rustcloud-core — BootstrapHook + AppState + AppStateBuilder
+## Task 13: crabcloud-core — BootstrapHook + AppState + AppStateBuilder
 
 **Files:**
-- Modify: `crates/rustcloud-i18n/src/lib.rs` (re-export `load_all`)
-- Modify: `crates/rustcloud-core/src/bootstrap.rs`
-- Modify: `crates/rustcloud-core/src/state.rs`
+- Modify: `crates/crabcloud-i18n/src/lib.rs` (re-export `load_all`)
+- Modify: `crates/crabcloud-core/src/bootstrap.rs`
+- Modify: `crates/crabcloud-core/src/state.rs`
 
 `AppState` is the clone-cheap handle every later phase passes around. `BootstrapHook` is a future-producing closure registered at startup; the registry drains and runs hooks before traffic is served. **`BootstrapHook` takes the `AppState` by value** — `AppState` is clone-cheap (`Arc`-backed internally), and owning the state in the hook removes a thorny HRTB lifetime that closures struggle with.
 
-- [ ] **Step 1: Re-export `load_all` from `rustcloud-i18n`**
+- [ ] **Step 1: Re-export `load_all` from `crabcloud-i18n`**
 
-`state.rs` (next step) calls `rustcloud_i18n::load_all(...)`. Add it to the crate's public surface.
+`state.rs` (next step) calls `crabcloud_i18n::load_all(...)`. Add it to the crate's public surface.
 
-Replace `crates/rustcloud-i18n/src/lib.rs`:
+Replace `crates/crabcloud-i18n/src/lib.rs`:
 ```rust
-//! Internationalization for Rustcloud.
+//! Internationalization for Crabcloud.
 //!
 //! See `docs/superpowers/specs/2026-05-10-platform-core-design.md` §9.2.
 
@@ -2803,11 +2803,11 @@ pub use service::I18n;
 
 Quick sanity check:
 ```
-cargo build -p rustcloud-i18n
+cargo build -p crabcloud-i18n
 ```
 Expected: clean.
 
-- [ ] **Step 2: Write `crates/rustcloud-core/src/bootstrap.rs`**
+- [ ] **Step 2: Write `crates/crabcloud-core/src/bootstrap.rs`**
 
 Replace the stub:
 
@@ -2891,7 +2891,7 @@ impl std::fmt::Debug for BootstrapRegistry {
 }
 ```
 
-- [ ] **Step 3: Write `crates/rustcloud-core/src/state.rs`**
+- [ ] **Step 3: Write `crates/crabcloud-core/src/state.rs`**
 
 Replace the stub with the final, clean version:
 
@@ -2901,11 +2901,11 @@ Replace the stub with the final, clean version:
 use crate::appconfig::AppConfigService;
 use crate::bootstrap::BootstrapRegistry;
 use crate::error::{CoreResult, Error};
-use rustcloud_cache::{Cache, MemoryCache};
-use rustcloud_config::FileConfig;
-use rustcloud_db::{core_set, DbPool, MigrationRunner};
-use rustcloud_i18n::I18n;
-use rustcloud_ocs::CapabilityProvider;
+use crabcloud_cache::{Cache, MemoryCache};
+use crabcloud_config::FileConfig;
+use crabcloud_db::{core_set, DbPool, MigrationRunner};
+use crabcloud_i18n::I18n;
+use crabcloud_ocs::CapabilityProvider;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -2986,16 +2986,16 @@ impl AppStateBuilder {
 
         let i18n = match &self.catalog_root {
             Some(root) => {
-                let catalogs = rustcloud_i18n::load_all(root)
+                let catalogs = crabcloud_i18n::load_all(root)
                     .map_err(|e| Error::Internal(anyhow::anyhow!("i18n load: {e}")))?;
                 Arc::new(I18n::new(
                     catalogs,
-                    rustcloud_i18n::Locale::new(&self.config.default_language),
+                    crabcloud_i18n::Locale::new(&self.config.default_language),
                 ))
             }
             None => Arc::new(I18n::new(
                 std::collections::HashMap::new(),
-                rustcloud_i18n::Locale::new(&self.config.default_language),
+                crabcloud_i18n::Locale::new(&self.config.default_language),
             )),
         };
 
@@ -3026,7 +3026,7 @@ impl AppStateBuilder {
 mod tests {
     use super::*;
     use crate::bootstrap::BootstrapHook;
-    use rustcloud_config::{CacheConfig, DbType};
+    use crabcloud_config::{CacheConfig, DbType};
     use secrecy::SecretString;
     use std::net::SocketAddr;
     use std::path::PathBuf;
@@ -3094,7 +3094,7 @@ mod tests {
 
     #[tokio::test]
     async fn register_capability_provider_appends() {
-        use rustcloud_ocs::CoreCapabilities;
+        use crabcloud_ocs::CoreCapabilities;
         let dir = tempdir().unwrap();
         let cfg = cfg_sqlite(dir.path().join("state.db"));
         let state = AppStateBuilder::new(cfg).build().await.unwrap();
@@ -3111,7 +3111,7 @@ mod tests {
 - [ ] **Step 4: Run the tests**
 
 ```
-cargo test -p rustcloud-core --lib
+cargo test -p crabcloud-core --lib
 ```
 
 Expected: 12 tests pass (4 error + 5 appconfig + 3 state).
@@ -3119,7 +3119,7 @@ Expected: 12 tests pass (4 error + 5 appconfig + 3 state).
 - [ ] **Step 5: Commit**
 
 ```
-git add crates/rustcloud-core/src crates/rustcloud-i18n/src/lib.rs
+git add crates/crabcloud-core/src crates/crabcloud-i18n/src/lib.rs
 git commit -m "feat(core): add AppState, AppStateBuilder, and BootstrapRegistry
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
@@ -3127,10 +3127,10 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 
 ---
 
-## Task 14: rustcloud-core — integration test for full assembly
+## Task 14: crabcloud-core — integration test for full assembly
 
 **Files:**
-- Create: `crates/rustcloud-core/tests/app_state_build.rs`
+- Create: `crates/crabcloud-core/tests/app_state_build.rs`
 
 End-to-end test that:
 1. Writes a minimal config.toml and an l10n directory in a tempdir.
@@ -3139,16 +3139,16 @@ End-to-end test that:
 
 - [ ] **Step 1: Write the integration test**
 
-Create `crates/rustcloud-core/tests/app_state_build.rs`:
+Create `crates/crabcloud-core/tests/app_state_build.rs`:
 
 ```rust
 //! End-to-end assembly proof for `AppStateBuilder`.
 
-use rustcloud_cache::Cache;
-use rustcloud_config::{CacheConfig, DbType, FileConfig};
-use rustcloud_core::{AppState, AppStateBuilder};
-use rustcloud_i18n::Locale;
-use rustcloud_ocs::{aggregate, CapabilityContext, CapabilityProvider, CoreCapabilities};
+use crabcloud_cache::Cache;
+use crabcloud_config::{CacheConfig, DbType, FileConfig};
+use crabcloud_core::{AppState, AppStateBuilder};
+use crabcloud_i18n::Locale;
+use crabcloud_ocs::{aggregate, CapabilityContext, CapabilityProvider, CoreCapabilities};
 use secrecy::SecretString;
 use std::fs;
 use std::net::SocketAddr;
@@ -3211,7 +3211,7 @@ async fn full_assembly_works_end_to_end() {
 
     // Hook writes a sentinel that future tests can rely on. `boxed_hook`
     // wraps an async closure into the `BootstrapHook` shape.
-    let hook = rustcloud_core::boxed_hook(|state: AppState| async move {
+    let hook = crabcloud_core::boxed_hook(|state: AppState| async move {
         state.appconfig.set("core", "phase2_built", "1").await?;
         Ok(())
     });
@@ -3258,7 +3258,7 @@ async fn full_assembly_works_end_to_end() {
 - [ ] **Step 2: Run the integration test**
 
 ```
-cargo test -p rustcloud-core --test app_state_build
+cargo test -p crabcloud-core --test app_state_build
 ```
 
 Expected: 1 test passes (`full_assembly_works_end_to_end`).
@@ -3274,7 +3274,7 @@ Expected: all tests across all crates pass (workspace total around 50+).
 - [ ] **Step 4: Commit**
 
 ```
-git add crates/rustcloud-core/tests/app_state_build.rs
+git add crates/crabcloud-core/tests/app_state_build.rs
 git commit -m "test(core): end-to-end AppStateBuilder integration test
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
@@ -3282,39 +3282,39 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 
 ---
 
-## Task 15: rustcloud-server — wire AppState into bootstrap
+## Task 15: crabcloud-server — wire AppState into bootstrap
 
 **Files:**
-- Modify: `crates/rustcloud-server/Cargo.toml`
-- Modify: `crates/rustcloud-server/src/main.rs`
+- Modify: `crates/crabcloud-server/Cargo.toml`
+- Modify: `crates/crabcloud-server/src/main.rs`
 
 Replace the ad-hoc DbPool wiring in `migrate` with the unified `AppStateBuilder`. The migrate path still runs migrations (the builder does this internally), then exits — the AppState assembly is the real verifier that everything composes.
 
-- [ ] **Step 1: Add `rustcloud-core` to the server's deps**
+- [ ] **Step 1: Add `crabcloud-core` to the server's deps**
 
-Modify `crates/rustcloud-server/Cargo.toml` — append to `[dependencies]`:
+Modify `crates/crabcloud-server/Cargo.toml` — append to `[dependencies]`:
 
 ```toml
-rustcloud-core.workspace = true
+crabcloud-core.workspace = true
 ```
 
-(`rustcloud-db`, `rustcloud-config` are already declared from Phase 1 — keep them; `rustcloud-core` will re-export some of those types but the binary still uses both directly for now.)
+(`crabcloud-db`, `crabcloud-config` are already declared from Phase 1 — keep them; `crabcloud-core` will re-export some of those types but the binary still uses both directly for now.)
 
 - [ ] **Step 2: Replace the migrate-arm with AppStateBuilder**
 
-Modify `crates/rustcloud-server/src/main.rs` — replace the `Cmd::Migrate` arm:
+Modify `crates/crabcloud-server/src/main.rs` — replace the `Cmd::Migrate` arm:
 
 Find:
 ```rust
         Cmd::Migrate => {
-            let config = rustcloud_config::load(&cli.config, &[])?;
+            let config = crabcloud_config::load(&cli.config, &[])?;
             info!(dbtype = %config.dbtype.as_str(), "connecting to database");
 
-            let pool = rustcloud_db::DbPool::connect(&config).await?;
+            let pool = crabcloud_db::DbPool::connect(&config).await?;
             info!(dialect = pool.dialect(), "connected");
 
-            let mut runner = rustcloud_db::MigrationRunner::new(&pool, &config.dbtableprefix);
-            runner.register(rustcloud_db::core_set());
+            let mut runner = crabcloud_db::MigrationRunner::new(&pool, &config.dbtableprefix);
+            runner.register(crabcloud_db::core_set());
             let applied = runner.run().await?;
             info!(applied, "migrations complete");
 
@@ -3326,7 +3326,7 @@ Find:
 Replace with:
 ```rust
         Cmd::Migrate => {
-            let config = rustcloud_config::load(&cli.config, &[])?;
+            let config = crabcloud_config::load(&cli.config, &[])?;
             info!(
                 dbtype = %config.dbtype.as_str(),
                 "assembling AppState (this runs migrations)"
@@ -3334,7 +3334,7 @@ Replace with:
 
             // The builder runs migrations internally; we don't need to call the
             // MigrationRunner separately. Build, then close the pool and exit.
-            let state = rustcloud_core::AppStateBuilder::new(config).build().await?;
+            let state = crabcloud_core::AppStateBuilder::new(config).build().await?;
             info!(dialect = state.pool.dialect(), "AppState ready; closing pool");
             state.pool.close().await;
             info!("migrate complete");
@@ -3368,7 +3368,7 @@ datadirectory = "./data"
 trusted_domains = ["localhost"]
 '@ | Out-File -Encoding utf8 fixture.toml
 
-cargo run -p rustcloud-server -- --config fixture.toml migrate
+cargo run -p crabcloud-server -- --config fixture.toml migrate
 ```
 
 Expected: log lines `assembling AppState ... dbtype=sqlite`, `AppState ready; closing pool`, `migrate complete`. The `phase2-smoke.db` file is created with `oc_appconfig` and `oc_migrations` tables.
@@ -3390,7 +3390,7 @@ Expected: all tests pass.
 - [ ] **Step 5: Commit**
 
 ```
-git add crates/rustcloud-server
+git add crates/crabcloud-server
 git commit -m "feat(server): use AppStateBuilder in migrate path
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
@@ -3409,7 +3409,7 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 Replace `README.md`:
 
 ```markdown
-# Rustcloud
+# Crabcloud
 
 A Rust port of [Nextcloud server](https://github.com/nextcloud/server), with a Dioxus frontend.
 
@@ -3430,7 +3430,7 @@ cp config/config.toml.example config/config.toml
 cargo xtask up
 
 # 3. Run migrations.
-cargo run -p rustcloud-server -- migrate
+cargo run -p crabcloud-server -- migrate
 ```
 
 ## Development
@@ -3438,24 +3438,24 @@ cargo run -p rustcloud-server -- migrate
 ```bash
 cargo xtask check-all     # fmt + clippy + tests (SQLite only)
 cargo xtask up            # start MySQL + Postgres for multi-dialect tests
-cargo test -p rustcloud-db --test migrate_end_to_end -- --include-ignored
+cargo test -p crabcloud-db --test migrate_end_to_end -- --include-ignored
 cargo xtask down          # stop dev DBs
 ```
 
 ## Workspace layout
 
-- `crates/rustcloud-config` — layered TOML config loader (figment-based).
-- `crates/rustcloud-cache` — `Cache` trait + `MemoryCache` + `TypedCache<T>`.
-- `crates/rustcloud-db` — `DbPool` enum over Sqlite/MySql/Postgres, `MigrationRunner`.
-- `crates/rustcloud-i18n` — gettext `.po` loader, `Locale`, `I18n` service.
-- `crates/rustcloud-ocs` — OCS envelope (JSON/XML), `CapabilityProvider` aggregator with cache-backed ETag.
-- `crates/rustcloud-core` — `AppState`, `AppConfigService`, `Error`, `BootstrapHook`.
-- `crates/rustcloud-server` — the binary; CLI, tracing, lifecycle.
+- `crates/crabcloud-config` — layered TOML config loader (figment-based).
+- `crates/crabcloud-cache` — `Cache` trait + `MemoryCache` + `TypedCache<T>`.
+- `crates/crabcloud-db` — `DbPool` enum over Sqlite/MySql/Postgres, `MigrationRunner`.
+- `crates/crabcloud-i18n` — gettext `.po` loader, `Locale`, `I18n` service.
+- `crates/crabcloud-ocs` — OCS envelope (JSON/XML), `CapabilityProvider` aggregator with cache-backed ETag.
+- `crates/crabcloud-core` — `AppState`, `AppConfigService`, `Error`, `BootstrapHook`.
+- `crates/crabcloud-server` — the binary; CLI, tracing, lifecycle.
 - `xtask/` — project automation (`check-all`, `up`, `down`).
 - `migrations/core/` — core SQL migrations, per-dialect.
 - `l10n/<app>/<locale>.po` — translation catalogs.
 
-Future phases add `rustcloud-http` (Phase 3) and `rustcloud-ui` (Phase 4).
+Future phases add `crabcloud-http` (Phase 3) and `crabcloud-ui` (Phase 4).
 
 ## License
 
@@ -3473,11 +3473,11 @@ Completed: 2026-05-10
 
 ## What works
 
-- **`rustcloud-cache`**: `Cache` trait, `MemoryCache` impl with lazy TTL expiry, `TypedCache<T>` serde wrapper.
-- **`rustcloud-i18n`**: `Locale` type with Accept-Language resolution, `Catalog` loader for gettext `.po` files (polib), `I18n` service with `t()`/`tn()` and source-string fallback. Seed `l10n/core/de.po` provided.
-- **`rustcloud-ocs`**: `OcsResponse<T>` envelope rendering to JSON or XML; `Format` content negotiation; `CapabilityProvider` trait + cache-backed aggregator with stable ETag; `CoreCapabilities` provider matching Nextcloud's `core` namespace shape.
-- **`rustcloud-core`**: `Error` enum with HTTP status mapping + client-safe message extraction; `AppConfigService` (cache-write-through against `oc_appconfig`); `BootstrapRegistry` + `BootstrapHook` — the extension point future apps will use; `AppState` + `AppStateBuilder` that assembles everything end-to-end.
-- **`rustcloud-server`**: `migrate` subcommand now uses `AppStateBuilder::build()`, proving the assembly path.
+- **`crabcloud-cache`**: `Cache` trait, `MemoryCache` impl with lazy TTL expiry, `TypedCache<T>` serde wrapper.
+- **`crabcloud-i18n`**: `Locale` type with Accept-Language resolution, `Catalog` loader for gettext `.po` files (polib), `I18n` service with `t()`/`tn()` and source-string fallback. Seed `l10n/core/de.po` provided.
+- **`crabcloud-ocs`**: `OcsResponse<T>` envelope rendering to JSON or XML; `Format` content negotiation; `CapabilityProvider` trait + cache-backed aggregator with stable ETag; `CoreCapabilities` provider matching Nextcloud's `core` namespace shape.
+- **`crabcloud-core`**: `Error` enum with HTTP status mapping + client-safe message extraction; `AppConfigService` (cache-write-through against `oc_appconfig`); `BootstrapRegistry` + `BootstrapHook` — the extension point future apps will use; `AppState` + `AppStateBuilder` that assembles everything end-to-end.
+- **`crabcloud-server`**: `migrate` subcommand now uses `AppStateBuilder::build()`, proving the assembly path.
 
 ## What's deferred
 
@@ -3501,7 +3501,7 @@ Completed: 2026-05-10
 - `version` subcommand should print git SHA + dialect support (spec §10.2 / §10.5). Carried.
 - Test config-builder duplication (`cfg_sqlite`/`base_config`) — now in 5 places. Consolidate before Phase 3.
 - `quick-xml` is declared as a workspace dep but the current XML rendering is hand-rolled; either keep the dep for future XML parsing needs or drop it.
-- `compute_etag` in `rustcloud-ocs::capabilities` uses `DefaultHasher`, which is documented as not stable across Rust versions. Acceptable for an ETag (clients re-fetch on mismatch) but worth swapping for `blake3` or `xxhash-rust` if a stable cross-version hash matters.
+- `compute_etag` in `crabcloud-ocs::capabilities` uses `DefaultHasher`, which is documented as not stable across Rust versions. Acceptable for an ETag (clients re-fetch on mismatch) but worth swapping for `blake3` or `xxhash-rust` if a stable cross-version hash matters.
 - `AppConfigService::fetch_db` repeats the same `query_as` body three times for the three pool variants. Phase 3 introduces the `db_dispatch!` macro mentioned in the spec; this is its first natural use site.
 
 ## Acceptance criteria

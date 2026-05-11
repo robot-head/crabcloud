@@ -1,0 +1,20 @@
+[package]
+name = "crabcloud-db"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+crabcloud-config.workspace = true
+secrecy.workspace = true
+sqlx.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+crabcloud-config = { workspace = true, features = ["test-support"] }
+tempfile.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+
+[lints]
+workspace = true

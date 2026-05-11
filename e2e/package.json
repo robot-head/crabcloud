@@ -1,5 +1,5 @@
 {
-  "name": "rustcloud-e2e",
+  "name": "crabcloud-e2e",
   "private": true,
   "version": "0.0.0",
   "scripts": {

@@ -1,4 +1,4 @@
-# Rustcloud configuration. Copy to config/config.toml and edit.
+# Crabcloud configuration. Copy to config/config.toml and edit.
 # Most keys match Nextcloud's config.php semantically; the file format is TOML.
 
 instanceid     = "REPLACE_WITH_RANDOM_STRING"
@@ -10,13 +10,13 @@ version        = "31.0.0.0"
 versionstring  = "31.0.0"
 
 dbtype         = "sqlite"
-dbname         = "rustcloud.db"
+dbname         = "crabcloud.db"
 dbtableprefix  = "oc_"
 # For mysql/pgsql, set these and remove the comment characters:
 # dbhost       = "127.0.0.1"
 # dbport       = 3307
-# dbuser       = "rustcloud"
-# dbpassword   = "rustcloud"
+# dbuser       = "crabcloud"
+# dbpassword   = "crabcloud"
 
 datadirectory  = "./data"
 
@@ -26,7 +26,7 @@ trusted_domains = ["localhost", "127.0.0.1"]
 # Logging
 loglevel = "info"
 
-# Rustcloud-specific
+# Crabcloud-specific
 bind_address = "127.0.0.1:8080"
 db_pool_max  = 16
 

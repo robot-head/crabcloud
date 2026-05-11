@@ -28,28 +28,28 @@
 ## File Structure (Phase 5 additions and modifications)
 
 ```
-rustcloud/
+crabcloud/
 ├── Cargo.toml                                       # [workspace.lints] + vergen-gix
 ├── CONTRIBUTING.md                                  # NEW — MSRV + dev tooling notes
 ├── crates/
-│   ├── rustcloud-config/
+│   ├── crabcloud-config/
 │   │   ├── Cargo.toml                               # [features] test-support
 │   │   └── src/
 │   │       ├── lib.rs                               # gate test_support behind feature
 │   │       └── test_support.rs                      # NEW — minimal_sqlite_config helper
-│   ├── rustcloud-core/
+│   ├── crabcloud-core/
 │   │   ├── Cargo.toml                               # drop unused deps; +tracing in non-test
 │   │   └── src/
 │   │       └── appconfig.rs                         # CACHE_TTL const + tracing::warn!
-│   ├── rustcloud-http/
+│   ├── crabcloud-http/
 │   │   └── src/
 │   │       ├── middleware/security_headers.rs       # content-type-aware CSP
 │   │       └── routes/ui.rs                         # 404 on NotFoundRoute
-│   ├── rustcloud-server/
+│   ├── crabcloud-server/
 │   │   ├── Cargo.toml                               # vergen-gix build dep
 │   │   ├── build.rs                                 # NEW — capture git SHA
 │   │   └── src/main.rs                              # version subcommand expansion
-│   └── rustcloud-ui/
+│   └── crabcloud-ui/
 │       └── src/
 │           ├── app.rs                               # HomeRoute hydration marker
 │           └── pages/{home,login,not_found}.rs      # rustdoc rollout
@@ -64,32 +64,32 @@ rustcloud/
     └── 2026-05-10-platform-core-phase-5-ship.changelog.md   # NEW
 ```
 
-Every test file across the workspace gets its hand-rolled `FileConfig` literal replaced with a call to `rustcloud_config::test_support::minimal_sqlite_config(path)`. About 10 files affected, each is a one-shot diff.
+Every test file across the workspace gets its hand-rolled `FileConfig` literal replaced with a call to `crabcloud_config::test_support::minimal_sqlite_config(path)`. About 10 files affected, each is a one-shot diff.
 
 ---
 
 ## Task 1: Test fixture consolidation
 
 **Files:**
-- Modify: `crates/rustcloud-config/Cargo.toml`
-- Modify: `crates/rustcloud-config/src/lib.rs`
-- Create: `crates/rustcloud-config/src/test_support.rs`
-- Modify (dev-deps): `crates/rustcloud-cache/Cargo.toml` — no change needed (doesn't use FileConfig)
-- Modify (dev-deps): `crates/rustcloud-db/Cargo.toml`, `crates/rustcloud-core/Cargo.toml`, `crates/rustcloud-http/Cargo.toml`, `crates/rustcloud-ui/Cargo.toml`
+- Modify: `crates/crabcloud-config/Cargo.toml`
+- Modify: `crates/crabcloud-config/src/lib.rs`
+- Create: `crates/crabcloud-config/src/test_support.rs`
+- Modify (dev-deps): `crates/crabcloud-cache/Cargo.toml` — no change needed (doesn't use FileConfig)
+- Modify (dev-deps): `crates/crabcloud-db/Cargo.toml`, `crates/crabcloud-core/Cargo.toml`, `crates/crabcloud-http/Cargo.toml`, `crates/crabcloud-ui/Cargo.toml`
 - Modify (test fixtures): all files that hand-rolled `FileConfig` test literals.
 
-Centralize the `~10`-fold duplicated `cfg_sqlite(...) -> FileConfig` helper. New helper lives in `rustcloud-config::test_support` behind a `test-support` feature flag so it's only compiled into builds that need it.
+Centralize the `~10`-fold duplicated `cfg_sqlite(...) -> FileConfig` helper. New helper lives in `crabcloud-config::test_support` behind a `test-support` feature flag so it's only compiled into builds that need it.
 
-- [ ] **Step 1: Add the feature flag to `rustcloud-config/Cargo.toml`**
+- [ ] **Step 1: Add the feature flag to `crabcloud-config/Cargo.toml`**
 
-Append to `crates/rustcloud-config/Cargo.toml`:
+Append to `crates/crabcloud-config/Cargo.toml`:
 
 ```toml
 [features]
 test-support = []
 ```
 
-- [ ] **Step 2: Write `crates/rustcloud-config/src/test_support.rs`**
+- [ ] **Step 2: Write `crates/crabcloud-config/src/test_support.rs`**
 
 ```rust
 //! Test-only helpers for building `FileConfig` instances. Compiled only when
@@ -183,7 +183,7 @@ mod tests {
 
 - [ ] **Step 3: Gate `test_support` behind the feature in `lib.rs`**
 
-Modify `crates/rustcloud-config/src/lib.rs`. Find the existing module list and add:
+Modify `crates/crabcloud-config/src/lib.rs`. Find the existing module list and add:
 
 ```rust
 #[cfg(feature = "test-support")]
@@ -195,71 +195,71 @@ pub mod test_support;
 - [ ] **Step 4: Verify the helper builds and its own tests pass**
 
 ```
-cargo test -p rustcloud-config --features test-support
+cargo test -p crabcloud-config --features test-support
 ```
 
 Expected: 14 prior tests + 2 new `test_support::tests` tests pass.
 
 ```
-cargo build -p rustcloud-config
+cargo build -p crabcloud-config
 ```
 
 Expected: clean (without the feature, `test_support` isn't compiled — no warnings either).
 
 - [ ] **Step 5: Add `test-support` feature to consumer dev-deps**
 
-Modify each consumer's `Cargo.toml` — change `rustcloud-config.workspace = true` in `[dev-dependencies]` to:
+Modify each consumer's `Cargo.toml` — change `crabcloud-config.workspace = true` in `[dev-dependencies]` to:
 
 ```toml
-rustcloud-config = { workspace = true, features = ["test-support"] }
+crabcloud-config = { workspace = true, features = ["test-support"] }
 ```
 
 Apply to:
-- `crates/rustcloud-db/Cargo.toml`
-- `crates/rustcloud-core/Cargo.toml`
-- `crates/rustcloud-http/Cargo.toml`
-- `crates/rustcloud-ui/Cargo.toml`
+- `crates/crabcloud-db/Cargo.toml`
+- `crates/crabcloud-core/Cargo.toml`
+- `crates/crabcloud-http/Cargo.toml`
+- `crates/crabcloud-ui/Cargo.toml`
 
-(`rustcloud-config` itself doesn't need the change — `[features] test-support = []` is sufficient and `cargo test --features test-support` enables it for its own tests.)
+(`crabcloud-config` itself doesn't need the change — `[features] test-support = []` is sufficient and `cargo test --features test-support` enables it for its own tests.)
 
 - [ ] **Step 6: Replace hand-rolled fixtures**
 
 Audit every test file that constructs `FileConfig { ... }` by hand. Each one becomes a one-line call:
 
 ```rust
-let cfg = rustcloud_config::test_support::minimal_sqlite_config(path);
+let cfg = crabcloud_config::test_support::minimal_sqlite_config(path);
 ```
 
 Or for tests needing `bootstrap_admin`:
 
 ```rust
-let cfg = rustcloud_config::test_support::sqlite_config_with_admin(path, "admin", &hash);
+let cfg = crabcloud_config::test_support::sqlite_config_with_admin(path, "admin", &hash);
 ```
 
 If a test mutates other fields, do so via direct field assignment on the returned struct (it's `Clone + Debug`):
 
 ```rust
-let mut cfg = rustcloud_config::test_support::minimal_sqlite_config(path);
+let mut cfg = crabcloud_config::test_support::minimal_sqlite_config(path);
 cfg.dbtype = DbType::Mysql; // example
 ```
 
 Files known to have `cfg_sqlite` / `cfg_with_admin` / `base_config` style helpers (from previous-phase reviews):
 
-1. `crates/rustcloud-db/src/pool.rs` — `tests` module
-2. `crates/rustcloud-db/src/migrate.rs` — `tests` module
-3. `crates/rustcloud-db/src/core_migrations.rs` — `tests` module
-4. `crates/rustcloud-db/tests/migrate_end_to_end.rs` — `base_config` + URL-config builders
-5. `crates/rustcloud-core/src/appconfig.rs` — `tests::cfg_sqlite`
-6. `crates/rustcloud-core/src/state.rs` — `tests::cfg_sqlite`
-7. `crates/rustcloud-core/tests/app_state_build.rs` — `cfg_sqlite`
-8. `crates/rustcloud-http/src/routes/status.rs` — `tests::cfg_sqlite`
-9. `crates/rustcloud-http/src/routes/login.rs` — `tests::cfg_with_admin`
-10. `crates/rustcloud-http/src/routes/ocs/capabilities.rs` — `tests::cfg_sqlite`
-11. `crates/rustcloud-http/tests/cors.rs` — `cfg`
-12. `crates/rustcloud-http/tests/http_end_to_end.rs` — `cfg`
-13. `crates/rustcloud-ui/tests/ssr_routes.rs` — `cfg`
+1. `crates/crabcloud-db/src/pool.rs` — `tests` module
+2. `crates/crabcloud-db/src/migrate.rs` — `tests` module
+3. `crates/crabcloud-db/src/core_migrations.rs` — `tests` module
+4. `crates/crabcloud-db/tests/migrate_end_to_end.rs` — `base_config` + URL-config builders
+5. `crates/crabcloud-core/src/appconfig.rs` — `tests::cfg_sqlite`
+6. `crates/crabcloud-core/src/state.rs` — `tests::cfg_sqlite`
+7. `crates/crabcloud-core/tests/app_state_build.rs` — `cfg_sqlite`
+8. `crates/crabcloud-http/src/routes/status.rs` — `tests::cfg_sqlite`
+9. `crates/crabcloud-http/src/routes/login.rs` — `tests::cfg_with_admin`
+10. `crates/crabcloud-http/src/routes/ocs/capabilities.rs` — `tests::cfg_sqlite`
+11. `crates/crabcloud-http/tests/cors.rs` — `cfg`
+12. `crates/crabcloud-http/tests/http_end_to_end.rs` — `cfg`
+13. `crates/crabcloud-ui/tests/ssr_routes.rs` — `cfg`
 
-For each, remove the local helper function entirely and replace its call sites with `rustcloud_config::test_support::minimal_sqlite_config(path)` (plus `bootstrap_admin` injection where needed).
+For each, remove the local helper function entirely and replace its call sites with `crabcloud_config::test_support::minimal_sqlite_config(path)` (plus `bootstrap_admin` injection where needed).
 
 The `migrate_end_to_end.rs` file is special — it has `mysql_config_from_url` and `postgres_config_from_url` helpers that produce non-SQLite configs. Keep those (they're not duplicates), but have them START from `minimal_sqlite_config(...)` and mutate `dbtype`, `dbhost`, etc. This removes about 30 lines of duplicated field listing.
 
@@ -274,12 +274,12 @@ Expected: green. All ~150 tests still pass; each test file is now smaller and le
 - [ ] **Step 8: Commit**
 
 ```
-git add crates/rustcloud-config crates/rustcloud-cache crates/rustcloud-db crates/rustcloud-core crates/rustcloud-http crates/rustcloud-ui Cargo.lock
+git add crates/crabcloud-config crates/crabcloud-cache crates/crabcloud-db crates/crabcloud-core crates/crabcloud-http crates/crabcloud-ui Cargo.lock
 git commit -m "refactor(config): consolidate test FileConfig fixture into test-support module
 
 Phase 1-4 accumulated ~10 hand-rolled cfg_sqlite() helpers across crates;
 adding a new FileConfig field meant touching all of them. Centralize in
-rustcloud-config::test_support behind a feature flag and replace every
+crabcloud-config::test_support behind a feature flag and replace every
 call site.
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
@@ -293,7 +293,7 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 - Modify: `Cargo.toml` (root) — add `[workspace.lints]` table
 - Modify: every per-crate `Cargo.toml` — add `[lints] workspace = true`
 
-Establish workspace-wide lint policy. `cargo check` and `cargo clippy` will then warn (or error) per the workspace policy, not just `xtask check-all`. The first task to actually flag the unused deps in `rustcloud-core` (cleaned up in Task 3).
+Establish workspace-wide lint policy. `cargo check` and `cargo clippy` will then warn (or error) per the workspace policy, not just `xtask check-all`. The first task to actually flag the unused deps in `crabcloud-core` (cleaned up in Task 3).
 
 - [ ] **Step 1: Add `[workspace.lints]` to root `Cargo.toml`**
 
@@ -318,11 +318,11 @@ For each of the 9 member crates and `xtask`, append to their `Cargo.toml`:
 workspace = true
 ```
 
-Crates: `rustcloud-cache`, `rustcloud-config`, `rustcloud-core`, `rustcloud-db`, `rustcloud-http`, `rustcloud-i18n`, `rustcloud-ocs`, `rustcloud-server`, `rustcloud-ui`, `xtask`.
+Crates: `crabcloud-cache`, `crabcloud-config`, `crabcloud-core`, `crabcloud-db`, `crabcloud-http`, `crabcloud-i18n`, `crabcloud-ocs`, `crabcloud-server`, `crabcloud-ui`, `xtask`.
 
 - [ ] **Step 3: Run `cargo clippy --workspace --all-targets`**
 
-Expected: a list of unused-crate-dependencies warnings. These are addressed in Task 3 (rustcloud-core has the bulk).
+Expected: a list of unused-crate-dependencies warnings. These are addressed in Task 3 (crabcloud-core has the bulk).
 
 The build won't fail at this step — `xtask check-all` is the one that escalates warnings to errors. Don't run `xtask check-all` yet; expect it to fail until Task 3 clears the deps.
 
@@ -340,21 +340,21 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 
 ---
 
-## Task 3: Clean up unused deps in `rustcloud-core`
+## Task 3: Clean up unused deps in `crabcloud-core`
 
 **Files:**
-- Modify: `crates/rustcloud-core/Cargo.toml`
-- Modify: `crates/rustcloud-core/src/appconfig.rs` (will use `tracing` now — see Task 4; for this task, just drop the truly unused ones)
+- Modify: `crates/crabcloud-core/Cargo.toml`
+- Modify: `crates/crabcloud-core/src/appconfig.rs` (will use `tracing` now — see Task 4; for this task, just drop the truly unused ones)
 
 The Phase 2 final review flagged: `async-trait`, `tracing`, `serde`, `serde_json` declared but unreferenced. Task 4 will start using `tracing` (`tracing::warn!` in cache failure paths). The other three remain unused after Task 4 — drop them.
 
 - [ ] **Step 1: Verify which deps are actually used**
 
-Run `cargo clippy -p rustcloud-core --all-targets` after Task 2 lands. Note the list of `unused_crate_dependencies` warnings.
+Run `cargo clippy -p crabcloud-core --all-targets` after Task 2 lands. Note the list of `unused_crate_dependencies` warnings.
 
 Expected hits (per Phase 2 review): `async-trait`, `serde`, `serde_json`. (`tracing` will move from "unused" to "used" via Task 4, but for now it's also unused.)
 
-- [ ] **Step 2: Drop unused deps from `crates/rustcloud-core/Cargo.toml`**
+- [ ] **Step 2: Drop unused deps from `crates/crabcloud-core/Cargo.toml`**
 
 Find the `[dependencies]` block and remove these three lines:
 
@@ -369,8 +369,8 @@ Leave `tracing.workspace = true` in place — Task 4 will start using it.
 - [ ] **Step 3: Build to confirm**
 
 ```
-cargo build -p rustcloud-core
-cargo test -p rustcloud-core --features test-support
+cargo build -p crabcloud-core
+cargo test -p crabcloud-core --features test-support
 ```
 
 Expected: clean build. `tracing` may still be flagged as unused (until Task 4); accept that.
@@ -379,8 +379,8 @@ Expected: clean build. `tracing` may still be flagged as unused (until Task 4); 
 
 Run `cargo clippy --workspace --all-targets` and list all `unused_crate_dependencies` warnings. For each flagged dep that isn't actually used elsewhere in the same crate, remove it. Likely candidates (verify):
 
-- `rustcloud-ocs/Cargo.toml`: `quick-xml` was already dropped in Batch C, verify.
-- `rustcloud-ui/Cargo.toml`: `tracing` — verify it's used (the SSR handler may not have a tracing span). If unused, drop.
+- `crabcloud-ocs/Cargo.toml`: `quick-xml` was already dropped in Batch C, verify.
+- `crabcloud-ui/Cargo.toml`: `tracing` — verify it's used (the SSR handler may not have a tracing span). If unused, drop.
 
 If a crate genuinely uses a dep that the lint mis-flags, add an `#[allow(unused_crate_dependencies)]` to the crate root with a comment explaining why.
 
@@ -402,13 +402,13 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 ## Task 4: `AppConfigService` — `tracing::warn!` on cache failures + lift `CACHE_TTL`
 
 **Files:**
-- Modify: `crates/rustcloud-core/src/appconfig.rs`
+- Modify: `crates/crabcloud-core/src/appconfig.rs`
 
 Phase 2 review flagged two related items: cache `set` / `del` errors are silently swallowed, and the 60-second TTL is a magic literal. Both are tiny fixes; doing them together turns the unused `tracing` dep into a used one.
 
 - [ ] **Step 1: Lift `CACHE_TTL` to a module constant**
 
-Modify `crates/rustcloud-core/src/appconfig.rs`. Just below the imports, add:
+Modify `crates/crabcloud-core/src/appconfig.rs`. Just below the imports, add:
 
 ```rust
 /// Per-key TTL for the `oc_appconfig` write-through cache. Short enough that
@@ -454,7 +454,7 @@ The exact variable names (`appid`, `key`) should match the surrounding scope. Ad
 - [ ] **Step 3: Run tests**
 
 ```
-cargo test -p rustcloud-core --features test-support
+cargo test -p crabcloud-core --features test-support
 ```
 
 Expected: 13 prior tests still pass. No new tests — `tracing::warn!` is observable in operator logs, not in unit-test assertions. (You can verify by hand with `RUST_LOG=warn cargo test` if curious, but not required.)
@@ -462,7 +462,7 @@ Expected: 13 prior tests still pass. No new tests — `tracing::warn!` is observ
 - [ ] **Step 4: Commit**
 
 ```
-git add crates/rustcloud-core/src/appconfig.rs
+git add crates/crabcloud-core/src/appconfig.rs
 git commit -m "chore(core): tracing::warn! on appconfig cache failures; lift CACHE_TTL
 
 Silent cache failures hid degraded behavior in production. Now logs
@@ -477,17 +477,17 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 ## Task 5: `version` subcommand expansion — git SHA + supported dialects
 
 **Files:**
-- Modify: `crates/rustcloud-server/Cargo.toml` (add `vergen-gix` as a build-dep)
-- Create: `crates/rustcloud-server/build.rs`
-- Modify: `crates/rustcloud-server/src/main.rs`
+- Modify: `crates/crabcloud-server/Cargo.toml` (add `vergen-gix` as a build-dep)
+- Create: `crates/crabcloud-server/build.rs`
+- Modify: `crates/crabcloud-server/src/main.rs`
 
-Spec §10.2 / §10.5 call for the `version` subcommand to print: Rustcloud version, git SHA, supported dialects, reported-as-Nextcloud version. Phase 1 stub prints only "rustcloud-server 0.1.0 (build target subproject: platform-core)". Expand it.
+Spec §10.2 / §10.5 call for the `version` subcommand to print: Crabcloud version, git SHA, supported dialects, reported-as-Nextcloud version. Phase 1 stub prints only "crabcloud-server 0.1.0 (build target subproject: platform-core)". Expand it.
 
 Use `vergen-gix` (a maintained fork of `vergen` using `gix` for git introspection — no shell-out, no `git` binary required) to capture the git SHA at build time. If `vergen-gix` is unavailable on crates.io, fall back to a small `build.rs` that runs `git rev-parse HEAD` via `std::process::Command`.
 
 - [ ] **Step 1: Add `vergen-gix` as a build dependency**
 
-Modify `crates/rustcloud-server/Cargo.toml`. Add a `[build-dependencies]` block (or append if it exists):
+Modify `crates/crabcloud-server/Cargo.toml`. Add a `[build-dependencies]` block (or append if it exists):
 
 ```toml
 [build-dependencies]
@@ -507,10 +507,10 @@ Then in the crate Cargo.toml change to:
 vergen-gix.workspace = true
 ```
 
-- [ ] **Step 2: Write `crates/rustcloud-server/build.rs`**
+- [ ] **Step 2: Write `crates/crabcloud-server/build.rs`**
 
 ```rust
-//! Build script for `rustcloud-server`. Captures git SHA + build timestamp
+//! Build script for `crabcloud-server`. Captures git SHA + build timestamp
 //! via `vergen-gix` and emits them as `cargo:rustc-env=...` lines so
 //! `env!()` in main.rs can read them.
 
@@ -543,46 +543,46 @@ fn main() {
         .and_then(|o| if o.status.success() { String::from_utf8(o.stdout).ok() } else { None })
         .map(|s| s.trim().to_string())
         .unwrap_or_else(|| "unknown".into());
-    println!("cargo:rustc-env=RUSTCLOUD_GIT_SHA={}", sha);
+    println!("cargo:rustc-env=CRABCLOUD_GIT_SHA={}", sha);
     println!("cargo:rerun-if-changed=.git/HEAD");
 }
 ```
 
-Then read `env!("RUSTCLOUD_GIT_SHA")` in main.rs instead of `env!("VERGEN_GIT_SHA")`. Use whichever path actually builds — report the choice in your status.
+Then read `env!("CRABCLOUD_GIT_SHA")` in main.rs instead of `env!("VERGEN_GIT_SHA")`. Use whichever path actually builds — report the choice in your status.
 
 - [ ] **Step 3: Expand the `Version` subcommand handler in `main.rs`**
 
-Modify `crates/rustcloud-server/src/main.rs`. Find the `Cmd::Version =>` arm and replace:
+Modify `crates/crabcloud-server/src/main.rs`. Find the `Cmd::Version =>` arm and replace:
 
 ```rust
         Cmd::Version => {
             println!(
-                "rustcloud-server {pkg_ver}\n\
+                "crabcloud-server {pkg_ver}\n\
                  git:       {git_sha}\n\
                  dialects:  sqlite, mysql, postgres\n\
                  subproject: platform-core",
                 pkg_ver = env!("CARGO_PKG_VERSION"),
                 git_sha = option_env!("VERGEN_GIT_SHA")
-                    .or_else(|| option_env!("RUSTCLOUD_GIT_SHA"))
+                    .or_else(|| option_env!("CRABCLOUD_GIT_SHA"))
                     .unwrap_or("unknown"),
             );
             Ok(())
         }
 ```
 
-The `option_env!` chain accommodates both build.rs paths (vergen-gix emits `VERGEN_GIT_SHA`; the fallback emits `RUSTCLOUD_GIT_SHA`).
+The `option_env!` chain accommodates both build.rs paths (vergen-gix emits `VERGEN_GIT_SHA`; the fallback emits `CRABCLOUD_GIT_SHA`).
 
 - [ ] **Step 4: Verify**
 
 ```
-cargo build -p rustcloud-server
-cargo run -p rustcloud-server -- version
+cargo build -p crabcloud-server
+cargo run -p crabcloud-server -- version
 ```
 
 Expected output (SHA will be the actual HEAD commit):
 
 ```
-rustcloud-server 0.1.0
+crabcloud-server 0.1.0
 git:       <40-char hex>
 dialects:  sqlite, mysql, postgres
 subproject: platform-core
@@ -599,7 +599,7 @@ Expected: green. The existing `cli.rs` tests don't assert on stdout content, so 
 - [ ] **Step 6: Commit**
 
 ```
-git add Cargo.toml Cargo.lock crates/rustcloud-server
+git add Cargo.toml Cargo.lock crates/crabcloud-server
 git commit -m "feat(server): version subcommand prints git SHA + supported dialects
 
 Spec §10.2 / §10.5 call for git SHA + dialect coverage in the version
@@ -614,7 +614,7 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 ## Task 6: Content-type-aware CSP
 
 **Files:**
-- Modify: `crates/rustcloud-http/src/middleware/security_headers.rs`
+- Modify: `crates/crabcloud-http/src/middleware/security_headers.rs`
 
 The current `SecurityHeadersLayer` ships one CSP for everything: `default-src 'none'; frame-ancestors 'self'; base-uri 'self'`. That's correct for JSON/XML responses but blocks the WASM bundle on HTML responses, defeating spec §13 #6 hydration.
 
@@ -625,7 +625,7 @@ Make the layer check the response `Content-Type` and pick the policy:
 
 - [ ] **Step 1: Update the constants and call site**
 
-Modify `crates/rustcloud-http/src/middleware/security_headers.rs`. Replace the CSP constant and the `call` method's header-set block:
+Modify `crates/crabcloud-http/src/middleware/security_headers.rs`. Replace the CSP constant and the `call` method's header-set block:
 
 Find:
 
@@ -737,7 +737,7 @@ mod tests {
 - [ ] **Step 3: Run the tests**
 
 ```
-cargo test -p rustcloud-http --lib middleware::security_headers
+cargo test -p crabcloud-http --lib middleware::security_headers
 ```
 
 Expected: 3 tests pass (was 1; +2).
@@ -753,7 +753,7 @@ Expected: green workspace-wide.
 - [ ] **Step 5: Commit**
 
 ```
-git add crates/rustcloud-http/src/middleware/security_headers.rs
+git add crates/crabcloud-http/src/middleware/security_headers.rs
 git commit -m "feat(http): content-type-aware CSP — HTML routes get wasm-unsafe-eval
 
 The API-restrictive default-src 'none' blocked the WASM bundle on
@@ -769,14 +769,14 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 ## Task 7: Dioxus router 404 status
 
 **Files:**
-- Modify: `crates/rustcloud-ui/src/ssr.rs`
-- Modify: `crates/rustcloud-http/src/routes/ui.rs`
+- Modify: `crates/crabcloud-ui/src/ssr.rs`
+- Modify: `crates/crabcloud-http/src/routes/ui.rs`
 
 The current SSR handler returns 200 for every path, including unknown ones (which the Dioxus `NotFoundRoute` catch-all renders as a 404 page). Real clients and crawlers expect HTTP 404 for unknown URLs.
 
 Approach: parse the request path through `Route::parse_path(...)` before rendering. If the parser yields `Route::NotFoundRoute { .. }`, set the response status to 404; otherwise 200.
 
-- [ ] **Step 1: Add a route-parsing helper to `crates/rustcloud-ui/src/ssr.rs`**
+- [ ] **Step 1: Add a route-parsing helper to `crates/crabcloud-ui/src/ssr.rs`**
 
 Inside `ssr.rs`, add a `pub fn resolve_route(path: &str) -> Route` helper. Dioxus's `Routable` trait provides `Route::from_str(path)` via `FromStr`. The exact API may differ; the documented Dioxus 0.6 pattern is:
 
@@ -830,12 +830,12 @@ If `Route::from_str` isn't the correct Dioxus 0.6 API, the alternative is `<Rout
 
 - [ ] **Step 2: Use the helper in the HTTP handler**
 
-Modify `crates/rustcloud-http/src/routes/ui.rs`. Find the handler body — there's a section building the document via `format!("{doctype}<html lang=\"{lang}\">...")` and a `let mut resp = (StatusCode::OK, document).into_response();`. Modify to consult `is_not_found`:
+Modify `crates/crabcloud-http/src/routes/ui.rs`. Find the handler body — there's a section building the document via `format!("{doctype}<html lang=\"{lang}\">...")` and a `let mut resp = (StatusCode::OK, document).into_response();`. Modify to consult `is_not_found`:
 
 ```rust
     let path = uri.path();
-    let resolved_route = rustcloud_ui::resolve_route(path);
-    let status = if rustcloud_ui::is_not_found(&resolved_route) {
+    let resolved_route = crabcloud_ui::resolve_route(path);
+    let status = if crabcloud_ui::is_not_found(&resolved_route) {
         StatusCode::NOT_FOUND
     } else {
         StatusCode::OK
@@ -846,7 +846,7 @@ Modify `crates/rustcloud-http/src/routes/ui.rs`. Find the handler body — there
     let mut resp = (status, document).into_response();
 ```
 
-You'll need to re-export the helpers from `rustcloud-ui::lib.rs`:
+You'll need to re-export the helpers from `crabcloud-ui::lib.rs`:
 
 ```rust
 #[cfg(not(target_arch = "wasm32"))]
@@ -857,7 +857,7 @@ pub use ssr::{is_not_found, resolve_route, render_app_html, render_head_html, HT
 
 - [ ] **Step 3: Update the SSR integration test**
 
-In `crates/rustcloud-ui/tests/ssr_routes.rs`, find the `unknown_path_returns_404_dioxus_page` test. It currently asserts `StatusCode::OK` with a comment that 404 status is deferred to Phase 5. Update to assert `StatusCode::NOT_FOUND`:
+In `crates/crabcloud-ui/tests/ssr_routes.rs`, find the `unknown_path_returns_404_dioxus_page` test. It currently asserts `StatusCode::OK` with a comment that 404 status is deferred to Phase 5. Update to assert `StatusCode::NOT_FOUND`:
 
 ```rust
 #[tokio::test]
@@ -880,7 +880,7 @@ async fn unknown_path_returns_404_dioxus_page() {
 - [ ] **Step 4: Run tests**
 
 ```
-cargo test -p rustcloud-ui
+cargo test -p crabcloud-ui
 ```
 
 Expected: 11 lib + 5 integration + 3 resolve_tests = 19 tests pass. (The previous 5 integration count grows to 5; the new `resolve_tests` module adds 3.)
@@ -894,7 +894,7 @@ Expected: green.
 - [ ] **Step 5: Commit**
 
 ```
-git add crates/rustcloud-ui crates/rustcloud-http/src/routes/ui.rs
+git add crates/crabcloud-ui crates/crabcloud-http/src/routes/ui.rs
 git commit -m "feat(ui,http): SSR handler returns 404 when Dioxus router resolves to NotFoundRoute
 
 Unknown URLs now produce HTTP 404 with the rendered NotFound page,
@@ -908,13 +908,13 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 ## Task 8: Add hydration marker to the UI
 
 **Files:**
-- Modify: `crates/rustcloud-ui/src/app.rs`
+- Modify: `crates/crabcloud-ui/src/app.rs`
 
 Add a `data-hydrated` attribute that flips from `"false"` (SSR) to `"true"` (post-mount on the client). The Playwright test in Task 9 waits for this signal to confirm hydration ran.
 
 - [ ] **Step 1: Modify `App` to render a hydration marker on a wrapping div**
 
-Open `crates/rustcloud-ui/src/app.rs`. Modify the `App` component to wrap the `Router::<Route>` in a `div` with the hydration marker:
+Open `crates/crabcloud-ui/src/app.rs`. Modify the `App` component to wrap the `Router::<Route>` in a `div` with the hydration marker:
 
 ```rust
 /// Root component. Renders the `Router<Route>` inside a hydration marker div.
@@ -941,7 +941,7 @@ If `use_effect` semantics differ from this in Dioxus 0.6.3 (e.g., it does fire d
 
 - [ ] **Step 2: Update SSR integration tests to verify the initial state**
 
-In `crates/rustcloud-ui/tests/ssr_routes.rs`, add to `home_returns_ssr_html_with_hydration_payload`:
+In `crates/crabcloud-ui/tests/ssr_routes.rs`, add to `home_returns_ssr_html_with_hydration_payload`:
 
 ```rust
     assert!(html.contains("data-hydrated=\"false\""), "missing hydration marker");
@@ -952,7 +952,7 @@ In `crates/rustcloud-ui/tests/ssr_routes.rs`, add to `home_returns_ssr_html_with
 - [ ] **Step 3: Run tests**
 
 ```
-cargo test -p rustcloud-ui
+cargo test -p crabcloud-ui
 ```
 
 Expected: all tests pass; the new assertion catches the SSR-side marker.
@@ -960,7 +960,7 @@ Expected: all tests pass; the new assertion catches the SSR-side marker.
 - [ ] **Step 4: Commit**
 
 ```
-git add crates/rustcloud-ui/src/app.rs crates/rustcloud-ui/tests/ssr_routes.rs
+git add crates/crabcloud-ui/src/app.rs crates/crabcloud-ui/tests/ssr_routes.rs
 git commit -m "feat(ui): emit data-hydrated marker for Playwright E2E hydration check
 
 SSR renders data-hydrated=\"false\"; the WASM client's use_effect
@@ -982,7 +982,7 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 - Create: `e2e/README.md`
 - Modify: `.gitignore` (root) — confirm `node_modules` covered
 
-This is the most-substantial Phase 5 task. It adds a Node project at `e2e/` that drives a real Chromium browser against a running rustcloud-server, verifying that:
+This is the most-substantial Phase 5 task. It adds a Node project at `e2e/` that drives a real Chromium browser against a running crabcloud-server, verifying that:
 1. The SSR'd page contains the expected content.
 2. The WASM bundle loads and hydrates (data-hydrated transitions to "true").
 3. After login (POST `/index.php/login`), the home page shows the authenticated greeting.
@@ -991,7 +991,7 @@ This is the most-substantial Phase 5 task. It adds a Node project at `e2e/` that
 
 ```json
 {
-  "name": "rustcloud-e2e",
+  "name": "crabcloud-e2e",
   "private": true,
   "version": "0.0.0",
   "scripts": {
@@ -1019,7 +1019,7 @@ playwright/.cache/
 ```ts
 import { defineConfig, devices } from "@playwright/test";
 
-const BASE_URL = process.env.RUSTCLOUD_E2E_URL ?? "http://127.0.0.1:18765";
+const BASE_URL = process.env.CRABCLOUD_E2E_URL ?? "http://127.0.0.1:18765";
 
 export default defineConfig({
     testDir: "./tests",
@@ -1044,14 +1044,14 @@ export default defineConfig({
 });
 ```
 
-The test expects the server to already be running at `RUSTCLOUD_E2E_URL` (default `http://127.0.0.1:18765`). The CI workflow (Task 10) starts the server before invoking `npm test` and stops it after.
+The test expects the server to already be running at `CRABCLOUD_E2E_URL` (default `http://127.0.0.1:18765`). The CI workflow (Task 10) starts the server before invoking `npm test` and stops it after.
 
 - [ ] **Step 4: Write `e2e/tests/hydration.spec.ts`**
 
 ```ts
 import { test, expect } from "@playwright/test";
 
-test.describe("Rustcloud SSR + hydration", () => {
+test.describe("Crabcloud SSR + hydration", () => {
     test("home page SSRs with hydration marker and hydrates", async ({ page }) => {
         // Capture the response before JS executes to verify the SSR snapshot.
         const response = await page.goto("/");
@@ -1111,14 +1111,14 @@ test.describe("Rustcloud SSR + hydration", () => {
 });
 ```
 
-The `page.context()._options.baseURL` access is internal-API; if Playwright 1.49 doesn't expose it, fall back to hard-coding `http://127.0.0.1:18765` or read `process.env.RUSTCLOUD_E2E_URL` again.
+The `page.context()._options.baseURL` access is internal-API; if Playwright 1.49 doesn't expose it, fall back to hard-coding `http://127.0.0.1:18765` or read `process.env.CRABCLOUD_E2E_URL` again.
 
 - [ ] **Step 5: Write `e2e/README.md`**
 
 ```markdown
-# Rustcloud E2E (Playwright)
+# Crabcloud E2E (Playwright)
 
-End-to-end tests for the Rustcloud HTTP surface, including real WASM hydration
+End-to-end tests for the Crabcloud HTTP surface, including real WASM hydration
 in a headless Chromium.
 
 ## Prerequisites
@@ -1140,8 +1140,8 @@ python3 -c "import bcrypt; print(bcrypt.hashpw(b'hunter2', bcrypt.gensalt(12)).d
 # and a [bootstrap_admin] section using the hash above.
 
 cargo xtask build
-cargo run --release -p rustcloud-server -- --config fixture.toml migrate
-cargo run --release -p rustcloud-server -- --config fixture.toml serve
+cargo run --release -p crabcloud-server -- --config fixture.toml migrate
+cargo run --release -p crabcloud-server -- --config fixture.toml serve
 ```
 
 In another terminal:
@@ -1195,7 +1195,7 @@ Add a new CI job that:
 1. Needs `build-wasm` (downloads the WASM bundle artifact).
 2. Sets up Node 20.
 3. Installs the e2e project deps + Chromium.
-4. Builds the rustcloud-server release binary.
+4. Builds the crabcloud-server release binary.
 5. Writes a fixture config including a bcrypt hash for `bootstrap_admin`.
 6. Starts the server in the background and waits for `/status.php` to respond.
 7. Runs `npm test` in `e2e/`.
@@ -1220,9 +1220,9 @@ After the existing `test-multidialect` job, append:
         uses: actions/download-artifact@v4
         with:
           name: dx-public
-          path: target/dx/rustcloud-ui/release/web/public
+          path: target/dx/crabcloud-ui/release/web/public
       - name: Build release server
-        run: cargo build --release -p rustcloud-server
+        run: cargo build --release -p crabcloud-server
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
@@ -1266,10 +1266,10 @@ After the existing `test-multidialect` job, append:
           password_hash = "${{ steps.bcrypt.outputs.hash }}"
           EOF
       - name: Migrate
-        run: cargo run --release -p rustcloud-server -- --config config/e2e.toml migrate
+        run: cargo run --release -p crabcloud-server -- --config config/e2e.toml migrate
       - name: Start server
         run: |
-          cargo run --release -p rustcloud-server -- --config config/e2e.toml serve &
+          cargo run --release -p crabcloud-server -- --config config/e2e.toml serve &
           echo "SERVER_PID=$!" >> "$GITHUB_ENV"
           # Wait for the server to become ready.
           for i in $(seq 1 30); do
@@ -1284,7 +1284,7 @@ After the existing `test-multidialect` job, append:
       - name: Run Playwright tests
         working-directory: e2e
         env:
-          RUSTCLOUD_E2E_URL: http://127.0.0.1:18765
+          CRABCLOUD_E2E_URL: http://127.0.0.1:18765
         run: npm test
       - name: Stop server
         if: always()
@@ -1349,14 +1349,14 @@ RUSTDOCFLAGS="-W missing_docs" cargo doc --workspace --no-deps 2>&1 | grep "miss
 
 The list is the work surface. Expect entries in:
 
-- `rustcloud-cache`: `Cache` trait methods may have docs; `MemoryCache::new` does; check `TypedCache` methods.
-- `rustcloud-config`: `BootstrapAdminConfig` fields, `CacheConfig` fields.
-- `rustcloud-core`: `AppState` fields, `Error` variants, `AppConfigService` methods.
-- `rustcloud-db`: `DbPool` variants, `DbError` variants, `MigrationRunner` methods.
-- `rustcloud-i18n`: `Locale::new`, `I18n` methods.
-- `rustcloud-ocs`: `OcsStatus` variants, `Format::content_type`, `CapabilityProvider` trait methods.
-- `rustcloud-http`: `AuthenticatedUser` fields, `OptionalUser`, `SessionLayer::new`, `CsrfLayer::new`.
-- `rustcloud-ui`: `Route` variants, `RequestContext` fields, `App` component.
+- `crabcloud-cache`: `Cache` trait methods may have docs; `MemoryCache::new` does; check `TypedCache` methods.
+- `crabcloud-config`: `BootstrapAdminConfig` fields, `CacheConfig` fields.
+- `crabcloud-core`: `AppState` fields, `Error` variants, `AppConfigService` methods.
+- `crabcloud-db`: `DbPool` variants, `DbError` variants, `MigrationRunner` methods.
+- `crabcloud-i18n`: `Locale::new`, `I18n` methods.
+- `crabcloud-ocs`: `OcsStatus` variants, `Format::content_type`, `CapabilityProvider` trait methods.
+- `crabcloud-http`: `AuthenticatedUser` fields, `OptionalUser`, `SessionLayer::new`, `CsrfLayer::new`.
+- `crabcloud-ui`: `Route` variants, `RequestContext` fields, `App` component.
 
 For each missing item, add a one-line `///` doc above it. Examples:
 
@@ -1423,9 +1423,9 @@ Document the development workflow, MSRV, the Cargo.lock pinning rationale, and t
 - [ ] **Step 1: Write `CONTRIBUTING.md`**
 
 ```markdown
-# Contributing to Rustcloud
+# Contributing to Crabcloud
 
-Thanks for your interest! Rustcloud is an early-stage Rust port of
+Thanks for your interest! Crabcloud is an early-stage Rust port of
 [Nextcloud server](https://github.com/nextcloud/server) with a Dioxus frontend.
 The platform-core substrate (HTTP, DB, sessions, OCS envelope, SSR UI) is
 nearing completion; per-feature sub-projects (users, storage, WebDAV, sharing,
@@ -1457,14 +1457,14 @@ cargo xtask check-all
 
 # Start MySQL + Postgres for the multi-dialect db tests
 cargo xtask up
-cargo test -p rustcloud-db --test migrate_end_to_end -- --include-ignored
+cargo test -p crabcloud-db --test migrate_end_to_end -- --include-ignored
 cargo xtask down
 
 # Build the WASM bundle + release server
 cargo xtask build
 
 # Run the server
-cargo run --release -p rustcloud-server -- --config config/config.toml serve
+cargo run --release -p crabcloud-server -- --config config/config.toml serve
 
 # Playwright E2E (requires server already running on :18765)
 cd e2e
@@ -1493,7 +1493,7 @@ contributed to the change.
 ## Filing issues / PRs
 
 This is an early-stage repo. File issues at
-<https://github.com/robot-head/rustcloud/issues>. Before opening a PR, run
+<https://github.com/robot-head/crabcloud/issues>. Before opening a PR, run
 `cargo xtask check-all` locally; expect CI to also exercise the E2E job.
 ```
 
@@ -1521,7 +1521,7 @@ Final pass: update the README to declare platform-core complete, write the Phase
 Replace the existing README with the Phase 5 version. The only change from the Phase 4 README is the status line and a small reference to `CONTRIBUTING.md`:
 
 ```markdown
-# Rustcloud
+# Crabcloud
 
 A Rust port of [Nextcloud server](https://github.com/nextcloud/server), with a Dioxus frontend.
 
@@ -1546,23 +1546,23 @@ cp config/config.toml.example config/config.toml
 cargo xtask build
 
 # 3. Run migrations + serve.
-cargo run --release -p rustcloud-server -- migrate
-cargo run --release -p rustcloud-server -- serve
+cargo run --release -p crabcloud-server -- migrate
+cargo run --release -p crabcloud-server -- serve
 
 # 4. Visit http://127.0.0.1:8080/ in a browser.
 ```
 
 ## Workspace layout
 
-- `crates/rustcloud-config` — layered TOML config loader.
-- `crates/rustcloud-cache` — `Cache` trait + `MemoryCache` + `TypedCache<T>`.
-- `crates/rustcloud-db` — `DbPool` enum, `MigrationRunner`, core schema.
-- `crates/rustcloud-i18n` — gettext `.po` loader, `Locale`, `I18n`.
-- `crates/rustcloud-ocs` — OCS envelope (JSON/XML), capabilities aggregator.
-- `crates/rustcloud-core` — `AppState`, `Error`, `AppConfigService`, `BootstrapHook`.
-- `crates/rustcloud-http` — axum router, middleware, session, CSRF, auth extractors, API handlers.
-- `crates/rustcloud-ui` — Dioxus 0.6 SSR + WASM hydration UI.
-- `crates/rustcloud-server` — the binary; CLI, tracing, lifecycle.
+- `crates/crabcloud-config` — layered TOML config loader.
+- `crates/crabcloud-cache` — `Cache` trait + `MemoryCache` + `TypedCache<T>`.
+- `crates/crabcloud-db` — `DbPool` enum, `MigrationRunner`, core schema.
+- `crates/crabcloud-i18n` — gettext `.po` loader, `Locale`, `I18n`.
+- `crates/crabcloud-ocs` — OCS envelope (JSON/XML), capabilities aggregator.
+- `crates/crabcloud-core` — `AppState`, `Error`, `AppConfigService`, `BootstrapHook`.
+- `crates/crabcloud-http` — axum router, middleware, session, CSRF, auth extractors, API handlers.
+- `crates/crabcloud-ui` — Dioxus 0.6 SSR + WASM hydration UI.
+- `crates/crabcloud-server` — the binary; CLI, tracing, lifecycle.
 - `xtask/` — project automation.
 - `e2e/` — Playwright tests (real-browser SSR + hydration verification).
 - `migrations/core/` — core SQL migrations, per-dialect.
@@ -1584,9 +1584,9 @@ Completed: <today's date in YYYY-MM-DD>
 
 ## What works
 
-- **Test fixture consolidation**: `rustcloud-config::test_support::minimal_sqlite_config` (behind a `test-support` feature) replaces ~10 hand-rolled `cfg_sqlite` copies across the workspace. Adding a new `FileConfig` field now means changing one helper, not ten.
+- **Test fixture consolidation**: `crabcloud-config::test_support::minimal_sqlite_config` (behind a `test-support` feature) replaces ~10 hand-rolled `cfg_sqlite` copies across the workspace. Adding a new `FileConfig` field now means changing one helper, not ten.
 - **Centralized lint policy**: `[workspace.lints]` at the root + `[lints] workspace = true` in every member. `unused_crate_dependencies = "warn"` surfaces dep drift via plain `cargo check`.
-- **`rustcloud-core` cleanup**: drops unused `async-trait` / `serde` / `serde_json`. `tracing` now carries its weight via `AppConfigService` instrumentation.
+- **`crabcloud-core` cleanup**: drops unused `async-trait` / `serde` / `serde_json`. `tracing` now carries its weight via `AppConfigService` instrumentation.
 - **`AppConfigService` instrumentation**: cache `set` / `del` failures now emit `tracing::warn!` with structured fields (error, appid, key). `CACHE_TTL` lifted to a module constant.
 - **`version` subcommand expansion**: prints crate version, git SHA (via `vergen-gix`), supported dialects, sub-project marker. Closes spec §10.2 / §10.5 acceptance.
 - **Content-type-aware CSP**: `SecurityHeadersLayer` inspects the response `Content-Type` and ships the UI-permissive CSP (`script-src 'self' 'wasm-unsafe-eval'`) for HTML and the API-restrictive `default-src 'none'` for everything else. **Unblocks WASM hydration**.
@@ -1665,9 +1665,9 @@ Run through each Phase 5 task and spec §13 criterion:
 |---|---|
 | Test fixture consolidated | `cargo test --workspace` still green; no remaining hand-rolled `cfg_sqlite` |
 | `[workspace.lints]` table | `cargo clippy --workspace` runs the lint policy |
-| `rustcloud-core` unused deps cleaned | `cargo clippy -p rustcloud-core` — no `unused_crate_dependencies` |
+| `crabcloud-core` unused deps cleaned | `cargo clippy -p crabcloud-core` — no `unused_crate_dependencies` |
 | `AppConfigService` tracing + CACHE_TTL | grep `APPCONFIG_CACHE_TTL` + `tracing::warn!` in appconfig.rs |
-| `version` subcommand expansion | `cargo run -p rustcloud-server -- version` prints SHA + dialects |
+| `version` subcommand expansion | `cargo run -p crabcloud-server -- version` prints SHA + dialects |
 | Content-type CSP | `routes::middleware::security_headers::tests` 3 tests pass |
 | Dioxus router 404 | `tests/ssr_routes.rs::unknown_path_returns_404_dioxus_page` asserts 404 |
 | Hydration marker | `home_returns_ssr_html_with_hydration_payload` asserts `data-hydrated="false"` in SSR |

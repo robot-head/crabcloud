@@ -1,8 +1,8 @@
 import { test, expect } from "@playwright/test";
 
-const BASE_URL = process.env.RUSTCLOUD_E2E_URL ?? "http://127.0.0.1:18765";
+const BASE_URL = process.env.CRABCLOUD_E2E_URL ?? "http://127.0.0.1:18765";
 
-test.describe("Rustcloud SSR + hydration", () => {
+test.describe("Crabcloud SSR + hydration", () => {
     test("home page SSRs with hydration marker and hydrates", async ({ page }) => {
         // Capture the response before JS executes to verify the SSR snapshot.
         const response = await page.goto("/");

@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Stand up the Rustcloud workspace and produce a binary that loads layered config, connects to SQLite/MySQL/Postgres, runs core migrations, and exits cleanly — verified by a multi-dialect integration test suite that runs green in CI.
+**Goal:** Stand up the Crabcloud workspace and produce a binary that loads layered config, connects to SQLite/MySQL/Postgres, runs core migrations, and exits cleanly — verified by a multi-dialect integration test suite that runs green in CI.
 
-**Architecture:** Cargo workspace with focused crates per responsibility. `rustcloud-server` is the binary; it consumes `rustcloud-config` (layered TOML + env + CLI overrides via `figment`) and `rustcloud-db` (a `DbPool` enum over three concrete sqlx pool types — `SqlitePool`, `MySqlPool`, `PgPool` — with a hand-rolled `MigrationRunner` that supports per-namespace migration tracking for the future app framework). No HTTP, no UI yet; this phase produces the substrate everything else builds on.
+**Architecture:** Cargo workspace with focused crates per responsibility. `crabcloud-server` is the binary; it consumes `crabcloud-config` (layered TOML + env + CLI overrides via `figment`) and `crabcloud-db` (a `DbPool` enum over three concrete sqlx pool types — `SqlitePool`, `MySqlPool`, `PgPool` — with a hand-rolled `MigrationRunner` that supports per-namespace migration tracking for the future app framework). No HTTP, no UI yet; this phase produces the substrate everything else builds on.
 
 **Tech Stack:** Rust 1.83+ stable, `tokio` (async), `clap` (CLI), `figment` (config), `secrecy` (sensitive fields), `sqlx` 0.8 with `sqlite`/`mysql`/`postgres` features and `runtime-tokio-rustls`, `tracing` + `tracing-subscriber`, `anyhow` (errors at boundaries) + `thiserror` (typed errors in libraries), `cargo-xtask` pattern for project commands, GitHub Actions for CI.
 
@@ -17,7 +17,7 @@
 Phase 1 creates the following files. Each task lists exactly what it creates or modifies.
 
 ```
-rustcloud/
+crabcloud/
 ├── Cargo.toml                              # workspace manifest (Task 1)
 ├── rust-toolchain.toml                     # pin Rust version (Task 1)
 ├── .gitignore                              # (Task 1)
@@ -25,20 +25,20 @@ rustcloud/
 ├── .cargo/config.toml                      # cargo xtask alias (Task 2)
 ├── .github/workflows/ci.yml                # CI workflow (Task 12)
 ├── crates/
-│   ├── rustcloud-config/
+│   ├── crabcloud-config/
 │   │   ├── Cargo.toml                      # (Task 4)
 │   │   └── src/
 │   │       ├── lib.rs                      # re-exports (Task 4)
 │   │       ├── types.rs                    # FileConfig, DbType (Task 4)
 │   │       └── loader.rs                   # figment-based loading (Task 5)
-│   ├── rustcloud-db/
+│   ├── crabcloud-db/
 │   │   ├── Cargo.toml                      # (Task 7)
 │   │   └── src/
 │   │       ├── lib.rs                      # re-exports (Task 7)
 │   │       ├── pool.rs                     # DbPool enum + connect (Task 7)
 │   │       ├── migrate.rs                  # MigrationRunner (Task 8)
 │   │       └── error.rs                    # DbError (Task 7)
-│   └── rustcloud-server/
+│   └── crabcloud-server/
 │       ├── Cargo.toml                      # (Task 3)
 │       └── src/
 │           ├── main.rs                     # entry point (Task 3 → expanded each task)
@@ -69,7 +69,7 @@ rustcloud/
 - **Commits:** every task ends with at least one commit. Commit messages use Conventional Commits (`feat:`, `chore:`, `test:`, `docs:`). Co-Authored-By line is included.
 - **Testing:** TDD — write the failing test first, watch it fail, implement, watch it pass, commit. Where a task creates a brand-new crate, the first test may be a smoke test (`assert_eq!(1, 1)`) just to verify the crate compiles; the meaningful test follows immediately.
 - **No mocks for the DB.** Tests hit a real SQLite (in-process); MySQL and Postgres tests use `testcontainers-rs` in CI and a docker-compose stack locally.
-- **Errors:** Library crates expose typed errors via `thiserror`. The `rustcloud-server` binary converts to `anyhow::Result` at the `main` boundary.
+- **Errors:** Library crates expose typed errors via `thiserror`. The `crabcloud-server` binary converts to `anyhow::Result` at the `main` boundary.
 - **Shell:** commands shown use cross-platform Cargo / git / docker commands. Where shell-specific syntax matters (env var setting), both PowerShell and bash forms are shown.
 
 ---
@@ -105,8 +105,8 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.83"
 license = "AGPL-3.0-or-later"
-authors = ["Rustcloud Contributors"]
-repository = "https://github.com/mdstone/rustcloud"
+authors = ["Crabcloud Contributors"]
+repository = "https://github.com/mdstone/crabcloud"
 
 [workspace.dependencies]
 anyhow = "1.0"
@@ -135,8 +135,8 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 
 # Internal workspace deps. Entries are added by subsequent tasks when their crate exists.
-# rustcloud-config = { path = "crates/rustcloud-config" }   # Task 4
-# rustcloud-db     = { path = "crates/rustcloud-db" }       # Task 7
+# crabcloud-config = { path = "crates/crabcloud-config" }   # Task 4
+# crabcloud-db     = { path = "crates/crabcloud-db" }       # Task 7
 
 [profile.release]
 lto = "thin"
@@ -182,7 +182,7 @@ Thumbs.db
 
 Write `README.md`:
 ```markdown
-# Rustcloud
+# Crabcloud
 
 A Rust port of [Nextcloud server](https://github.com/nextcloud/server), with a Dioxus frontend.
 
@@ -214,14 +214,14 @@ services:
   mysql:
     image: mysql:8.4
     environment:
-      MYSQL_ROOT_PASSWORD: rustcloud
-      MYSQL_DATABASE: rustcloud
-      MYSQL_USER: rustcloud
-      MYSQL_PASSWORD: rustcloud
+      MYSQL_ROOT_PASSWORD: crabcloud
+      MYSQL_DATABASE: crabcloud
+      MYSQL_USER: crabcloud
+      MYSQL_PASSWORD: crabcloud
     ports:
       - "3307:3306"
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-prustcloud"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-pcrabcloud"]
       interval: 5s
       timeout: 5s
       retries: 12
@@ -229,13 +229,13 @@ services:
   postgres:
     image: postgres:16
     environment:
-      POSTGRES_DB: rustcloud
-      POSTGRES_USER: rustcloud
-      POSTGRES_PASSWORD: rustcloud
+      POSTGRES_DB: crabcloud
+      POSTGRES_USER: crabcloud
+      POSTGRES_PASSWORD: crabcloud
     ports:
       - "5433:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U rustcloud"]
+      test: ["CMD-SHELL", "pg_isready -U crabcloud"]
       interval: 5s
       timeout: 5s
       retries: 12
@@ -391,32 +391,32 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 
 ---
 
-## Task 3: rustcloud-server binary skeleton + tracing + clap
+## Task 3: crabcloud-server binary skeleton + tracing + clap
 
 **Files:**
-- Create: `crates/rustcloud-server/Cargo.toml`
-- Create: `crates/rustcloud-server/src/main.rs`
-- Create: `crates/rustcloud-server/src/cli.rs`
-- Create: `crates/rustcloud-server/src/tracing.rs`
+- Create: `crates/crabcloud-server/Cargo.toml`
+- Create: `crates/crabcloud-server/src/main.rs`
+- Create: `crates/crabcloud-server/src/cli.rs`
+- Create: `crates/crabcloud-server/src/tracing.rs`
 
 This task gets the binary buildable with `--version`, `serve`, `migrate` subcommands stubbed. Real wiring happens in later tasks.
 
-- [ ] **Step 1: Write the failing test (smoke: `cargo build -p rustcloud-server` succeeds)**
+- [ ] **Step 1: Write the failing test (smoke: `cargo build -p crabcloud-server` succeeds)**
 
 There's no source code yet — the "test" is just a build. Skip to creating the files.
 
-- [ ] **Step 2: Write `crates/rustcloud-server/Cargo.toml`**
+- [ ] **Step 2: Write `crates/crabcloud-server/Cargo.toml`**
 
-Write `crates/rustcloud-server/Cargo.toml`:
+Write `crates/crabcloud-server/Cargo.toml`:
 ```toml
 [package]
-name = "rustcloud-server"
+name = "crabcloud-server"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 
 [[bin]]
-name = "rustcloud-server"
+name = "crabcloud-server"
 path = "src/main.rs"
 
 [dependencies]
@@ -427,18 +427,18 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 ```
 
-- [ ] **Step 3: Write `crates/rustcloud-server/src/cli.rs`**
+- [ ] **Step 3: Write `crates/crabcloud-server/src/cli.rs`**
 
-Write `crates/rustcloud-server/src/cli.rs`:
+Write `crates/crabcloud-server/src/cli.rs`:
 ```rust
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
-#[command(name = "rustcloud-server", version, about = "Rustcloud server")]
+#[command(name = "crabcloud-server", version, about = "Crabcloud server")]
 pub struct Cli {
     /// Path to the main config file.
-    #[arg(long, env = "RUSTCLOUD_CONFIG", default_value = "config/config.toml", global = true)]
+    #[arg(long, env = "CRABCLOUD_CONFIG", default_value = "config/config.toml", global = true)]
     pub config: PathBuf,
 
     #[command(subcommand)]
@@ -470,9 +470,9 @@ impl Cli {
 }
 ```
 
-- [ ] **Step 4: Write `crates/rustcloud-server/src/tracing.rs`**
+- [ ] **Step 4: Write `crates/crabcloud-server/src/tracing.rs`**
 
-Write `crates/rustcloud-server/src/tracing.rs`:
+Write `crates/crabcloud-server/src/tracing.rs`:
 ```rust
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
@@ -495,9 +495,9 @@ pub fn init() {
 }
 ```
 
-- [ ] **Step 5: Write `crates/rustcloud-server/src/main.rs`**
+- [ ] **Step 5: Write `crates/crabcloud-server/src/main.rs`**
 
-Write `crates/rustcloud-server/src/main.rs`:
+Write `crates/crabcloud-server/src/main.rs`:
 ```rust
 mod cli;
 mod tracing;
@@ -515,7 +515,7 @@ async fn main() -> Result<()> {
 
     match cli.command() {
         Cmd::Version => {
-            println!("rustcloud-server {} (build target subproject: platform-core)", env!("CARGO_PKG_VERSION"));
+            println!("crabcloud-server {} (build target subproject: platform-core)", env!("CARGO_PKG_VERSION"));
             Ok(())
         }
         Cmd::Serve => {
@@ -532,13 +532,13 @@ async fn main() -> Result<()> {
 
 Note: we import `tracing::info` for the macro and `crate::tracing` for our module. Renaming our module would avoid the clash, but `tracing` (the module name) maps cleanly to the crate it wraps; the `use tracing::info` in the body unambiguously refers to the external crate.
 
-- [ ] **Step 6: Add `rustcloud-server` to the workspace and build**
+- [ ] **Step 6: Add `crabcloud-server` to the workspace and build**
 
 Modify `Cargo.toml` — extend the `members` array:
 ```toml
 [workspace]
 members = [
-    "crates/rustcloud-server",
+    "crates/crabcloud-server",
     "xtask",
 ]
 resolver = "2"
@@ -548,30 +548,30 @@ Run:
 ```
 cargo build
 ```
-Expected: clean build of `xtask` + `rustcloud-server`.
+Expected: clean build of `xtask` + `crabcloud-server`.
 
 - [ ] **Step 7: Run `version` subcommand**
 
 Run:
 ```
-cargo run -p rustcloud-server -- version
+cargo run -p crabcloud-server -- version
 ```
 Expected output:
 ```
-rustcloud-server 0.1.0 (build target subproject: platform-core)
+crabcloud-server 0.1.0 (build target subproject: platform-core)
 ```
 
 - [ ] **Step 8: Run with no subcommand to confirm `serve` is default and errors clearly**
 
 Run:
 ```
-cargo run -p rustcloud-server
+cargo run -p crabcloud-server
 ```
 Expected: structured log line "serve subcommand not yet implemented", then error `serve is implemented in a later phase`. Exit code non-zero.
 
 - [ ] **Step 9: Write a smoke unit test for CLI parsing**
 
-Modify `crates/rustcloud-server/src/cli.rs` — append:
+Modify `crates/crabcloud-server/src/cli.rs` — append:
 ```rust
 #[cfg(test)]
 mod tests {
@@ -586,19 +586,19 @@ mod tests {
 
     #[test]
     fn default_subcommand_is_serve() {
-        let cli = Cli::parse_from(["rustcloud-server"]);
+        let cli = Cli::parse_from(["crabcloud-server"]);
         assert!(matches!(cli.command(), Cmd::Serve));
     }
 
     #[test]
     fn version_subcommand_parses() {
-        let cli = Cli::parse_from(["rustcloud-server", "version"]);
+        let cli = Cli::parse_from(["crabcloud-server", "version"]);
         assert!(matches!(cli.command(), Cmd::Version));
     }
 
     #[test]
     fn config_flag_overrides_default() {
-        let cli = Cli::parse_from(["rustcloud-server", "--config", "/tmp/custom.toml", "version"]);
+        let cli = Cli::parse_from(["crabcloud-server", "--config", "/tmp/custom.toml", "version"]);
         assert_eq!(cli.config, std::path::PathBuf::from("/tmp/custom.toml"));
     }
 }
@@ -608,14 +608,14 @@ mod tests {
 
 Run:
 ```
-cargo test -p rustcloud-server
+cargo test -p crabcloud-server
 ```
 Expected: 4 tests passed.
 
 - [ ] **Step 11: Commit**
 
 ```
-git add Cargo.toml crates/rustcloud-server
+git add Cargo.toml crates/crabcloud-server
 git commit -m "feat(server): add binary skeleton with clap CLI and tracing init
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
@@ -623,21 +623,21 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 
 ---
 
-## Task 4: rustcloud-config types
+## Task 4: crabcloud-config types
 
 **Files:**
-- Create: `crates/rustcloud-config/Cargo.toml`
-- Create: `crates/rustcloud-config/src/lib.rs`
-- Create: `crates/rustcloud-config/src/types.rs`
+- Create: `crates/crabcloud-config/Cargo.toml`
+- Create: `crates/crabcloud-config/src/lib.rs`
+- Create: `crates/crabcloud-config/src/types.rs`
 
 Define the typed shape of the config file. No loading logic yet — just types + serde.
 
-- [ ] **Step 1: Write `crates/rustcloud-config/Cargo.toml`**
+- [ ] **Step 1: Write `crates/crabcloud-config/Cargo.toml`**
 
-Write `crates/rustcloud-config/Cargo.toml`:
+Write `crates/crabcloud-config/Cargo.toml`:
 ```toml
 [package]
-name = "rustcloud-config"
+name = "crabcloud-config"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -652,11 +652,11 @@ toml.workspace = true
 tempfile.workspace = true
 ```
 
-- [ ] **Step 2: Write `crates/rustcloud-config/src/lib.rs`**
+- [ ] **Step 2: Write `crates/crabcloud-config/src/lib.rs`**
 
-Write `crates/rustcloud-config/src/lib.rs`:
+Write `crates/crabcloud-config/src/lib.rs`:
 ```rust
-//! Layered configuration for Rustcloud.
+//! Layered configuration for Crabcloud.
 //!
 //! See `docs/superpowers/specs/2026-05-10-platform-core-design.md` §5.
 
@@ -665,9 +665,9 @@ mod types;
 pub use types::{DbType, FileConfig, FileConfigError};
 ```
 
-- [ ] **Step 3: Write `crates/rustcloud-config/src/types.rs`**
+- [ ] **Step 3: Write `crates/crabcloud-config/src/types.rs`**
 
-Write `crates/rustcloud-config/src/types.rs`:
+Write `crates/crabcloud-config/src/types.rs`:
 ```rust
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
@@ -745,7 +745,7 @@ pub struct FileConfig {
     #[serde(default = "default_language")]
     pub default_language: String,
 
-    // --- Rustcloud-specific ---
+    // --- Crabcloud-specific ---
     #[serde(default = "default_bind_address")]
     pub bind_address: SocketAddr,
     #[serde(default)]
@@ -800,7 +800,7 @@ impl FileConfig {
 
 - [ ] **Step 4: Write unit tests for `types.rs`**
 
-Append to `crates/rustcloud-config/src/types.rs`:
+Append to `crates/crabcloud-config/src/types.rs`:
 ```rust
 #[cfg(test)]
 mod tests {
@@ -818,12 +818,12 @@ mod tests {
             dbtype: DbType::Sqlite,
             dbhost: None,
             dbport: None,
-            dbname: "rustcloud".to_string(),
+            dbname: "crabcloud".to_string(),
             dbuser: None,
             dbpassword: None,
             dbtableprefix: "oc_".to_string(),
             db_pool_max: 16,
-            datadirectory: "/var/lib/rustcloud".into(),
+            datadirectory: "/var/lib/crabcloud".into(),
             trusted_domains: vec!["localhost".to_string()],
             trusted_proxies: vec![],
             overwrite_cli_url: None,
@@ -892,8 +892,8 @@ installed = true
 version = "31.0.0.0"
 versionstring = "31.0.0"
 dbtype = "sqlite"
-dbname = "rustcloud"
-datadirectory = "/var/lib/rustcloud"
+dbname = "crabcloud"
+datadirectory = "/var/lib/crabcloud"
 trusted_domains = ["localhost"]
 "overwrite.cli.url" = "https://cloud.example.com"
 "overwrite.protocol" = "https"
@@ -906,35 +906,35 @@ trusted_domains = ["localhost"]
 }
 ```
 
-- [ ] **Step 5: Add `rustcloud-config` to the workspace**
+- [ ] **Step 5: Add `crabcloud-config` to the workspace**
 
-Modify `Cargo.toml` — append `crates/rustcloud-config` to `members` and add the workspace dependency entry:
+Modify `Cargo.toml` — append `crates/crabcloud-config` to `members` and add the workspace dependency entry:
 ```toml
 [workspace]
 members = [
-    "crates/rustcloud-config",
-    "crates/rustcloud-server",
+    "crates/crabcloud-config",
+    "crates/crabcloud-server",
     "xtask",
 ]
 ```
 
 Under `[workspace.dependencies]`, add (un-comment if you commented it out):
 ```toml
-rustcloud-config = { path = "crates/rustcloud-config" }
+crabcloud-config = { path = "crates/crabcloud-config" }
 ```
 
 - [ ] **Step 6: Run the tests**
 
 Run:
 ```
-cargo test -p rustcloud-config
+cargo test -p crabcloud-config
 ```
 Expected: 6 tests passed.
 
 - [ ] **Step 7: Commit**
 
 ```
-git add Cargo.toml crates/rustcloud-config
+git add Cargo.toml crates/crabcloud-config
 git commit -m "feat(config): add typed FileConfig and DbType with validation
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
@@ -942,23 +942,23 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 
 ---
 
-## Task 5: rustcloud-config layered loader (figment)
+## Task 5: crabcloud-config layered loader (figment)
 
 **Files:**
-- Create: `crates/rustcloud-config/src/loader.rs`
-- Modify: `crates/rustcloud-config/Cargo.toml`
-- Modify: `crates/rustcloud-config/src/lib.rs`
+- Create: `crates/crabcloud-config/src/loader.rs`
+- Modify: `crates/crabcloud-config/Cargo.toml`
+- Modify: `crates/crabcloud-config/src/lib.rs`
 - Create: `config/config.toml.example`
 
 Layered loading order (each overrides the previous):
 1. The base TOML at the path passed in.
 2. An optional `config.local.toml` overlay in the same directory.
-3. Env vars prefixed `RUSTCLOUD_`.
+3. Env vars prefixed `CRABCLOUD_`.
 4. CLI key=value overrides (a slice passed at load time).
 
 - [ ] **Step 1: Add `figment` to the crate's deps**
 
-Modify `crates/rustcloud-config/Cargo.toml` — replace the `[dependencies]` block:
+Modify `crates/crabcloud-config/Cargo.toml` — replace the `[dependencies]` block:
 ```toml
 [dependencies]
 figment = { workspace = true, features = ["toml", "env"] }
@@ -970,7 +970,7 @@ toml.workspace = true
 
 - [ ] **Step 2: Write the failing test for layered loading**
 
-Create `crates/rustcloud-config/src/loader.rs` with just the test for now:
+Create `crates/crabcloud-config/src/loader.rs` with just the test for now:
 ```rust
 use crate::types::{FileConfig, FileConfigError};
 use figment::{providers::{Env, Format, Toml}, Figment};
@@ -1004,8 +1004,8 @@ installed = true
 version = "31.0.0.0"
 versionstring = "31.0.0"
 dbtype = "sqlite"
-dbname = "rustcloud"
-datadirectory = "/var/lib/rustcloud"
+dbname = "crabcloud"
+datadirectory = "/var/lib/crabcloud"
 trusted_domains = ["localhost"]
 "#;
 
@@ -1068,9 +1068,9 @@ Note: `figment::providers::Env` and `figment::providers::Toml` come from the `en
 
 - [ ] **Step 3: Re-export from `lib.rs`**
 
-Modify `crates/rustcloud-config/src/lib.rs`:
+Modify `crates/crabcloud-config/src/lib.rs`:
 ```rust
-//! Layered configuration for Rustcloud.
+//! Layered configuration for Crabcloud.
 //!
 //! See `docs/superpowers/specs/2026-05-10-platform-core-design.md` §5.
 
@@ -1085,13 +1085,13 @@ pub use types::{CacheConfig, DbType, FileConfig, FileConfigError};
 
 Run:
 ```
-cargo test -p rustcloud-config
+cargo test -p crabcloud-config
 ```
 Expected: tests in `loader::tests` FAIL with `todo!()` panics. `types::tests` still pass.
 
 - [ ] **Step 5: Implement `load`**
 
-Replace the body of `load` in `crates/rustcloud-config/src/loader.rs`:
+Replace the body of `load` in `crates/crabcloud-config/src/loader.rs`:
 ```rust
 pub fn load(base: &Path, cli_overrides: &[(&str, &str)]) -> Result<FileConfig, LoadError> {
     if !base.exists() {
@@ -1109,9 +1109,9 @@ pub fn load(base: &Path, cli_overrides: &[(&str, &str)]) -> Result<FileConfig, L
         fig = fig.merge(Toml::file(local));
     }
 
-    // RUSTCLOUD_* env vars override file values. Dotted keys (overwrite.cli.url) are
-    // supported via Env::raw().split("__") — i.e., RUSTCLOUD_OVERWRITE__CLI__URL.
-    fig = fig.merge(Env::prefixed("RUSTCLOUD_").split("__"));
+    // CRABCLOUD_* env vars override file values. Dotted keys (overwrite.cli.url) are
+    // supported via Env::raw().split("__") — i.e., CRABCLOUD_OVERWRITE__CLI__URL.
+    fig = fig.merge(Env::prefixed("CRABCLOUD_").split("__"));
 
     // CLI overrides win last.
     for (key, value) in cli_overrides {
@@ -1130,7 +1130,7 @@ The `Serialized` provider needs the `serde_json::Value` form for non-string type
 
 Run:
 ```
-cargo test -p rustcloud-config
+cargo test -p crabcloud-config
 ```
 Expected: all tests pass.
 
@@ -1145,7 +1145,7 @@ If `cli_override_wins_over_file` fails because `figment::providers::Serialized` 
 
 Write `config/config.toml.example`:
 ```toml
-# Rustcloud configuration. Copy to config/config.toml and edit.
+# Crabcloud configuration. Copy to config/config.toml and edit.
 # Most keys match Nextcloud's config.php semantically; the file format is TOML.
 
 instanceid     = "REPLACE_WITH_RANDOM_STRING"
@@ -1157,13 +1157,13 @@ version        = "31.0.0.0"
 versionstring  = "31.0.0"
 
 dbtype         = "sqlite"
-dbname         = "rustcloud.db"
+dbname         = "crabcloud.db"
 dbtableprefix  = "oc_"
 # For mysql/pgsql, set these and remove the comment characters:
 # dbhost       = "127.0.0.1"
 # dbport       = 3307
-# dbuser       = "rustcloud"
-# dbpassword   = "rustcloud"
+# dbuser       = "crabcloud"
+# dbpassword   = "crabcloud"
 
 datadirectory  = "./data"
 
@@ -1173,7 +1173,7 @@ trusted_domains = ["localhost", "127.0.0.1"]
 # Logging
 loglevel = "info"
 
-# Rustcloud-specific
+# Crabcloud-specific
 bind_address = "127.0.0.1:8080"
 db_pool_max  = 16
 
@@ -1188,7 +1188,7 @@ backend = "memory"
 - [ ] **Step 8: Commit**
 
 ```
-git add crates/rustcloud-config config/config.toml.example
+git add crates/crabcloud-config config/config.toml.example
 git commit -m "feat(config): add layered figment loader with env+CLI overrides
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
@@ -1196,20 +1196,20 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 
 ---
 
-## Task 6: Wire config loading into rustcloud-server
+## Task 6: Wire config loading into crabcloud-server
 
 **Files:**
-- Modify: `crates/rustcloud-server/Cargo.toml`
-- Modify: `crates/rustcloud-server/src/main.rs`
+- Modify: `crates/crabcloud-server/Cargo.toml`
+- Modify: `crates/crabcloud-server/src/main.rs`
 
-- [ ] **Step 1: Add `rustcloud-config` dependency**
+- [ ] **Step 1: Add `crabcloud-config` dependency**
 
-Modify `crates/rustcloud-server/Cargo.toml` — replace `[dependencies]`:
+Modify `crates/crabcloud-server/Cargo.toml` — replace `[dependencies]`:
 ```toml
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
-rustcloud-config.workspace = true
+crabcloud-config.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
@@ -1217,15 +1217,15 @@ tracing-subscriber.workspace = true
 
 - [ ] **Step 2: Load config in `main`**
 
-Modify `crates/rustcloud-server/src/main.rs` — replace the `match` block in `main`:
+Modify `crates/crabcloud-server/src/main.rs` — replace the `match` block in `main`:
 ```rust
     match cli.command() {
         Cmd::Version => {
-            println!("rustcloud-server {} (build target subproject: platform-core)", env!("CARGO_PKG_VERSION"));
+            println!("crabcloud-server {} (build target subproject: platform-core)", env!("CARGO_PKG_VERSION"));
             return Ok(());
         }
         Cmd::Serve => {
-            let config = rustcloud_config::load(&cli.config, &[])?;
+            let config = crabcloud_config::load(&cli.config, &[])?;
             info!(
                 instanceid = %config.instanceid,
                 dbtype = %config.dbtype.as_str(),
@@ -1234,7 +1234,7 @@ Modify `crates/rustcloud-server/src/main.rs` — replace the `match` block in `m
             anyhow::bail!("`serve` is implemented in a later phase");
         }
         Cmd::Migrate => {
-            let config = rustcloud_config::load(&cli.config, &[])?;
+            let config = crabcloud_config::load(&cli.config, &[])?;
             info!(
                 instanceid = %config.instanceid,
                 dbtype = %config.dbtype.as_str(),
@@ -1267,7 +1267,7 @@ installed = true
 version = "31.0.0.0"
 versionstring = "31.0.0"
 dbtype = "sqlite"
-dbname = "rustcloud.db"
+dbname = "crabcloud.db"
 datadirectory = "./data"
 trusted_domains = ["localhost"]
 '@ | Out-File -Encoding utf8 fixture.toml
@@ -1283,7 +1283,7 @@ installed = true
 version = "31.0.0.0"
 versionstring = "31.0.0"
 dbtype = "sqlite"
-dbname = "rustcloud.db"
+dbname = "crabcloud.db"
 datadirectory = "./data"
 trusted_domains = ["localhost"]
 EOF
@@ -1291,7 +1291,7 @@ EOF
 
 Then:
 ```
-cargo run -p rustcloud-server -- --config fixture.toml serve
+cargo run -p crabcloud-server -- --config fixture.toml serve
 ```
 
 Expected: log line "loaded config; serve subcommand not yet implemented" with `instanceid=smoketest dbtype=sqlite`, then error exit.
@@ -1301,7 +1301,7 @@ Clean up: `rm fixture.toml`.
 - [ ] **Step 5: Commit**
 
 ```
-git add crates/rustcloud-server
+git add crates/crabcloud-server
 git commit -m "feat(server): load layered config before dispatching subcommands
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
@@ -1309,46 +1309,46 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 
 ---
 
-## Task 7: rustcloud-db crate — DbPool enum + connect
+## Task 7: crabcloud-db crate — DbPool enum + connect
 
 **Files:**
-- Create: `crates/rustcloud-db/Cargo.toml`
-- Create: `crates/rustcloud-db/src/lib.rs`
-- Create: `crates/rustcloud-db/src/error.rs`
-- Create: `crates/rustcloud-db/src/pool.rs`
+- Create: `crates/crabcloud-db/Cargo.toml`
+- Create: `crates/crabcloud-db/src/lib.rs`
+- Create: `crates/crabcloud-db/src/error.rs`
+- Create: `crates/crabcloud-db/src/pool.rs`
 - Modify: `Cargo.toml` (workspace members)
 
-- [ ] **Step 1: Add `rustcloud-db` to the workspace**
+- [ ] **Step 1: Add `crabcloud-db` to the workspace**
 
-Modify `Cargo.toml` — append `crates/rustcloud-db` to `members`:
+Modify `Cargo.toml` — append `crates/crabcloud-db` to `members`:
 ```toml
 [workspace]
 members = [
-    "crates/rustcloud-config",
-    "crates/rustcloud-db",
-    "crates/rustcloud-server",
+    "crates/crabcloud-config",
+    "crates/crabcloud-db",
+    "crates/crabcloud-server",
     "xtask",
 ]
 ```
 
 Under `[workspace.dependencies]`, add:
 ```toml
-rustcloud-db = { path = "crates/rustcloud-db" }
+crabcloud-db = { path = "crates/crabcloud-db" }
 ```
 
-- [ ] **Step 2: Write `crates/rustcloud-db/Cargo.toml`**
+- [ ] **Step 2: Write `crates/crabcloud-db/Cargo.toml`**
 
-Write `crates/rustcloud-db/Cargo.toml`:
+Write `crates/crabcloud-db/Cargo.toml`:
 ```toml
 [package]
-name = "rustcloud-db"
+name = "crabcloud-db"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
 async-trait.workspace = true
-rustcloud-config.workspace = true
+crabcloud-config.workspace = true
 secrecy.workspace = true
 sqlx.workspace = true
 thiserror.workspace = true
@@ -1363,7 +1363,7 @@ testcontainers-modules.workspace = true
 
 - [ ] **Step 3: Write the error type**
 
-Write `crates/rustcloud-db/src/error.rs`:
+Write `crates/crabcloud-db/src/error.rs`:
 ```rust
 #[derive(Debug, thiserror::Error)]
 pub enum DbError {
@@ -1384,10 +1384,10 @@ pub type DbResult<T> = Result<T, DbError>;
 
 - [ ] **Step 4: Write the failing test for `DbPool::connect`**
 
-Write `crates/rustcloud-db/src/pool.rs`:
+Write `crates/crabcloud-db/src/pool.rs`:
 ```rust
 use crate::error::{DbError, DbResult};
-use rustcloud_config::{DbType, FileConfig};
+use crabcloud_config::{DbType, FileConfig};
 use secrecy::ExposeSecret;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::{mysql::MySqlPoolOptions, postgres::PgPoolOptions};
@@ -1452,7 +1452,7 @@ fn build_url(config: &FileConfig) -> DbResult<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rustcloud_config::CacheConfig;
+    use crabcloud_config::CacheConfig;
     use secrecy::SecretString;
     use std::net::SocketAddr;
     use std::path::PathBuf;
@@ -1529,11 +1529,11 @@ mod tests {
 }
 ```
 
-- [ ] **Step 5: Write `crates/rustcloud-db/src/lib.rs`**
+- [ ] **Step 5: Write `crates/crabcloud-db/src/lib.rs`**
 
-Write `crates/rustcloud-db/src/lib.rs`:
+Write `crates/crabcloud-db/src/lib.rs`:
 ```rust
-//! Multi-dialect database layer for Rustcloud.
+//! Multi-dialect database layer for Crabcloud.
 //!
 //! See `docs/superpowers/specs/2026-05-10-platform-core-design.md` §6.
 
@@ -1548,14 +1548,14 @@ pub use pool::DbPool;
 
 We forward-declare `pub mod migrate;` so the next task can drop in its file.
 
-Create an empty `crates/rustcloud-db/src/migrate.rs` for now:
+Create an empty `crates/crabcloud-db/src/migrate.rs` for now:
 ```rust
 // Implemented in Task 8.
 ```
 
 - [ ] **Step 6: Implement `DbPool::connect`**
 
-Replace the body of `connect` in `crates/rustcloud-db/src/pool.rs`:
+Replace the body of `connect` in `crates/crabcloud-db/src/pool.rs`:
 ```rust
     pub async fn connect(config: &FileConfig) -> DbResult<Self> {
         let max = config.db_pool_max;
@@ -1594,7 +1594,7 @@ Replace the body of `connect` in `crates/rustcloud-db/src/pool.rs`:
 
 Run:
 ```
-cargo test -p rustcloud-db --lib
+cargo test -p crabcloud-db --lib
 ```
 Expected: 3 tests passed (`connects_to_sqlite_file`, `mysql_url_without_host_errors`, `pgsql_url_builds`).
 
@@ -1603,7 +1603,7 @@ MySQL and Postgres connection tests come later as integration tests (Task 13) �
 - [ ] **Step 8: Commit**
 
 ```
-git add Cargo.toml crates/rustcloud-db
+git add Cargo.toml crates/crabcloud-db
 git commit -m "feat(db): add DbPool enum dispatching over Sqlite/MySql/Postgres
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
@@ -1614,14 +1614,14 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 ## Task 8: MigrationRunner with namespace tracking
 
 **Files:**
-- Modify: `crates/rustcloud-db/src/migrate.rs`
-- Modify: `crates/rustcloud-db/src/lib.rs`
+- Modify: `crates/crabcloud-db/src/migrate.rs`
+- Modify: `crates/crabcloud-db/src/lib.rs`
 
 The migration table `oc_migrations` is created idempotently by the runner itself; registered migrations build on top.
 
 - [ ] **Step 1: Write the failing test**
 
-Replace `crates/rustcloud-db/src/migrate.rs`:
+Replace `crates/crabcloud-db/src/migrate.rs`:
 ```rust
 //! Per-namespace migration runner.
 //!
@@ -1820,7 +1820,7 @@ async fn list_applied(pool: &DbPool, prefix: &str) -> DbResult<BTreeMap<String, 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rustcloud_config::{CacheConfig, DbType, FileConfig};
+    use crabcloud_config::{CacheConfig, DbType, FileConfig};
     use secrecy::SecretString;
     use std::net::SocketAddr;
     use std::path::PathBuf;
@@ -1938,9 +1938,9 @@ mod tests {
 
 - [ ] **Step 2: Re-export `migrate` symbols**
 
-Modify `crates/rustcloud-db/src/lib.rs`:
+Modify `crates/crabcloud-db/src/lib.rs`:
 ```rust
-//! Multi-dialect database layer for Rustcloud.
+//! Multi-dialect database layer for Crabcloud.
 //!
 //! See `docs/superpowers/specs/2026-05-10-platform-core-design.md` §6.
 
@@ -1958,14 +1958,14 @@ pub use pool::DbPool;
 
 Run:
 ```
-cargo test -p rustcloud-db --lib
+cargo test -p crabcloud-db --lib
 ```
 Expected: 6 tests pass (3 from Task 7, 3 new). If any fail with sqlx connection errors, the SQLite URL building may need adjusting — confirm `sqlite:./...?mode=rwc` opens the file in read-write-create mode.
 
 - [ ] **Step 4: Commit**
 
 ```
-git add crates/rustcloud-db
+git add crates/crabcloud-db
 git commit -m "feat(db): add per-namespace MigrationRunner with idempotent reruns
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
@@ -1979,8 +1979,8 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 - Create: `migrations/core/0001_initial/sqlite.sql`
 - Create: `migrations/core/0001_initial/mysql.sql`
 - Create: `migrations/core/0001_initial/postgres.sql`
-- Create: `crates/rustcloud-db/src/core_migrations.rs`
-- Modify: `crates/rustcloud-db/src/lib.rs`
+- Create: `crates/crabcloud-db/src/core_migrations.rs`
+- Modify: `crates/crabcloud-db/src/lib.rs`
 
 In this phase the only core table we create (beyond `oc_migrations`, which the runner manages itself) is `oc_appconfig`. Users / sessions / files etc. land in their own sub-projects with their own migration sources.
 
@@ -2028,7 +2028,7 @@ CREATE INDEX appconfig_appid_idx ON oc_appconfig(appid);
 
 - [ ] **Step 4: Embed the SQL into a `core_migrations` module**
 
-Write `crates/rustcloud-db/src/core_migrations.rs`:
+Write `crates/crabcloud-db/src/core_migrations.rs`:
 ```rust
 //! Migrations for the `core` namespace.
 //!
@@ -2061,9 +2061,9 @@ pub fn core_set() -> MigrationSet {
 
 - [ ] **Step 5: Re-export the `core_set()` helper**
 
-Modify `crates/rustcloud-db/src/lib.rs`:
+Modify `crates/crabcloud-db/src/lib.rs`:
 ```rust
-//! Multi-dialect database layer for Rustcloud.
+//! Multi-dialect database layer for Crabcloud.
 //!
 //! See `docs/superpowers/specs/2026-05-10-platform-core-design.md` §6.
 
@@ -2081,13 +2081,13 @@ pub use pool::DbPool;
 
 - [ ] **Step 6: Add a unit test that the core migration applies cleanly against SQLite**
 
-Append to `crates/rustcloud-db/src/core_migrations.rs`:
+Append to `crates/crabcloud-db/src/core_migrations.rs`:
 ```rust
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::{DbPool, MigrationRunner};
-    use rustcloud_config::{CacheConfig, DbType, FileConfig};
+    use crabcloud_config::{CacheConfig, DbType, FileConfig};
     use secrecy::SecretString;
     use std::net::SocketAddr;
     use std::path::PathBuf;
@@ -2156,14 +2156,14 @@ mod tests {
 
 Run:
 ```
-cargo test -p rustcloud-db --lib
+cargo test -p crabcloud-db --lib
 ```
 Expected: 7 tests pass.
 
 - [ ] **Step 8: Commit**
 
 ```
-git add crates/rustcloud-db migrations
+git add crates/crabcloud-db migrations
 git commit -m "feat(db): add core 0001 migration creating oc_appconfig
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
@@ -2171,21 +2171,21 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 
 ---
 
-## Task 10: rustcloud-server `migrate` subcommand
+## Task 10: crabcloud-server `migrate` subcommand
 
 **Files:**
-- Modify: `crates/rustcloud-server/Cargo.toml`
-- Modify: `crates/rustcloud-server/src/main.rs`
+- Modify: `crates/crabcloud-server/Cargo.toml`
+- Modify: `crates/crabcloud-server/src/main.rs`
 
-- [ ] **Step 1: Add `rustcloud-db` dependency**
+- [ ] **Step 1: Add `crabcloud-db` dependency**
 
-Modify `crates/rustcloud-server/Cargo.toml` — replace `[dependencies]`:
+Modify `crates/crabcloud-server/Cargo.toml` — replace `[dependencies]`:
 ```toml
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
-rustcloud-config.workspace = true
-rustcloud-db.workspace = true
+crabcloud-config.workspace = true
+crabcloud-db.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
@@ -2193,15 +2193,15 @@ tracing-subscriber.workspace = true
 
 - [ ] **Step 2: Wire up the migrate command**
 
-Modify `crates/rustcloud-server/src/main.rs` — replace the `match` block in `main`:
+Modify `crates/crabcloud-server/src/main.rs` — replace the `match` block in `main`:
 ```rust
     match cli.command() {
         Cmd::Version => {
-            println!("rustcloud-server {} (build target subproject: platform-core)", env!("CARGO_PKG_VERSION"));
+            println!("crabcloud-server {} (build target subproject: platform-core)", env!("CARGO_PKG_VERSION"));
             Ok(())
         }
         Cmd::Serve => {
-            let config = rustcloud_config::load(&cli.config, &[])?;
+            let config = crabcloud_config::load(&cli.config, &[])?;
             info!(
                 instanceid = %config.instanceid,
                 dbtype = %config.dbtype.as_str(),
@@ -2210,14 +2210,14 @@ Modify `crates/rustcloud-server/src/main.rs` — replace the `match` block in `m
             anyhow::bail!("`serve` is implemented in a later phase");
         }
         Cmd::Migrate => {
-            let config = rustcloud_config::load(&cli.config, &[])?;
+            let config = crabcloud_config::load(&cli.config, &[])?;
             info!(dbtype = %config.dbtype.as_str(), "connecting to database");
 
-            let pool = rustcloud_db::DbPool::connect(&config).await?;
+            let pool = crabcloud_db::DbPool::connect(&config).await?;
             info!(dialect = pool.dialect(), "connected");
 
-            let mut runner = rustcloud_db::MigrationRunner::new(&pool, &config.dbtableprefix);
-            runner.register(rustcloud_db::core_set());
+            let mut runner = crabcloud_db::MigrationRunner::new(&pool, &config.dbtableprefix);
+            runner.register(crabcloud_db::core_set());
             let applied = runner.run().await?;
             info!(applied, "migrations complete");
 
@@ -2253,7 +2253,7 @@ trusted_domains = ["localhost"]
 
 Run:
 ```
-cargo run -p rustcloud-server -- --config fixture.toml migrate
+cargo run -p crabcloud-server -- --config fixture.toml migrate
 ```
 
 Expected output (log fields, JSON or plain depending on terminal):
@@ -2271,7 +2271,7 @@ Clean up: delete `smoketest.db` and `fixture.toml`.
 - [ ] **Step 5: Commit**
 
 ```
-git add crates/rustcloud-server
+git add crates/crabcloud-server
 git commit -m "feat(server): implement migrate subcommand against DbPool
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
@@ -2419,33 +2419,33 @@ jobs:
       mysql:
         image: mysql:8.4
         env:
-          MYSQL_ROOT_PASSWORD: rustcloud
-          MYSQL_DATABASE: rustcloud
-          MYSQL_USER: rustcloud
-          MYSQL_PASSWORD: rustcloud
+          MYSQL_ROOT_PASSWORD: crabcloud
+          MYSQL_DATABASE: crabcloud
+          MYSQL_USER: crabcloud
+          MYSQL_PASSWORD: crabcloud
         ports:
           - 3307:3306
         options: >-
-          --health-cmd="mysqladmin ping -prustcloud"
+          --health-cmd="mysqladmin ping -pcrabcloud"
           --health-interval=5s
           --health-timeout=5s
           --health-retries=12
       postgres:
         image: postgres:16
         env:
-          POSTGRES_DB: rustcloud
-          POSTGRES_USER: rustcloud
-          POSTGRES_PASSWORD: rustcloud
+          POSTGRES_DB: crabcloud
+          POSTGRES_USER: crabcloud
+          POSTGRES_PASSWORD: crabcloud
         ports:
           - 5433:5432
         options: >-
-          --health-cmd="pg_isready -U rustcloud"
+          --health-cmd="pg_isready -U crabcloud"
           --health-interval=5s
           --health-timeout=5s
           --health-retries=12
     env:
-      RUSTCLOUD_TEST_MYSQL_URL:    mysql://rustcloud:rustcloud@127.0.0.1:3307/rustcloud
-      RUSTCLOUD_TEST_POSTGRES_URL: postgres://rustcloud:rustcloud@127.0.0.1:5433/rustcloud
+      CRABCLOUD_TEST_MYSQL_URL:    mysql://crabcloud:crabcloud@127.0.0.1:3307/crabcloud
+      CRABCLOUD_TEST_POSTGRES_URL: postgres://crabcloud:crabcloud@127.0.0.1:5433/crabcloud
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -2469,13 +2469,13 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 ## Task 13: End-to-end multi-dialect integration test
 
 **Files:**
-- Create: `crates/rustcloud-db/tests/migrate_end_to_end.rs`
+- Create: `crates/crabcloud-db/tests/migrate_end_to_end.rs`
 
-Cargo integration tests live in a package's `tests/` directory; we put this one inside `rustcloud-db` so it has direct access to the crate's API.
+Cargo integration tests live in a package's `tests/` directory; we put this one inside `crabcloud-db` so it has direct access to the crate's API.
 
 - [ ] **Step 1: Write the integration test**
 
-Write `crates/rustcloud-db/tests/migrate_end_to_end.rs`:
+Write `crates/crabcloud-db/tests/migrate_end_to_end.rs`:
 ```rust
 //! End-to-end migrate flow per dialect.
 //!
@@ -2483,8 +2483,8 @@ Write `crates/rustcloud-db/tests/migrate_end_to_end.rs`:
 //! `#[ignore]` by default so contributors without Docker aren't blocked. CI runs
 //! `cargo test -- --include-ignored` to enable them.
 
-use rustcloud_config::{CacheConfig, DbType, FileConfig};
-use rustcloud_db::{core_set, DbPool, MigrationRunner};
+use crabcloud_config::{CacheConfig, DbType, FileConfig};
+use crabcloud_db::{core_set, DbPool, MigrationRunner};
 use secrecy::SecretString;
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -2569,8 +2569,8 @@ async fn migrate_sqlite() {
 #[tokio::test]
 #[ignore = "requires MySQL — run with --include-ignored after `cargo xtask up`"]
 async fn migrate_mysql() {
-    let url = std::env::var("RUSTCLOUD_TEST_MYSQL_URL")
-        .unwrap_or_else(|_| "mysql://rustcloud:rustcloud@127.0.0.1:3307/rustcloud".into());
+    let url = std::env::var("CRABCLOUD_TEST_MYSQL_URL")
+        .unwrap_or_else(|_| "mysql://crabcloud:crabcloud@127.0.0.1:3307/crabcloud".into());
     let cfg = mysql_config_from_url(&url);
     let pool = DbPool::connect(&cfg).await.unwrap();
 
@@ -2592,8 +2592,8 @@ async fn migrate_mysql() {
 #[tokio::test]
 #[ignore = "requires Postgres — run with --include-ignored after `cargo xtask up`"]
 async fn migrate_postgres() {
-    let url = std::env::var("RUSTCLOUD_TEST_POSTGRES_URL")
-        .unwrap_or_else(|_| "postgres://rustcloud:rustcloud@127.0.0.1:5433/rustcloud".into());
+    let url = std::env::var("CRABCLOUD_TEST_POSTGRES_URL")
+        .unwrap_or_else(|_| "postgres://crabcloud:crabcloud@127.0.0.1:5433/crabcloud".into());
     let cfg = postgres_config_from_url(&url);
     let pool = DbPool::connect(&cfg).await.unwrap();
 
@@ -2667,7 +2667,7 @@ fn parse_url(url: &str) -> ParsedUrl {
 
 Run:
 ```
-cargo test -p rustcloud-db --test migrate_end_to_end migrate_sqlite
+cargo test -p crabcloud-db --test migrate_end_to_end migrate_sqlite
 ```
 Expected: PASS.
 
@@ -2676,7 +2676,7 @@ Expected: PASS.
 If Docker is available:
 ```
 cargo xtask up
-cargo test -p rustcloud-db --test migrate_end_to_end -- --include-ignored
+cargo test -p crabcloud-db --test migrate_end_to_end -- --include-ignored
 cargo xtask down
 ```
 Expected: all three tests pass.
@@ -2686,7 +2686,7 @@ If Docker is not available locally: skip this step. CI will verify (Task 12).
 - [ ] **Step 4: Commit**
 
 ```
-git add crates/rustcloud-db/tests
+git add crates/crabcloud-db/tests
 git commit -m "test(db): add end-to-end multi-dialect migrate integration test
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
@@ -2704,15 +2704,15 @@ The phase is acceptance-tested by:
 
 1. `cargo build --workspace` succeeds.
 2. `cargo xtask check-all` is green.
-3. `cargo test -p rustcloud-db --test migrate_end_to_end migrate_sqlite` is green.
+3. `cargo test -p crabcloud-db --test migrate_end_to_end migrate_sqlite` is green.
 4. CI's `test-multidialect` job is green against MySQL + Postgres.
-5. `cargo run -p rustcloud-server -- --config <fixture> migrate` connects, migrates, and exits cleanly against all three backends.
+5. `cargo run -p crabcloud-server -- --config <fixture> migrate` connects, migrates, and exits cleanly against all three backends.
 
 - [ ] **Step 1: Update README with what works now**
 
 Replace `README.md`:
 ```markdown
-# Rustcloud
+# Crabcloud
 
 A Rust port of [Nextcloud server](https://github.com/nextcloud/server), with a Dioxus frontend.
 
@@ -2733,7 +2733,7 @@ cp config/config.toml.example config/config.toml
 cargo xtask up
 
 # 3. Run migrations.
-cargo run -p rustcloud-server -- migrate
+cargo run -p crabcloud-server -- migrate
 ```
 
 ## Development
@@ -2741,19 +2741,19 @@ cargo run -p rustcloud-server -- migrate
 ```bash
 cargo xtask check-all     # fmt + clippy + tests (SQLite only)
 cargo xtask up            # start MySQL + Postgres for multi-dialect tests
-cargo test -p rustcloud-db --test migrate_end_to_end -- --include-ignored
+cargo test -p crabcloud-db --test migrate_end_to_end -- --include-ignored
 cargo xtask down          # stop dev DBs
 ```
 
 ## Workspace layout
 
-- `crates/rustcloud-config` — layered TOML config loader (figment-based).
-- `crates/rustcloud-db` — `DbPool` enum over Sqlite/MySql/Postgres, `MigrationRunner`.
-- `crates/rustcloud-server` — the binary; CLI, tracing, lifecycle.
+- `crates/crabcloud-config` — layered TOML config loader (figment-based).
+- `crates/crabcloud-db` — `DbPool` enum over Sqlite/MySql/Postgres, `MigrationRunner`.
+- `crates/crabcloud-server` — the binary; CLI, tracing, lifecycle.
 - `xtask/` — project automation (`check-all`, `up`, `down`).
 - `migrations/core/` — core SQL migrations, per-dialect.
 
-Future phases add `rustcloud-cache`, `-i18n`, `-ocs`, `-core`, `-http`, `-ui`.
+Future phases add `crabcloud-cache`, `-i18n`, `-ocs`, `-core`, `-http`, `-ui`.
 
 ## License
 
@@ -2772,7 +2772,7 @@ Expected: PASS end-to-end (fmt + clippy + SQLite tests). Time: 1-5 minutes depen
 If Docker is available:
 ```
 cargo xtask up
-cargo test -p rustcloud-db --test migrate_end_to_end -- --include-ignored
+cargo test -p crabcloud-db --test migrate_end_to_end -- --include-ignored
 cargo xtask down
 ```
 Expected: 3 tests pass.
@@ -2787,19 +2787,19 @@ Completed: <DATE>
 
 ## What works
 
-- Cargo workspace with `rustcloud-config`, `rustcloud-db`, `rustcloud-server`, `xtask`.
-- Layered config: TOML base + `config.local.toml` overlay + `RUSTCLOUD_*` env vars + CLI overrides. Sensitive fields use `secrecy::SecretString`.
+- Cargo workspace with `crabcloud-config`, `crabcloud-db`, `crabcloud-server`, `xtask`.
+- Layered config: TOML base + `config.local.toml` overlay + `CRABCLOUD_*` env vars + CLI overrides. Sensitive fields use `secrecy::SecretString`.
 - `DbPool` enum over `sqlx::SqlitePool` / `MySqlPool` / `PgPool`. `connect()` dispatches on `config.dbtype`.
 - `MigrationRunner` with namespace tracking (`oc_migrations`). Idempotent re-runs. Per-dialect SQL.
 - Core migration 0001 creates `oc_appconfig` matching Nextcloud's shape across all three dialects.
-- `rustcloud-server` subcommands: `version`, `migrate`, `serve` (stubbed).
+- `crabcloud-server` subcommands: `version`, `migrate`, `serve` (stubbed).
 - CI: fmt + clippy + SQLite tests + multi-dialect tests against GitHub Actions service containers.
 - `cargo xtask` commands: `check-all`, `up`, `down`.
 
 ## What's deferred
 
-- HTTP surface: Phase 3 (`rustcloud-http`).
-- UI: Phase 4 (`rustcloud-ui` + Dioxus Fullstack).
+- HTTP surface: Phase 3 (`crabcloud-http`).
+- UI: Phase 4 (`crabcloud-ui` + Dioxus Fullstack).
 - Cache trait + memory impl: Phase 2.
 - i18n loader: Phase 2.
 - OCS envelope + capabilities: Phase 2.

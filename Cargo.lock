@@ -443,6 +443,155 @@ dependencies = [
 ]
 
 [[package]]
+name = "crabcloud-cache"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+]
+
+[[package]]
+name = "crabcloud-config"
+version = "0.1.0"
+dependencies = [
+ "figment",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+ "toml",
+]
+
+[[package]]
+name = "crabcloud-core"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "crabcloud-cache",
+ "crabcloud-config",
+ "crabcloud-db",
+ "crabcloud-i18n",
+ "crabcloud-ocs",
+ "sqlx",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "crabcloud-db"
+version = "0.1.0"
+dependencies = [
+ "crabcloud-config",
+ "secrecy",
+ "sqlx",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "crabcloud-http"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "base64",
+ "bcrypt",
+ "cookie",
+ "crabcloud-cache",
+ "crabcloud-config",
+ "crabcloud-core",
+ "crabcloud-i18n",
+ "crabcloud-ocs",
+ "crabcloud-ui",
+ "futures",
+ "hex",
+ "hmac",
+ "rand",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "sha2",
+ "subtle",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tower",
+ "tower-http",
+]
+
+[[package]]
+name = "crabcloud-i18n"
+version = "0.1.0"
+dependencies = [
+ "accept-language",
+ "polib",
+ "tempfile",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "crabcloud-ocs"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "crabcloud-cache",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "crabcloud-server"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "clap",
+ "crabcloud-config",
+ "crabcloud-core",
+ "crabcloud-http",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "crabcloud-ui"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "console_error_panic_hook",
+ "crabcloud-cache",
+ "crabcloud-config",
+ "crabcloud-core",
+ "crabcloud-db",
+ "crabcloud-http",
+ "dioxus",
+ "dioxus-history",
+ "dioxus-router",
+ "dioxus-ssr",
+ "dioxus-web",
+ "rust-embed",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tower",
+ "web-sys",
+]
+
+[[package]]
 name = "crc"
 version = "3.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2039,155 +2188,6 @@ name = "rustc-hash"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "08d43f7aa6b08d49f382cde6a7982047c3426db949b1424bc4b7ec9ae12c6ce2"
-
-[[package]]
-name = "rustcloud-cache"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
-]
-
-[[package]]
-name = "rustcloud-config"
-version = "0.1.0"
-dependencies = [
- "figment",
- "secrecy",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.18",
- "toml",
-]
-
-[[package]]
-name = "rustcloud-core"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "rustcloud-cache",
- "rustcloud-config",
- "rustcloud-db",
- "rustcloud-i18n",
- "rustcloud-ocs",
- "sqlx",
- "tempfile",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "rustcloud-db"
-version = "0.1.0"
-dependencies = [
- "rustcloud-config",
- "secrecy",
- "sqlx",
- "tempfile",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "rustcloud-http"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "axum",
- "base64",
- "bcrypt",
- "cookie",
- "futures",
- "hex",
- "hmac",
- "rand",
- "rustcloud-cache",
- "rustcloud-config",
- "rustcloud-core",
- "rustcloud-i18n",
- "rustcloud-ocs",
- "rustcloud-ui",
- "secrecy",
- "serde",
- "serde_json",
- "sha2",
- "subtle",
- "tempfile",
- "thiserror 2.0.18",
- "tokio",
- "tower",
- "tower-http",
-]
-
-[[package]]
-name = "rustcloud-i18n"
-version = "0.1.0"
-dependencies = [
- "accept-language",
- "polib",
- "tempfile",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "rustcloud-ocs"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "rustcloud-cache",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "rustcloud-server"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "axum",
- "clap",
- "rustcloud-config",
- "rustcloud-core",
- "rustcloud-http",
- "tokio",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "rustcloud-ui"
-version = "0.1.0"
-dependencies = [
- "axum",
- "console_error_panic_hook",
- "dioxus",
- "dioxus-history",
- "dioxus-router",
- "dioxus-ssr",
- "dioxus-web",
- "rust-embed",
- "rustcloud-cache",
- "rustcloud-config",
- "rustcloud-core",
- "rustcloud-db",
- "rustcloud-http",
- "secrecy",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
- "tower",
- "web-sys",
-]
 
 [[package]]
 name = "rustix"

@@ -1,6 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
 
-const BASE_URL = process.env.RUSTCLOUD_E2E_URL ?? "http://127.0.0.1:18765";
+const BASE_URL = process.env.CRABCLOUD_E2E_URL ?? "http://127.0.0.1:18765";
 
 export default defineConfig({
     testDir: "./tests",

@@ -4,9 +4,9 @@ Completed: 2026-05-11
 
 ## What works
 
-- **Test fixture consolidation**: `rustcloud-config::test_support::minimal_sqlite_config` (behind a `test-support` feature) replaces ~10 hand-rolled `cfg_sqlite` copies across the workspace. Adding a new `FileConfig` field now means changing one helper, not ten.
+- **Test fixture consolidation**: `crabcloud-config::test_support::minimal_sqlite_config` (behind a `test-support` feature) replaces ~10 hand-rolled `cfg_sqlite` copies across the workspace. Adding a new `FileConfig` field now means changing one helper, not ten.
 - **Centralized lint policy**: `[workspace.lints]` at the root + `[lints] workspace = true` in every member. `unused_crate_dependencies = "warn"` surfaces dep drift via plain `cargo check`.
-- **`rustcloud-core` cleanup**: drops unused `async-trait` / `serde` / `serde_json`. `tracing` now carries its weight via `AppConfigService` instrumentation.
+- **`crabcloud-core` cleanup**: drops unused `async-trait` / `serde` / `serde_json`. `tracing` now carries its weight via `AppConfigService` instrumentation.
 - **`AppConfigService` instrumentation**: cache `set` / `del` failures now emit `tracing::warn!` with structured fields (error, appid, key). `CACHE_TTL` lifted to a module constant.
 - **`version` subcommand expansion**: prints crate version, git SHA (via `vergen-gix`), supported dialects, sub-project marker. Closes spec §10.2 / §10.5 acceptance.
 - **Content-type-aware CSP**: `SecurityHeadersLayer` inspects the response `Content-Type` and ships the UI-permissive CSP (`script-src 'self' 'wasm-unsafe-eval'`) for HTML and the API-restrictive `default-src 'none'` for everything else. **Unblocks WASM hydration**.

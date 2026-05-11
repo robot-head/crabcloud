@@ -1,4 +1,4 @@
-# Rustcloud — Platform Core Design
+# Crabcloud — Platform Core Design
 
 **Status:** Draft for review
 **Date:** 2026-05-10
@@ -9,18 +9,18 @@
 
 ## 1. Program context
 
-Rustcloud is a Rust port of [nextcloud/server](https://github.com/nextcloud/server) targeting full feature parity over multiple sub-projects. Nextcloud is ~500k+ lines of PHP across the core platform, hundreds of bundled apps (Files, Calendar, Contacts, Talk, Mail, etc.), a Vue.js frontend, a plugin/app framework, and multi-database support. Porting it is a program, not a project.
+Crabcloud is a Rust port of [nextcloud/server](https://github.com/nextcloud/server) targeting full feature parity over multiple sub-projects. Nextcloud is ~500k+ lines of PHP across the core platform, hundreds of bundled apps (Files, Calendar, Contacts, Talk, Mail, etc.), a Vue.js frontend, a plugin/app framework, and multi-database support. Porting it is a program, not a project.
 
 This document specs **only the first sub-project: platform core** — the substrate every later sub-project will build on. It deliberately stops short of users, storage, WebDAV, sharing, and the full app/plugin framework. Each of those gets its own spec.
 
 ### Compatibility commitment
 
-Rustcloud is **wire + storage + DB compatible** with upstream Nextcloud:
+Crabcloud is **wire + storage + DB compatible** with upstream Nextcloud:
 
-- Existing Nextcloud desktop, iOS, and Android sync clients work unchanged against a Rustcloud server.
+- Existing Nextcloud desktop, iOS, and Android sync clients work unchanged against a Crabcloud server.
 - URLs match upstream: `/remote.php/dav/...`, `/ocs/v2.php/...`, `/status.php`, `/index.php/login`.
 - OCS API response envelopes match upstream (XML + JSON forms, statuscode conventions, OCS-APIRequest header handling).
-- DB schema mirrors upstream's `oc_*` tables with the configurable `oc_` prefix; a Rustcloud server can be pointed at an existing Nextcloud's MySQL/Postgres/SQLite database.
+- DB schema mirrors upstream's `oc_*` tables with the configurable `oc_` prefix; a Crabcloud server can be pointed at an existing Nextcloud's MySQL/Postgres/SQLite database.
 - Capabilities endpoint matches upstream so client feature detection works.
 - Config file format is modernized (TOML in place of PHP arrays), but config keys and semantics map 1:1 to Nextcloud's `config.php`.
 
@@ -83,18 +83,18 @@ Both surfaces share the same `AppState`: DB pool, cache, config snapshot, i18n c
 ### 4.3 Cargo workspace layout
 
 ```
-rustcloud/
+crabcloud/
 ├── Cargo.toml                  # workspace manifest
 ├── crates/
-│   ├── rustcloud-config        # config loading (file + DB) + types
-│   ├── rustcloud-db            # DbPool enum, db_dispatch! macro, migration runner
-│   ├── rustcloud-cache         # Cache trait + MemoryCache impl
-│   ├── rustcloud-i18n          # .po loader + locale resolver
-│   ├── rustcloud-ocs           # OCS envelope + capabilities aggregator
-│   ├── rustcloud-http          # axum router composition, middleware, extractors
-│   ├── rustcloud-ui            # Dioxus Fullstack root, layout shell, server fns
-│   ├── rustcloud-core          # facade re-exporting the above; defines AppState
-│   └── rustcloud-server        # the binary; main(), bootstrap, signal handling
+│   ├── crabcloud-config        # config loading (file + DB) + types
+│   ├── crabcloud-db            # DbPool enum, db_dispatch! macro, migration runner
+│   ├── crabcloud-cache         # Cache trait + MemoryCache impl
+│   ├── crabcloud-i18n          # .po loader + locale resolver
+│   ├── crabcloud-ocs           # OCS envelope + capabilities aggregator
+│   ├── crabcloud-http          # axum router composition, middleware, extractors
+│   ├── crabcloud-ui            # Dioxus Fullstack root, layout shell, server fns
+│   ├── crabcloud-core          # facade re-exporting the above; defines AppState
+│   └── crabcloud-server        # the binary; main(), bootstrap, signal handling
 ├── xtask/                      # cargo xtask build/dev/prepare/check-all
 ├── migrations/
 │   └── core/                   # core's own migrations (apps add their own dirs later)
@@ -105,9 +105,9 @@ rustcloud/
 └── docs/superpowers/specs/
 ```
 
-**Rationale for the split:** the two crates that change most often (`-http`, `-ui`) recompile fast because their dependencies are stable. Each crate has one clear purpose. Future apps land as `crates/apps/<appid>/` and depend on `rustcloud-core`.
+**Rationale for the split:** the two crates that change most often (`-http`, `-ui`) recompile fast because their dependencies are stable. Each crate has one clear purpose. Future apps land as `crates/apps/<appid>/` and depend on `crabcloud-core`.
 
-**Extension point for the deferred app framework:** `rustcloud-core` exposes a `BootstrapHook` registration vector. Today it's used only by core's own setup. When the app-framework sub-project lands, apps register via this same mechanism — no churn expected in the existing core crates; only the `-server` bootstrap and `rustcloud-core::AppState` grow.
+**Extension point for the deferred app framework:** `crabcloud-core` exposes a `BootstrapHook` registration vector. Today it's used only by core's own setup. When the app-framework sub-project lands, apps register via this same mechanism — no churn expected in the existing core crates; only the `-server` bootstrap and `crabcloud-core::AppState` grow.
 
 ---
 
@@ -129,13 +129,13 @@ Keys mirror Nextcloud 1:1:
 - `secret`, `passwordsalt` (`SecretString`)
 - `installed`, `version`, `instanceid`
 - `default_language`
-- Rustcloud-specific: `bind_address`, `db_pool_max`, `cache.backend`
+- Crabcloud-specific: `bind_address`, `db_pool_max`, `cache.backend`
 
 Layered loading order (each overrides the previous):
 
 1. `config/config.toml`
 2. `config/config.local.toml` (gitignored; for dev secrets — figment profile overlay)
-3. `RUSTCLOUD_*` environment variables (container-friendly)
+3. `CRABCLOUD_*` environment variables (container-friendly)
 4. CLI overrides (`--config-set key=value`)
 
 ### 5.2 Runtime config — `oc_appconfig` table
@@ -191,7 +191,7 @@ impl UserRepository {
 
 ### 6.2 The `db_dispatch!` macro
 
-To keep repository code readable, `rustcloud-db` exposes a `macro_rules!` helper:
+To keep repository code readable, `crabcloud-db` exposes a `macro_rules!` helper:
 
 ```rust
 db_dispatch!(self.pool, User, fetch_optional, [uid],
@@ -209,7 +209,7 @@ One enum-wrapped pool per process. Size from `config.db_pool_max` (default 16). 
 
 ### 6.4 Migrations
 
-`rustcloud-db::MigrationRunner` scans registered migration sources. Each source is a `(namespace, &'static [Migration])` tuple — e.g. `("core", CORE_MIGRATIONS)`. Apps register their own namespaces via the same mechanism when the app framework lands.
+`crabcloud-db::MigrationRunner` scans registered migration sources. Each source is a `(namespace, &'static [Migration])` tuple — e.g. `("core", CORE_MIGRATIONS)`. Apps register their own namespaces via the same mechanism when the app framework lands.
 
 A single `oc_migrations(namespace TEXT, version INT, applied_at TIMESTAMP, PRIMARY KEY (namespace, version))` table tracks applied versions deterministically per namespace.
 
@@ -221,7 +221,7 @@ Core migrations produce Nextcloud-shaped `oc_users`, `oc_groups`, `oc_appconfig`
 
 ### 6.6 Repository layout
 
-Repositories live in the crate that owns the concern — `AppConfigRepository` in `rustcloud-config`, future `UserRepository` in `rustcloud-users`. `rustcloud-db` only provides the pool enum, `db_dispatch!`, migration runner, and shared dialect helpers (identifier quoting, timestamp formatting).
+Repositories live in the crate that owns the concern — `AppConfigRepository` in `crabcloud-config`, future `UserRepository` in `crabcloud-users`. `crabcloud-db` only provides the pool enum, `db_dispatch!`, migration runner, and shared dialect helpers (identifier quoting, timestamp formatting).
 
 ### 6.7 Transactions
 
@@ -252,7 +252,7 @@ This cost is accepted in exchange for true compile-time SQL safety on each diale
 
 ### 7.1 Router composition
 
-`rustcloud-http::build_router(state: AppState) -> axum::Router` composes nested routers:
+`crabcloud-http::build_router(state: AppState) -> axum::Router` composes nested routers:
 
 ```rust
 Router::new()
@@ -287,7 +287,7 @@ Session and CSRF layers attach to the UI and OCS sub-routers separately because 
 
 - Cookie name: `oc_sessionPassphrase` (Nextcloud-compatible so reverse-proxy stickiness rules keep working).
 - Cookie value: a signed opaque session ID, not the session contents.
-- Server-side session data lives in `rustcloud-cache`, keyed by the session ID. Memory backend for single-node dev; Redis (future) for multi-node.
+- Server-side session data lives in `crabcloud-cache`, keyed by the session ID. Memory backend for single-node dev; Redis (future) for multi-node.
 - Session value: `user_id`, `login_credentials_hash`, `last_activity`, `lockout_until`, plus a scratchpad for flash messages / OAuth state.
 - TTL: 30 min idle, 24 h absolute (both from config). Sliding window on each authenticated request.
 - Cookie attributes: `HttpOnly`, `Secure` (when effective scheme is https), `SameSite=Lax`, `Path=/`.
@@ -312,7 +312,7 @@ In this spec, both resolve only against a `bootstrap_admin` config key (username
 
 ### 7.6 Error → response mapping
 
-`rustcloud-core::Error`:
+`crabcloud-core::Error`:
 
 ```rust
 pub enum Error {
@@ -352,7 +352,7 @@ Returns the exact JSON shape Nextcloud emits, so existing client probes pass:
 }
 ```
 
-`version` / `versionstring` / `productname` are configurable so clients see a Nextcloud-compatible identity. Operators see the Rustcloud version via `rustcloud-server --version` (see §9.5).
+`version` / `versionstring` / `productname` are configurable so clients see a Nextcloud-compatible identity. Operators see the Crabcloud version via `crabcloud-server --version` (see §9.5).
 
 ---
 
@@ -360,9 +360,9 @@ Returns the exact JSON shape Nextcloud emits, so existing client probes pass:
 
 ### 8.1 Mounting
 
-`rustcloud-ui::ui_router() -> axum::Router<AppState>` returns a Dioxus Fullstack-configured sub-router. Dioxus's axum integration mounts:
+`crabcloud-ui::ui_router() -> axum::Router<AppState>` returns a Dioxus Fullstack-configured sub-router. Dioxus's axum integration mounts:
 
-- The SSR handler for each route declared in the `rustcloud-ui::app::App` component's `Router`.
+- The SSR handler for each route declared in the `crabcloud-ui::app::App` component's `Router`.
 - The server-function endpoint (`/api/_dx/*`).
 - The static asset handler for the hydrated WASM bundle + CSS + fonts (`/assets/*`).
 
@@ -418,17 +418,17 @@ The frontend ships an OCS client module and consumes the auto-generated server-f
 
 ### 8.7 Asset pipeline
 
-`dx build --release` produces the WASM bundle + assets under `target/dx/rustcloud-ui/public/`. The `rustcloud-server` binary serves these either embedded (release builds via `rust-embed`) or from disk (debug / `--no-embed`). `cargo xtask build` orchestrates: UI assets first, then the server binary.
+`dx build --release` produces the WASM bundle + assets under `target/dx/crabcloud-ui/public/`. The `crabcloud-server` binary serves these either embedded (release builds via `rust-embed`) or from disk (debug / `--no-embed`). `cargo xtask build` orchestrates: UI assets first, then the server binary.
 
 ### 8.8 Dev experience
 
-`cargo xtask dev` runs `dx serve` (hot-reload UI) on one port and `cargo run -p rustcloud-server -- --no-embed --ui-assets ../target/dx/rustcloud-ui/public` on another, with an axum stitching reverse-proxy on `:8080` exposing both surfaces under a single port.
+`cargo xtask dev` runs `dx serve` (hot-reload UI) on one port and `cargo run -p crabcloud-server -- --no-embed --ui-assets ../target/dx/crabcloud-ui/public` on another, with an axum stitching reverse-proxy on `:8080` exposing both surfaces under a single port.
 
 ---
 
 ## 9. Cross-cutting concerns
 
-### 9.1 Cache — `rustcloud-cache`
+### 9.1 Cache — `crabcloud-cache`
 
 Trait:
 
@@ -454,7 +454,7 @@ Bytes in / bytes out — callers control serialization. A `TypedCache<T>` wrappe
 
 **Usage in this spec:** sessions, `oc_appconfig` lookups, capabilities ETag, i18n catalogs (read-through). File metadata caching lands with the storage sub-project.
 
-### 9.2 i18n — `rustcloud-i18n`
+### 9.2 i18n — `crabcloud-i18n`
 
 - **Format:** Gettext `.po`, one per `(app, locale)`: `l10n/<appid>/<locale>.po`. Core ships `l10n/core/<locale>.po`.
 - **Loader:** scan `l10n/` on startup, parse via `polib` (pure Rust). Store as `HashMap<(Cow<str>, Locale), Catalog>` in `AppState`.
@@ -462,7 +462,7 @@ Bytes in / bytes out — callers control serialization. A `TypedCache<T>` wrappe
 - **API:** `i18n.t("core", "Welcome, %s", &[username])`. Plural: `i18n.tn("files", "%d file", "%d files", count, &[count])`. Missing translations fall back to the source string.
 - **Hot reload:** not supported in this spec. Restart to pick up new translations.
 
-### 9.3 OCS envelope + capabilities — `rustcloud-ocs`
+### 9.3 OCS envelope + capabilities — `crabcloud-ocs`
 
 **Envelope.** All OCS responses follow upstream's wire format. XML by default; JSON when `Accept: application/json` or `?format=json`:
 
@@ -499,7 +499,7 @@ pub trait CapabilityProvider: Send + Sync {
 
 `AppState` carries `Vec<Arc<dyn CapabilityProvider>>`. Core registers a `CoreCapabilities` provider for the `core` namespace (poll interval, webdav-root, mod-rewrite-working, etc., matching Nextcloud's keys). The handler iterates providers, merges their JSON under their namespaces, wraps in the envelope.
 
-ETag derived from a stable hash of `(provider list, version, instanceid)`. Response cached for 60s in `rustcloud-cache` keyed on `(user_id, locale, etag_input_hash)`. Apps will register their own `CapabilityProvider`s via `BootstrapHook` when the app framework lands — no churn to the aggregator.
+ETag derived from a stable hash of `(provider list, version, instanceid)`. Response cached for 60s in `crabcloud-cache` keyed on `(user_id, locale, etag_input_hash)`. Apps will register their own `CapabilityProvider`s via `BootstrapHook` when the app framework lands — no churn to the aggregator.
 
 ---
 
@@ -507,7 +507,7 @@ ETag derived from a stable hash of `(provider list, version, instanceid)`. Respo
 
 ### 10.1 Process startup
 
-`rustcloud-server` `main()`:
+`crabcloud-server` `main()`:
 
 1. Parse CLI args (`clap`): `--config <path>`, `--ui-assets <path>`, `--no-embed`; subcommands `serve` (default), `migrate`, `version`.
 2. Load `FileConfig` (figment: TOML + env vars + CLI overrides). Validate. Fail fast on error.
@@ -519,15 +519,15 @@ ETag derived from a stable hash of `(provider list, version, instanceid)`. Respo
 8. Build `CapabilityProvider` list — `CoreCapabilities` only in this spec.
 9. Construct `AppState { config, pool, cache, i18n, capability_providers, instance_id }`.
 10. Run registered `BootstrapHook`s (empty in this spec; populated by apps later).
-11. Build axum router via `rustcloud-http::build_router(state)`.
+11. Build axum router via `crabcloud-http::build_router(state)`.
 12. Bind listener from `config.bind_address` (default `127.0.0.1:8080`).
 13. Spawn signal handler (SIGTERM/SIGINT → graceful shutdown; Ctrl-C handler on Windows).
 14. `axum::serve(...).with_graceful_shutdown(...).await`.
 
 ### 10.2 Subcommands
 
-- `rustcloud-server migrate` — run migrations and exit. Container init / ops use this.
-- `rustcloud-server version` — print Rustcloud version + git SHA + active dialect support.
+- `crabcloud-server migrate` — run migrations and exit. Container init / ops use this.
+- `crabcloud-server version` — print Crabcloud version + git SHA + active dialect support.
 
 ### 10.3 Graceful shutdown
 
@@ -539,9 +539,9 @@ Release builds embed the WASM bundle + CSS + fonts into the binary via `rust-emb
 
 ### 10.5 Two-axis versioning
 
-`rustcloud-server --version` reports:
+`crabcloud-server --version` reports:
 
-- **Rustcloud version** — semver, from a workspace constant. Operators see this.
+- **Crabcloud version** — semver, from a workspace constant. Operators see this.
 - **Reported-as-Nextcloud version** — from `config.version` / `config.versionstring`, defaulting to a current upstream Nextcloud value. Clients see this via `/status.php` and `/ocs/v2.php/cloud/capabilities`.
 
 ### 10.6 Docker image
@@ -555,8 +555,8 @@ Multi-stage Dockerfile: build stage runs `cargo xtask build`; runtime stage is `
 A small `xtask` crate provides project commands without bespoke tooling:
 
 - `cargo xtask prepare` — starts `dev/docker-compose.yml`, runs `cargo sqlx prepare` against SQLite + MySQL + Postgres in turn, writes a shared `.sqlx/` cache.
-- `cargo xtask build` — `dx build --release` then `cargo build --release -p rustcloud-server`.
-- `cargo xtask dev` — `dx serve` + `cargo watch -x 'run -p rustcloud-server'` + a stitching reverse-proxy on `:8080`.
+- `cargo xtask build` — `dx build --release` then `cargo build --release -p crabcloud-server`.
+- `cargo xtask dev` — `dx serve` + `cargo watch -x 'run -p crabcloud-server'` + a stitching reverse-proxy on `:8080`.
 - `cargo xtask check-all` — `cargo fmt --check && cargo clippy --all-targets --all-features -- -D warnings && cargo test --workspace`. CI's primary command.
 
 ---
@@ -588,7 +588,7 @@ Repository tests hit a real database. Cache tests hit the real `MemoryCache`. Th
 
 ### 12.6 Coverage target
 
-80 % line on `rustcloud-core`, `rustcloud-http`, `rustcloud-ocs`. Lower bar on `rustcloud-ui` (Dioxus components covered by snapshot tests + the future E2E layer).
+80 % line on `crabcloud-core`, `crabcloud-http`, `crabcloud-ocs`. Lower bar on `crabcloud-ui` (Dioxus components covered by snapshot tests + the future E2E layer).
 
 ### 12.7 E2E
 

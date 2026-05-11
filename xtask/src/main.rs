@@ -1,4 +1,4 @@
-//! Rustcloud workspace automation. Wraps common multi-step developer
+//! Crabcloud workspace automation. Wraps common multi-step developer
 //! workflows (`check-all`, `build`, `up`/`down`, `release`) so contributors
 //! don't have to remember the underlying cargo + dx + docker-compose
 //! incantations.
@@ -68,12 +68,12 @@ fn check_all() -> Result<()> {
 fn build_all() -> Result<()> {
     // 1. Build the WASM client + bundle assets.
     run_in_dir(
-        "crates/rustcloud-ui",
+        "crates/crabcloud-ui",
         "dx",
         &["build", "--release", "--platform", "web"],
     )?;
     // 2. Build the server binary (which embeds the assets via rust-embed).
-    run("cargo", &["build", "--release", "-p", "rustcloud-server"])?;
+    run("cargo", &["build", "--release", "-p", "crabcloud-server"])?;
     Ok(())
 }
 

@@ -38,13 +38,13 @@ jobs:
       - name: Install dioxus-cli
         run: cargo install dioxus-cli --version "^0.6" --locked
       - name: Build WASM bundle
-        working-directory: crates/rustcloud-ui
+        working-directory: crates/crabcloud-ui
         run: dx build --release --platform web
       - name: Upload built bundle
         uses: actions/upload-artifact@v4
         with:
           name: dx-public
-          path: target/dx/rustcloud-ui/release/web/public
+          path: target/dx/crabcloud-ui/release/web/public
 
   test-sqlite:
     runs-on: ubuntu-latest
@@ -59,7 +59,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: dx-public
-          path: target/dx/rustcloud-ui/release/web/public
+          path: target/dx/crabcloud-ui/release/web/public
       - run: cargo test --workspace
 
   test-multidialect:
@@ -69,33 +69,33 @@ jobs:
       mysql:
         image: mysql:8.4
         env:
-          MYSQL_ROOT_PASSWORD: rustcloud
-          MYSQL_DATABASE: rustcloud
-          MYSQL_USER: rustcloud
-          MYSQL_PASSWORD: rustcloud
+          MYSQL_ROOT_PASSWORD: crabcloud
+          MYSQL_DATABASE: crabcloud
+          MYSQL_USER: crabcloud
+          MYSQL_PASSWORD: crabcloud
         ports:
           - 3307:3306
         options: >-
-          --health-cmd="mysqladmin ping -prustcloud"
+          --health-cmd="mysqladmin ping -pcrabcloud"
           --health-interval=5s
           --health-timeout=5s
           --health-retries=12
       postgres:
         image: postgres:16
         env:
-          POSTGRES_DB: rustcloud
-          POSTGRES_USER: rustcloud
-          POSTGRES_PASSWORD: rustcloud
+          POSTGRES_DB: crabcloud
+          POSTGRES_USER: crabcloud
+          POSTGRES_PASSWORD: crabcloud
         ports:
           - 5433:5432
         options: >-
-          --health-cmd="pg_isready -U rustcloud"
+          --health-cmd="pg_isready -U crabcloud"
           --health-interval=5s
           --health-timeout=5s
           --health-retries=12
     env:
-      RUSTCLOUD_TEST_MYSQL_URL:    mysql://rustcloud:rustcloud@127.0.0.1:3307/rustcloud
-      RUSTCLOUD_TEST_POSTGRES_URL: postgres://rustcloud:rustcloud@127.0.0.1:5433/rustcloud
+      CRABCLOUD_TEST_MYSQL_URL:    mysql://crabcloud:crabcloud@127.0.0.1:3307/crabcloud
+      CRABCLOUD_TEST_POSTGRES_URL: postgres://crabcloud:crabcloud@127.0.0.1:5433/crabcloud
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -116,9 +116,9 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: dx-public
-          path: target/dx/rustcloud-ui/release/web/public
+          path: target/dx/crabcloud-ui/release/web/public
       - name: Build release server
-        run: cargo build --release -p rustcloud-server
+        run: cargo build --release -p crabcloud-server
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
@@ -168,10 +168,10 @@ jobs:
           # Use python (already available + has bcrypt installed) so we don't have to escape $ for sed.
           python3 -c "import os, pathlib; p = pathlib.Path('config/e2e.toml'); p.write_text(p.read_text().replace('__HASH__', os.environ['BCRYPT_HASH']))"
       - name: Migrate
-        run: cargo run --release -p rustcloud-server -- --config config/e2e.toml migrate
+        run: cargo run --release -p crabcloud-server -- --config config/e2e.toml migrate
       - name: Start server
         run: |
-          ./target/release/rustcloud-server --config config/e2e.toml serve &
+          ./target/release/crabcloud-server --config config/e2e.toml serve &
           echo "SERVER_PID=$!" >> "$GITHUB_ENV"
           # Wait for the server to become ready.
           for i in $(seq 1 30); do
@@ -186,7 +186,7 @@ jobs:
       - name: Run Playwright tests
         working-directory: e2e
         env:
-          RUSTCLOUD_E2E_URL: http://127.0.0.1:18765
+          CRABCLOUD_E2E_URL: http://127.0.0.1:18765
         run: npm test
       - name: Stop server
         if: always()

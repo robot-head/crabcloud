@@ -4,11 +4,11 @@ Completed: 2026-05-10
 
 ## What works
 
-- **`rustcloud-cache`**: `Cache` trait, `MemoryCache` impl with lazy TTL expiry, `TypedCache<T>` serde wrapper.
-- **`rustcloud-i18n`**: `Locale` type with Accept-Language resolution, `Catalog` loader for gettext `.po` files (polib), `I18n` service with `t()`/`tn()` and source-string fallback. Seed `l10n/core/de.po` provided.
-- **`rustcloud-ocs`**: `OcsResponse<T>` envelope rendering to JSON or XML; `Format` content negotiation; `CapabilityProvider` trait + cache-backed aggregator with stable ETag; `CoreCapabilities` provider matching Nextcloud's `core` namespace shape.
-- **`rustcloud-core`**: `Error` enum with HTTP status mapping + client-safe message extraction; `AppConfigService` (cache-write-through against `oc_appconfig`); `BootstrapRegistry` + `BootstrapHook` — the extension point future apps will use; `AppState` + `AppStateBuilder` that assembles everything end-to-end.
-- **`rustcloud-server`**: `migrate` subcommand now uses `AppStateBuilder::build()`, proving the assembly path.
+- **`crabcloud-cache`**: `Cache` trait, `MemoryCache` impl with lazy TTL expiry, `TypedCache<T>` serde wrapper.
+- **`crabcloud-i18n`**: `Locale` type with Accept-Language resolution, `Catalog` loader for gettext `.po` files (polib), `I18n` service with `t()`/`tn()` and source-string fallback. Seed `l10n/core/de.po` provided.
+- **`crabcloud-ocs`**: `OcsResponse<T>` envelope rendering to JSON or XML; `Format` content negotiation; `CapabilityProvider` trait + cache-backed aggregator with stable ETag; `CoreCapabilities` provider matching Nextcloud's `core` namespace shape.
+- **`crabcloud-core`**: `Error` enum with HTTP status mapping + client-safe message extraction; `AppConfigService` (cache-write-through against `oc_appconfig`); `BootstrapRegistry` + `BootstrapHook` — the extension point future apps will use; `AppState` + `AppStateBuilder` that assembles everything end-to-end.
+- **`crabcloud-server`**: `migrate` subcommand now uses `AppStateBuilder::build()`, proving the assembly path.
 
 ## What's deferred
 
@@ -32,11 +32,11 @@ Completed: 2026-05-10
 - `version` subcommand should print git SHA + dialect support (spec §10.2 / §10.5). Carried.
 - Test config-builder duplication (`cfg_sqlite`/`base_config`) — now in 5 places. Consolidate before Phase 3.
 - `quick-xml` is declared as a workspace dep but the current XML rendering is hand-rolled; either keep the dep for future XML parsing needs or drop it.
-- `compute_etag` in `rustcloud-ocs::capabilities` uses `DefaultHasher`, which is documented as not stable across Rust versions. Acceptable for an ETag (clients re-fetch on mismatch) but worth swapping for `blake3` or `xxhash-rust` if a stable cross-version hash matters.
+- `compute_etag` in `crabcloud-ocs::capabilities` uses `DefaultHasher`, which is documented as not stable across Rust versions. Acceptable for an ETag (clients re-fetch on mismatch) but worth swapping for `blake3` or `xxhash-rust` if a stable cross-version hash matters.
 - `AppConfigService::fetch_db` repeats the same `query_as` body three times for the three pool variants. Phase 3 introduces the `db_dispatch!` macro mentioned in the spec; this is its first natural use site.
-- **`rustcloud-core` has unused workspace deps**: `async-trait`, `tracing`, `serde`, `serde_json` are declared but not referenced by any source file. Drop them, or — better — instrument `AppConfigService::set`/`get` cache failures with `tracing::warn!` to actually use `tracing`.
+- **`crabcloud-core` has unused workspace deps**: `async-trait`, `tracing`, `serde`, `serde_json` are declared but not referenced by any source file. Drop them, or — better — instrument `AppConfigService::set`/`get` cache failures with `tracing::warn!` to actually use `tracing`.
 - **Two semantic paths for the same validation error.** `LoadError::Validate(FileConfigError)` and `Error::ConfigValidation(FileConfigError)` are both reachable for the same underlying error; logs/Display will differ depending on which path the `?` operator takes. Either collapse `Error::ConfigValidation` (it's already reachable via `Error::Config`) or document which path to prefer.
-- **OCS aggregator: TTL is a magic 60s; cache-set failures swallowed silently.** Lift to a `const CACHE_TTL` (done for rustcloud-ocs in Batch C; AppConfigService TTL still hardcoded). Add `tracing::warn!` on cache-set failure paths.
+- **OCS aggregator: TTL is a magic 60s; cache-set failures swallowed silently.** Lift to a `const CACHE_TTL` (done for crabcloud-ocs in Batch C; AppConfigService TTL still hardcoded). Add `tracing::warn!` on cache-set failure paths.
 - **`xml_escape` allocates 5x per call.** Hot-path-only concern; Phase 3 may surface it.
 - **`Format::negotiate` is a naive substring search**, doesn't honor Accept header q-weights. Nextcloud clients send simple Accept values so it's fine in practice — flag if a third-party client breaks.
 - **`Locale` normalization is one-way** (`en-US` → `en_us`). If we ever emit Content-Language headers, we'll need `to_bcp47()`.

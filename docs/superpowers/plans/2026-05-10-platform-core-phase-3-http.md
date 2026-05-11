@@ -2,15 +2,15 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make `rustcloud-server serve` actually serve HTTP — with `/status.php`, `/ocs/v2.php/cloud/capabilities`, a working `/index.php/login` flow against a bootstrap admin, a session+CSRF stack backed by the Phase 2 cache, all guarded by trusted-domain / proxy-header / security-header / body-limit / tracing middleware, and verified by an end-to-end integration test suite.
+**Goal:** Make `crabcloud-server serve` actually serve HTTP — with `/status.php`, `/ocs/v2.php/cloud/capabilities`, a working `/index.php/login` flow against a bootstrap admin, a session+CSRF stack backed by the Phase 2 cache, all guarded by trusted-domain / proxy-header / security-header / body-limit / tracing middleware, and verified by an end-to-end integration test suite.
 
-**Architecture:** A new `rustcloud-http` crate that consumes `rustcloud-core::AppState` and produces an `axum::Router`. Middleware are Tower layers; session storage is cache-backed via `Arc<dyn Cache>`; the cookie carries a signed opaque session ID (HMAC-SHA256 keyed by `config.secret`). Route handlers turn `rustcloud-core::Error` into HTTP responses via two `IntoResponse` wrappers (`ApiError`, `OcsError`) — the unified `Error` type still owns the http_status + client_message mapping. The browser-UI surface (Dioxus Fullstack) is **not** mounted yet — Phase 4 lands that as a sub-router merged after the API routes. For Phase 3 the UI surface is a fallthrough that returns 404.
+**Architecture:** A new `crabcloud-http` crate that consumes `crabcloud-core::AppState` and produces an `axum::Router`. Middleware are Tower layers; session storage is cache-backed via `Arc<dyn Cache>`; the cookie carries a signed opaque session ID (HMAC-SHA256 keyed by `config.secret`). Route handlers turn `crabcloud-core::Error` into HTTP responses via two `IntoResponse` wrappers (`ApiError`, `OcsError`) — the unified `Error` type still owns the http_status + client_message mapping. The browser-UI surface (Dioxus Fullstack) is **not** mounted yet — Phase 4 lands that as a sub-router merged after the API routes. For Phase 3 the UI surface is a fallthrough that returns 404.
 
 **Tech Stack:** Rust 1.85, `axum 0.8`, `tower 0.5`, `tower-http 0.6`, `hyper 1`, `cookie 0.18` (cookie parsing + attributes), `hmac 0.12` + `sha2 0.10` + `subtle 2.6` (signed session IDs, constant-time comparison), `base64 0.22` (URL-safe encoding of the cookie value), `bcrypt 0.16` (password hashing for the bootstrap admin), `rand 0.8` (CSPRNG for session IDs / CSRF tokens). All existing Phase 1/2 crates are consumed via the workspace.
 
 **Parent spec:** `docs/superpowers/specs/2026-05-10-platform-core-design.md` — Phase 3 implements §7 (HTTP layer) and the in-scope acceptance criteria from §13 (#3 "serves traffic", #4 `/status.php`, #5 `/ocs/v2.php/cloud/capabilities`, #7 `/login`, #8 middleware enforcement).
 
-**Previous phase:** Phase 2 ended at commit `ae59bb8`. Workspace has `rustcloud-cache`, `-config`, `-core`, `-db`, `-i18n`, `-ocs`, `-server`, `xtask` with ~90 unit tests + integration tests. `rustcloud-core::AppState` and `AppStateBuilder` are the substrate Phase 3 builds on.
+**Previous phase:** Phase 2 ended at commit `ae59bb8`. Workspace has `crabcloud-cache`, `-config`, `-core`, `-db`, `-i18n`, `-ocs`, `-server`, `xtask` with ~90 unit tests + integration tests. `crabcloud-core::AppState` and `AppStateBuilder` are the substrate Phase 3 builds on.
 
 ---
 
@@ -21,7 +21,7 @@
 - **rustfmt:** Run `cargo fmt --all` after writing files. Authorized at every task boundary.
 - **No mocks for DB / cache.** Tests use real `SqlitePool` (in-process) and real `MemoryCache`.
 - **`tokio` features per crate:** the workspace baseline does NOT include `sync` / `signal`. Crates that need those features declare them locally (`tokio = { workspace = true, features = ["sync", "signal"] }`).
-- **Errors:** library code uses `thiserror`; the binary's `main` converts to `anyhow::Result`. New errors flow into `rustcloud-core::Error` so `http_status()` + `client_message()` handle them.
+- **Errors:** library code uses `thiserror`; the binary's `main` converts to `anyhow::Result`. New errors flow into `crabcloud-core::Error` so `http_status()` + `client_message()` handle them.
 - **Plan-bug protocol:** if verbatim code fails to compile or test, fix the minimal issue and report DONE_WITH_CONCERNS with a clear diff explanation. Don't silently deviate.
 
 ---
@@ -29,10 +29,10 @@
 ## File Structure (Phase 3 additions)
 
 ```
-rustcloud/
+crabcloud/
 ├── Cargo.toml                                  # extended workspace deps + members
 ├── crates/
-│   ├── rustcloud-http/                         # NEW
+│   ├── crabcloud-http/                         # NEW
 │   │   ├── Cargo.toml
 │   │   ├── src/
 │   │   │   ├── lib.rs                          # re-exports + build_router
@@ -65,12 +65,12 @@ rustcloud/
 │   │   │   └── router.rs                       # build_router(state) compose
 │   │   └── tests/
 │   │       └── http_end_to_end.rs              # full server boot + curl-style tests
-│   ├── rustcloud-config/                       # MODIFIED: add bootstrap_admin section
+│   ├── crabcloud-config/                       # MODIFIED: add bootstrap_admin section
 │   │   └── src/types.rs
-│   ├── rustcloud-core/                         # MODIFIED: register CoreCapabilities default
+│   ├── crabcloud-core/                         # MODIFIED: register CoreCapabilities default
 │   │   └── src/state.rs                        # `AppStateBuilder::with_core_capabilities()` helper
-│   └── rustcloud-server/                       # MODIFIED: serve subcommand + signal handling
-│       ├── Cargo.toml                          # adds rustcloud-http, rustcloud-ocs deps
+│   └── crabcloud-server/                       # MODIFIED: serve subcommand + signal handling
+│       ├── Cargo.toml                          # adds crabcloud-http, crabcloud-ocs deps
 │       └── src/main.rs                         # Cmd::Serve runs axum::serve
 └── docs/superpowers/plans/
     └── 2026-05-10-platform-core-phase-3-http.changelog.md   # NEW
@@ -97,19 +97,19 @@ bcrypt = "0.16"
 rand = "0.8"
 
 # Internal
-rustcloud-http = { path = "crates/rustcloud-http" }
+crabcloud-http = { path = "crates/crabcloud-http" }
 ```
 
-(`rustcloud-ocs`, `rustcloud-core`, etc. are already in workspace deps from Phase 2.)
+(`crabcloud-ocs`, `crabcloud-core`, etc. are already in workspace deps from Phase 2.)
 
 ---
 
-## Task 1: Workspace scaffold for `rustcloud-http`
+## Task 1: Workspace scaffold for `crabcloud-http`
 
 **Files:**
 - Modify: `Cargo.toml` (workspace members + workspace deps)
-- Create: `crates/rustcloud-http/Cargo.toml`
-- Create: `crates/rustcloud-http/src/lib.rs` (minimal stub)
+- Create: `crates/crabcloud-http/Cargo.toml`
+- Create: `crates/crabcloud-http/src/lib.rs` (minimal stub)
 
 Set up the crate and add all new external deps to the workspace. The crate will be filled out in subsequent tasks.
 
@@ -120,14 +120,14 @@ Modify root `Cargo.toml`:
 ```toml
 [workspace]
 members = [
-    "crates/rustcloud-cache",
-    "crates/rustcloud-config",
-    "crates/rustcloud-core",
-    "crates/rustcloud-db",
-    "crates/rustcloud-http",
-    "crates/rustcloud-i18n",
-    "crates/rustcloud-ocs",
-    "crates/rustcloud-server",
+    "crates/crabcloud-cache",
+    "crates/crabcloud-config",
+    "crates/crabcloud-core",
+    "crates/crabcloud-db",
+    "crates/crabcloud-http",
+    "crates/crabcloud-i18n",
+    "crates/crabcloud-ocs",
+    "crates/crabcloud-server",
     "xtask",
 ]
 resolver = "2"
@@ -143,18 +143,18 @@ cookie = { version = "0.18", features = ["percent-encode"] }
 hmac = "0.12"
 hyper = { version = "1.5", features = ["http1", "server"] }
 rand = "0.8"
-rustcloud-http = { path = "crates/rustcloud-http" }
+crabcloud-http = { path = "crates/crabcloud-http" }
 sha2 = "0.10"
 subtle = "2.6"
 tower = { version = "0.5", features = ["util"] }
 tower-http = { version = "0.6", features = ["trace", "limit", "cors", "catch-panic"] }
 ```
 
-- [ ] **Step 2: Write `crates/rustcloud-http/Cargo.toml`**
+- [ ] **Step 2: Write `crates/crabcloud-http/Cargo.toml`**
 
 ```toml
 [package]
-name = "rustcloud-http"
+name = "crabcloud-http"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -169,11 +169,11 @@ cookie.workspace = true
 hmac.workspace = true
 hyper.workspace = true
 rand.workspace = true
-rustcloud-cache.workspace = true
-rustcloud-config.workspace = true
-rustcloud-core.workspace = true
-rustcloud-i18n.workspace = true
-rustcloud-ocs.workspace = true
+crabcloud-cache.workspace = true
+crabcloud-config.workspace = true
+crabcloud-core.workspace = true
+crabcloud-i18n.workspace = true
+crabcloud-ocs.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
@@ -185,15 +185,15 @@ tower-http.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
-rustcloud-db.workspace = true
+crabcloud-db.workspace = true
 tempfile.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 ```
 
-- [ ] **Step 3: Write minimal `crates/rustcloud-http/src/lib.rs`**
+- [ ] **Step 3: Write minimal `crates/crabcloud-http/src/lib.rs`**
 
 ```rust
-//! HTTP layer for Rustcloud — axum router, middleware stack, session + CSRF,
+//! HTTP layer for Crabcloud — axum router, middleware stack, session + CSRF,
 //! and Phase 3's concrete handlers (`/status.php`, `/index.php/login`,
 //! `/ocs/v2.php/cloud/capabilities`).
 //!
@@ -206,7 +206,7 @@ tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 
 Run:
 ```
-cargo build -p rustcloud-http
+cargo build -p crabcloud-http
 ```
 
 Expected: clean build (zero source files of substance, but the dependency tree resolves).
@@ -218,8 +218,8 @@ Expected: still green; nothing else changed.
 - [ ] **Step 6: Commit**
 
 ```
-git add Cargo.toml Cargo.lock crates/rustcloud-http
-git commit -m "chore(http): scaffold rustcloud-http crate with HTTP/auth deps
+git add Cargo.toml Cargo.lock crates/crabcloud-http
+git commit -m "chore(http): scaffold crabcloud-http crate with HTTP/auth deps
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 ```
@@ -229,20 +229,20 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 ## Task 2: Error → IntoResponse wrappers
 
 **Files:**
-- Create: `crates/rustcloud-http/src/error.rs`
-- Modify: `crates/rustcloud-http/src/lib.rs`
+- Create: `crates/crabcloud-http/src/error.rs`
+- Modify: `crates/crabcloud-http/src/lib.rs`
 
-`rustcloud-core::Error` already has `http_status()` and `client_message()`. Phase 3 adds two thin axum response wrappers:
+`crabcloud-core::Error` already has `http_status()` and `client_message()`. Phase 3 adds two thin axum response wrappers:
 
 - `ApiError(Error)` → plain HTTP status + JSON `{"error": "..."}` body (for non-OCS routes like `/status.php` and `/index.php/login`).
-- `OcsError(Error)` → OCS envelope wrapping (for `/ocs/*` routes), reusing `rustcloud-ocs::OcsResponse` + `render`.
+- `OcsError(Error)` → OCS envelope wrapping (for `/ocs/*` routes), reusing `crabcloud-ocs::OcsResponse` + `render`.
 
 Future Phase 3+: a `DavError` wrapper for WebDAV.
 
-- [ ] **Step 1: Write `crates/rustcloud-http/src/error.rs`**
+- [ ] **Step 1: Write `crates/crabcloud-http/src/error.rs`**
 
 ```rust
-//! axum `IntoResponse` wrappers around `rustcloud_core::Error`. Two flavors:
+//! axum `IntoResponse` wrappers around `crabcloud_core::Error`. Two flavors:
 //!
 //! - `ApiError` — plain status + JSON body. For non-OCS endpoints.
 //! - `OcsError` — wraps in the OCS envelope so `/ocs/*` responses match
@@ -251,8 +251,8 @@ Future Phase 3+: a `DavError` wrapper for WebDAV.
 use axum::http::{header, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::Json;
-use rustcloud_core::Error as CoreError;
-use rustcloud_ocs::{render, Format, OcsResponse, OcsStatus, OcsVersion};
+use crabcloud_core::Error as CoreError;
+use crabcloud_ocs::{render, Format, OcsResponse, OcsStatus, OcsVersion};
 use serde_json::json;
 
 /// Plain HTTP error response. Body is JSON `{"error": "..."}` with the
@@ -376,10 +376,10 @@ mod tests {
 
 - [ ] **Step 2: Wire `error` into `lib.rs`**
 
-Modify `crates/rustcloud-http/src/lib.rs`:
+Modify `crates/crabcloud-http/src/lib.rs`:
 
 ```rust
-//! HTTP layer for Rustcloud — axum router, middleware stack, session + CSRF,
+//! HTTP layer for Crabcloud — axum router, middleware stack, session + CSRF,
 //! and Phase 3's concrete handlers.
 //!
 //! See `docs/superpowers/specs/2026-05-10-platform-core-design.md` §7.
@@ -392,7 +392,7 @@ pub use error::{ApiError, OcsError};
 - [ ] **Step 3: Run the tests**
 
 ```
-cargo test -p rustcloud-http --lib
+cargo test -p crabcloud-http --lib
 ```
 
 Expected: 4 tests pass.
@@ -404,7 +404,7 @@ Expected: still green.
 - [ ] **Step 5: Commit**
 
 ```
-git add crates/rustcloud-http
+git add crates/crabcloud-http
 git commit -m "feat(http): add ApiError and OcsError IntoResponse wrappers
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
@@ -415,14 +415,14 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 ## Task 3: `/status.php` + minimal `build_router` + smoke ServeRun
 
 **Files:**
-- Create: `crates/rustcloud-http/src/routes/mod.rs`
-- Create: `crates/rustcloud-http/src/routes/status.rs`
-- Create: `crates/rustcloud-http/src/router.rs`
-- Modify: `crates/rustcloud-http/src/lib.rs`
+- Create: `crates/crabcloud-http/src/routes/mod.rs`
+- Create: `crates/crabcloud-http/src/routes/status.rs`
+- Create: `crates/crabcloud-http/src/router.rs`
+- Modify: `crates/crabcloud-http/src/lib.rs`
 
 End-state after this task: an axum router exists, `/status.php` returns the Nextcloud JSON shape, and a unit test exercises the route via `tower::ServiceExt::oneshot`.
 
-- [ ] **Step 1: Write `crates/rustcloud-http/src/routes/mod.rs`**
+- [ ] **Step 1: Write `crates/crabcloud-http/src/routes/mod.rs`**
 
 ```rust
 //! HTTP route modules. Each handler lives in its own file.
@@ -430,7 +430,7 @@ End-state after this task: an axum router exists, `/status.php` returns the Next
 pub mod status;
 ```
 
-- [ ] **Step 2: Write `crates/rustcloud-http/src/routes/status.rs`**
+- [ ] **Step 2: Write `crates/crabcloud-http/src/routes/status.rs`**
 
 ```rust
 //! `GET /status.php` — Nextcloud-compatible probe used by clients to identify
@@ -440,7 +440,7 @@ pub mod status;
 
 use axum::extract::State;
 use axum::response::Json;
-use rustcloud_core::AppState;
+use crabcloud_core::AppState;
 use serde::Serialize;
 
 #[derive(Serialize)]
@@ -471,7 +471,7 @@ pub async fn handler(State(state): State<AppState>) -> Json<StatusResponse> {
 }
 ```
 
-- [ ] **Step 3: Write `crates/rustcloud-http/src/router.rs`**
+- [ ] **Step 3: Write `crates/crabcloud-http/src/router.rs`**
 
 ```rust
 //! axum router composition. `build_router(state)` returns the assembled
@@ -480,7 +480,7 @@ pub async fn handler(State(state): State<AppState>) -> Json<StatusResponse> {
 
 use axum::routing::get;
 use axum::Router;
-use rustcloud_core::AppState;
+use crabcloud_core::AppState;
 
 use crate::routes::status;
 
@@ -494,10 +494,10 @@ pub fn build_router(state: AppState) -> Router {
 
 - [ ] **Step 4: Re-export from `lib.rs`**
 
-Modify `crates/rustcloud-http/src/lib.rs`:
+Modify `crates/crabcloud-http/src/lib.rs`:
 
 ```rust
-//! HTTP layer for Rustcloud — axum router, middleware stack, session + CSRF,
+//! HTTP layer for Crabcloud — axum router, middleware stack, session + CSRF,
 //! and Phase 3's concrete handlers.
 //!
 //! See `docs/superpowers/specs/2026-05-10-platform-core-design.md` §7.
@@ -512,7 +512,7 @@ pub use router::build_router;
 
 - [ ] **Step 5: Write the unit test in `routes/status.rs`**
 
-Append to `crates/rustcloud-http/src/routes/status.rs`:
+Append to `crates/crabcloud-http/src/routes/status.rs`:
 
 ```rust
 #[cfg(test)]
@@ -521,8 +521,8 @@ mod tests {
     use crate::router::build_router;
     use axum::body::to_bytes;
     use axum::http::{Request, StatusCode};
-    use rustcloud_config::{CacheConfig, DbType, FileConfig};
-    use rustcloud_core::AppStateBuilder;
+    use crabcloud_config::{CacheConfig, DbType, FileConfig};
+    use crabcloud_core::AppStateBuilder;
     use secrecy::SecretString;
     use std::net::SocketAddr;
     use std::path::PathBuf;
@@ -586,7 +586,7 @@ mod tests {
 - [ ] **Step 6: Run the tests**
 
 ```
-cargo test -p rustcloud-http --lib
+cargo test -p crabcloud-http --lib
 ```
 
 Expected: 5 tests pass (4 from error.rs + 1 new).
@@ -594,7 +594,7 @@ Expected: 5 tests pass (4 from error.rs + 1 new).
 - [ ] **Step 7: Commit**
 
 ```
-git add crates/rustcloud-http
+git add crates/crabcloud-http
 git commit -m "feat(http): add /status.php handler with Nextcloud-shape response
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
@@ -605,15 +605,15 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 ## Task 4: Trusted-domain + proxy-headers middleware
 
 **Files:**
-- Create: `crates/rustcloud-http/src/middleware/mod.rs`
-- Create: `crates/rustcloud-http/src/middleware/proxy_headers.rs`
-- Create: `crates/rustcloud-http/src/middleware/trusted_domain.rs`
-- Modify: `crates/rustcloud-http/src/lib.rs`
-- Modify: `crates/rustcloud-http/src/router.rs`
+- Create: `crates/crabcloud-http/src/middleware/mod.rs`
+- Create: `crates/crabcloud-http/src/middleware/proxy_headers.rs`
+- Create: `crates/crabcloud-http/src/middleware/trusted_domain.rs`
+- Modify: `crates/crabcloud-http/src/lib.rs`
+- Modify: `crates/crabcloud-http/src/router.rs`
 
 Two custom Tower layers, both per spec §7.2. ProxyHeadersLayer rewrites the request URI based on `X-Forwarded-Proto`/`X-Forwarded-Host` only when the peer is in `config.trusted_proxies`. TrustedDomainLayer rejects requests whose effective `Host` isn't in `config.trusted_domains`, except for loopback connections (so CLI tests still work).
 
-- [ ] **Step 1: Write `crates/rustcloud-http/src/middleware/mod.rs`**
+- [ ] **Step 1: Write `crates/crabcloud-http/src/middleware/mod.rs`**
 
 ```rust
 //! Tower middleware layers used by the HTTP router.
@@ -622,7 +622,7 @@ pub mod proxy_headers;
 pub mod trusted_domain;
 ```
 
-- [ ] **Step 2: Write `crates/rustcloud-http/src/middleware/proxy_headers.rs`**
+- [ ] **Step 2: Write `crates/crabcloud-http/src/middleware/proxy_headers.rs`**
 
 ```rust
 //! `ProxyHeadersLayer` — honors `X-Forwarded-{Proto,Host,For}` only when the
@@ -736,7 +736,7 @@ Then add to the crate's `Cargo.toml` `[dependencies]`:
 futures.workspace = true
 ```
 
-- [ ] **Step 3: Write `crates/rustcloud-http/src/middleware/trusted_domain.rs`**
+- [ ] **Step 3: Write `crates/crabcloud-http/src/middleware/trusted_domain.rs`**
 
 ```rust
 //! `TrustedDomainLayer` — rejects requests whose effective `Host` isn't in
@@ -827,7 +827,7 @@ where
 
 - [ ] **Step 4: Mount middleware in `build_router`**
 
-Modify `crates/rustcloud-http/src/router.rs`:
+Modify `crates/crabcloud-http/src/router.rs`:
 
 ```rust
 //! axum router composition. `build_router(state)` returns the assembled
@@ -835,7 +835,7 @@ Modify `crates/rustcloud-http/src/router.rs`:
 
 use axum::routing::get;
 use axum::Router;
-use rustcloud_core::AppState;
+use crabcloud_core::AppState;
 
 use crate::middleware::proxy_headers::ProxyHeadersLayer;
 use crate::middleware::trusted_domain::TrustedDomainLayer;
@@ -856,10 +856,10 @@ pub fn build_router(state: AppState) -> Router {
 
 - [ ] **Step 5: Re-export middleware module**
 
-Modify `crates/rustcloud-http/src/lib.rs`:
+Modify `crates/crabcloud-http/src/lib.rs`:
 
 ```rust
-//! HTTP layer for Rustcloud — axum router, middleware stack, session + CSRF,
+//! HTTP layer for Crabcloud — axum router, middleware stack, session + CSRF,
 //! and Phase 3's concrete handlers.
 //!
 //! See `docs/superpowers/specs/2026-05-10-platform-core-design.md` §7.
@@ -875,7 +875,7 @@ pub use router::build_router;
 
 - [ ] **Step 6: Add middleware tests**
 
-Append to `crates/rustcloud-http/src/middleware/trusted_domain.rs`:
+Append to `crates/crabcloud-http/src/middleware/trusted_domain.rs`:
 
 ```rust
 #[cfg(test)]
@@ -948,7 +948,7 @@ mod tests {
 }
 ```
 
-Append to `crates/rustcloud-http/src/middleware/proxy_headers.rs`:
+Append to `crates/crabcloud-http/src/middleware/proxy_headers.rs`:
 
 ```rust
 #[cfg(test)]
@@ -1005,7 +1005,7 @@ mod tests {
 - [ ] **Step 7: Run the tests**
 
 ```
-cargo test -p rustcloud-http --lib
+cargo test -p crabcloud-http --lib
 ```
 
 Expected: 11 tests pass (5 prior + 4 trusted_domain + 2 proxy_headers).
@@ -1013,7 +1013,7 @@ Expected: 11 tests pass (5 prior + 4 trusted_domain + 2 proxy_headers).
 - [ ] **Step 8: Commit**
 
 ```
-git add crates/rustcloud-http Cargo.toml Cargo.lock
+git add crates/crabcloud-http Cargo.toml Cargo.lock
 git commit -m "feat(http): add trusted-domain and proxy-headers middleware
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
@@ -1024,13 +1024,13 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 ## Task 5: Security-headers middleware + body limit
 
 **Files:**
-- Create: `crates/rustcloud-http/src/middleware/security_headers.rs`
-- Modify: `crates/rustcloud-http/src/middleware/mod.rs`
-- Modify: `crates/rustcloud-http/src/router.rs`
+- Create: `crates/crabcloud-http/src/middleware/security_headers.rs`
+- Modify: `crates/crabcloud-http/src/middleware/mod.rs`
+- Modify: `crates/crabcloud-http/src/router.rs`
 
 `SecurityHeadersLayer` adds the standard set the spec calls for: `Strict-Transport-Security`, `X-Content-Type-Options`, `Referrer-Policy`, `X-Frame-Options`, plus a baseline `Content-Security-Policy`. The body-limit comes from `tower-http::limit` and is configured in `build_router`.
 
-- [ ] **Step 1: Write `crates/rustcloud-http/src/middleware/security_headers.rs`**
+- [ ] **Step 1: Write `crates/crabcloud-http/src/middleware/security_headers.rs`**
 
 ```rust
 //! `SecurityHeadersLayer` — sets the cluster of security headers spec §7.2
@@ -1134,7 +1134,7 @@ mod tests {
 
 - [ ] **Step 2: Re-export from middleware module**
 
-Modify `crates/rustcloud-http/src/middleware/mod.rs`:
+Modify `crates/crabcloud-http/src/middleware/mod.rs`:
 
 ```rust
 //! Tower middleware layers used by the HTTP router.
@@ -1146,7 +1146,7 @@ pub mod trusted_domain;
 
 - [ ] **Step 3: Add body limit + security headers to `build_router`**
 
-Modify `crates/rustcloud-http/src/router.rs`:
+Modify `crates/crabcloud-http/src/router.rs`:
 
 ```rust
 //! axum router composition. `build_router(state)` returns the assembled
@@ -1154,7 +1154,7 @@ Modify `crates/rustcloud-http/src/router.rs`:
 
 use axum::routing::get;
 use axum::Router;
-use rustcloud_core::AppState;
+use crabcloud_core::AppState;
 use tower_http::limit::RequestBodyLimitLayer;
 
 use crate::middleware::proxy_headers::ProxyHeadersLayer;
@@ -1183,7 +1183,7 @@ pub fn build_router(state: AppState) -> Router {
 - [ ] **Step 4: Run the tests**
 
 ```
-cargo test -p rustcloud-http --lib
+cargo test -p crabcloud-http --lib
 ```
 
 Expected: 12 tests pass (11 prior + 1 new).
@@ -1191,7 +1191,7 @@ Expected: 12 tests pass (11 prior + 1 new).
 - [ ] **Step 5: Commit**
 
 ```
-git add crates/rustcloud-http
+git add crates/crabcloud-http
 git commit -m "feat(http): add security-headers middleware and 512 MiB body limit
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
@@ -1202,16 +1202,16 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 ## Task 6: Session machinery — `Session`, signed cookie, cache-backed store
 
 **Files:**
-- Create: `crates/rustcloud-http/src/session/mod.rs`
-- Create: `crates/rustcloud-http/src/session/data.rs`
-- Create: `crates/rustcloud-http/src/session/cookie.rs`
-- Create: `crates/rustcloud-http/src/session/store.rs`
-- Create: `crates/rustcloud-http/src/session/layer.rs`
-- Modify: `crates/rustcloud-http/src/lib.rs`
+- Create: `crates/crabcloud-http/src/session/mod.rs`
+- Create: `crates/crabcloud-http/src/session/data.rs`
+- Create: `crates/crabcloud-http/src/session/cookie.rs`
+- Create: `crates/crabcloud-http/src/session/store.rs`
+- Create: `crates/crabcloud-http/src/session/layer.rs`
+- Modify: `crates/crabcloud-http/src/lib.rs`
 
 The session payload is a small JSON blob carried in cache. The cookie carries an opaque ID + HMAC-SHA256 signature keyed by `config.secret`. `SessionLayer` reads the cookie on each request, loads the session (or creates a fresh empty one), inserts it as a request extension, and on response writes it back to cache (sliding TTL).
 
-- [ ] **Step 1: Write `crates/rustcloud-http/src/session/mod.rs`**
+- [ ] **Step 1: Write `crates/crabcloud-http/src/session/mod.rs`**
 
 ```rust
 //! Session machinery: data model, cache-backed store, signed cookie, and the
@@ -1230,7 +1230,7 @@ pub use layer::SessionLayer;
 pub use store::SessionStore;
 ```
 
-- [ ] **Step 2: Write `crates/rustcloud-http/src/session/data.rs`**
+- [ ] **Step 2: Write `crates/crabcloud-http/src/session/data.rs`**
 
 ```rust
 //! Session payload types. Stored in cache as JSON.
@@ -1335,13 +1335,13 @@ mod tests {
 hex = "0.4"
 ```
 
-Then in `crates/rustcloud-http/Cargo.toml` `[dependencies]`:
+Then in `crates/crabcloud-http/Cargo.toml` `[dependencies]`:
 
 ```toml
 hex.workspace = true
 ```
 
-- [ ] **Step 3: Write `crates/rustcloud-http/src/session/cookie.rs`**
+- [ ] **Step 3: Write `crates/crabcloud-http/src/session/cookie.rs`**
 
 ```rust
 //! Signed-cookie encode/decode. The cookie value format is:
@@ -1423,13 +1423,13 @@ mod tests {
 }
 ```
 
-- [ ] **Step 4: Write `crates/rustcloud-http/src/session/store.rs`**
+- [ ] **Step 4: Write `crates/crabcloud-http/src/session/store.rs`**
 
 ```rust
 //! `SessionStore` — typed wrapper over `Arc<dyn Cache>` for session payloads.
 
 use crate::session::data::{Session, SessionId};
-use rustcloud_cache::{Cache, CacheError};
+use crabcloud_cache::{Cache, CacheError};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -1478,7 +1478,7 @@ impl SessionStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rustcloud_cache::MemoryCache;
+    use crabcloud_cache::MemoryCache;
 
     #[tokio::test]
     async fn save_then_load_roundtrips() {
@@ -1510,7 +1510,7 @@ mod tests {
 }
 ```
 
-- [ ] **Step 5: Write `crates/rustcloud-http/src/session/layer.rs`**
+- [ ] **Step 5: Write `crates/crabcloud-http/src/session/layer.rs`**
 
 ```rust
 //! `SessionLayer` — Tower middleware that loads the session from the cookie
@@ -1704,7 +1704,7 @@ mod tests {
     use axum::http::Request;
     use axum::routing::get;
     use axum::Router;
-    use rustcloud_cache::MemoryCache;
+    use crabcloud_cache::MemoryCache;
     use tower::ServiceExt;
 
     async fn login_handler(axum::Extension(handle): axum::Extension<SessionHandle>) -> &'static str {
@@ -1716,8 +1716,8 @@ mod tests {
         handle.read().await.user_id.unwrap_or_default()
     }
 
-    fn app() -> (Router, Arc<dyn rustcloud_cache::Cache>) {
-        let cache: Arc<dyn rustcloud_cache::Cache> = Arc::new(MemoryCache::new());
+    fn app() -> (Router, Arc<dyn crabcloud_cache::Cache>) {
+        let cache: Arc<dyn crabcloud_cache::Cache> = Arc::new(MemoryCache::new());
         let store = SessionStore::new(cache.clone(), "inst1");
         let layer = SessionLayer::new(store, SecretString::new("secret".into()), false);
         let app = Router::new()
@@ -1761,10 +1761,10 @@ mod tests {
 
 - [ ] **Step 6: Wire `session` into `lib.rs`**
 
-Modify `crates/rustcloud-http/src/lib.rs`:
+Modify `crates/crabcloud-http/src/lib.rs`:
 
 ```rust
-//! HTTP layer for Rustcloud — axum router, middleware stack, session + CSRF,
+//! HTTP layer for Crabcloud — axum router, middleware stack, session + CSRF,
 //! and Phase 3's concrete handlers.
 //!
 //! See `docs/superpowers/specs/2026-05-10-platform-core-design.md` §7.
@@ -1782,7 +1782,7 @@ pub use session::{Session, SessionHandle, SessionId, SessionLayer, SessionStore}
 
 (Re-exporting `SessionHandle` so handlers can extract it; it's defined in `session::layer` — adjust the re-export to point at the right module.)
 
-Adjust `crates/rustcloud-http/src/session/mod.rs` to also export `SessionHandle`:
+Adjust `crates/crabcloud-http/src/session/mod.rs` to also export `SessionHandle`:
 
 ```rust
 //! Session machinery: data model, cache-backed store, signed cookie, and the
@@ -1804,7 +1804,7 @@ pub use store::{SessionStore, SESSION_IDLE_TTL};
 - [ ] **Step 7: Run the tests**
 
 ```
-cargo test -p rustcloud-http --lib
+cargo test -p crabcloud-http --lib
 ```
 
 Expected: 22 tests pass (12 prior + 4 data + 3 cookie + 3 store + 2 layer).
@@ -1812,7 +1812,7 @@ Expected: 22 tests pass (12 prior + 4 data + 3 cookie + 3 store + 2 layer).
 - [ ] **Step 8: Commit**
 
 ```
-git add crates/rustcloud-http Cargo.toml Cargo.lock
+git add crates/crabcloud-http Cargo.toml Cargo.lock
 git commit -m "feat(http): session machinery — signed cookie + cache-backed store + layer
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
@@ -1823,8 +1823,8 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 ## Task 7: CSRF — `RequestToken` + middleware with OCS-APIRequest bypass
 
 **Files:**
-- Create: `crates/rustcloud-http/src/csrf.rs`
-- Modify: `crates/rustcloud-http/src/lib.rs`
+- Create: `crates/crabcloud-http/src/csrf.rs`
+- Modify: `crates/crabcloud-http/src/lib.rs`
 
 CSRF middleware runs **after** `SessionLayer` in the layer stack (i.e. inserted closer to the handler). For each request:
 
@@ -1833,7 +1833,7 @@ CSRF middleware runs **after** `SessionLayer` in the layer stack (i.e. inserted 
 - If there's no session user (anonymous request) → pass.
 - Otherwise: require `requesttoken` header or form field to equal the session's `csrf_token`; 403 if absent / mismatched.
 
-- [ ] **Step 1: Write `crates/rustcloud-http/src/csrf.rs`**
+- [ ] **Step 1: Write `crates/crabcloud-http/src/csrf.rs`**
 
 ```rust
 //! CSRF middleware — matches Nextcloud's request-token scheme. Reads the
@@ -2040,10 +2040,10 @@ mod tests {
 
 - [ ] **Step 2: Re-export from `lib.rs`**
 
-Modify `crates/rustcloud-http/src/lib.rs`:
+Modify `crates/crabcloud-http/src/lib.rs`:
 
 ```rust
-//! HTTP layer for Rustcloud — axum router, middleware stack, session + CSRF,
+//! HTTP layer for Crabcloud — axum router, middleware stack, session + CSRF,
 //! and Phase 3's concrete handlers.
 //!
 //! See `docs/superpowers/specs/2026-05-10-platform-core-design.md` §7.
@@ -2064,7 +2064,7 @@ pub use session::{Session, SessionHandle, SessionId, SessionLayer, SessionStore}
 - [ ] **Step 3: Run the tests**
 
 ```
-cargo test -p rustcloud-http --lib
+cargo test -p crabcloud-http --lib
 ```
 
 Expected: 28 tests pass (22 prior + 6 csrf).
@@ -2072,7 +2072,7 @@ Expected: 28 tests pass (22 prior + 6 csrf).
 - [ ] **Step 4: Commit**
 
 ```
-git add crates/rustcloud-http
+git add crates/crabcloud-http
 git commit -m "feat(http): CSRF middleware with OCS-APIRequest and safe-method bypass
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
@@ -2083,16 +2083,16 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 ## Task 8: AuthExtractors + bootstrap_admin config
 
 **Files:**
-- Modify: `crates/rustcloud-config/src/types.rs` (add `BootstrapAdminConfig`)
-- Create: `crates/rustcloud-http/src/extractors/mod.rs`
-- Create: `crates/rustcloud-http/src/extractors/auth.rs`
-- Modify: `crates/rustcloud-http/src/lib.rs`
+- Modify: `crates/crabcloud-config/src/types.rs` (add `BootstrapAdminConfig`)
+- Create: `crates/crabcloud-http/src/extractors/mod.rs`
+- Create: `crates/crabcloud-http/src/extractors/auth.rs`
+- Modify: `crates/crabcloud-http/src/lib.rs`
 
 For Phase 3, "the user store" doesn't exist yet — the proper implementation is its own sub-project. We support a single hard-coded admin via `config.bootstrap_admin.{username, password_hash}` (bcrypt). `AuthenticatedUser`/`OptionalUser` extractors resolve via the `SessionHandle`.
 
-- [ ] **Step 1: Add `BootstrapAdminConfig` to `rustcloud-config`**
+- [ ] **Step 1: Add `BootstrapAdminConfig` to `crabcloud-config`**
 
-Modify `crates/rustcloud-config/src/types.rs` — append after the existing `CacheConfig`:
+Modify `crates/crabcloud-config/src/types.rs` — append after the existing `CacheConfig`:
 
 ```rust
 /// Phase 3 stub for the deferred users sub-project. A single admin account
@@ -2126,7 +2126,7 @@ Replace with:
 }
 ```
 
-Re-export from `crates/rustcloud-config/src/lib.rs` by amending its types re-export line:
+Re-export from `crates/crabcloud-config/src/lib.rs` by amending its types re-export line:
 
 Find:
 ```rust
@@ -2153,8 +2153,8 @@ installed = true
 version = "31.0.0.0"
 versionstring = "31.0.0"
 dbtype = "sqlite"
-dbname = "rustcloud"
-datadirectory = "/var/lib/rustcloud"
+dbname = "crabcloud"
+datadirectory = "/var/lib/crabcloud"
 trusted_domains = ["localhost"]
 
 [bootstrap_admin]
@@ -2169,18 +2169,18 @@ password_hash = "$2b$12$abcdefghijklmnopqrstuv"
     }
 ```
 
-- [ ] **Step 2: Apply the same fixture fixup in `rustcloud-db` + `rustcloud-core` + `rustcloud-http` tests**
+- [ ] **Step 2: Apply the same fixture fixup in `crabcloud-db` + `crabcloud-core` + `crabcloud-http` tests**
 
 Several test files construct `FileConfig` by hand (`cfg_sqlite`). After Step 1, these will fail to compile (missing field). Update each:
 
-- `crates/rustcloud-db/src/pool.rs` tests
-- `crates/rustcloud-db/src/migrate.rs` tests
-- `crates/rustcloud-db/src/core_migrations.rs` tests
-- `crates/rustcloud-db/tests/migrate_end_to_end.rs`
-- `crates/rustcloud-core/src/appconfig.rs` tests
-- `crates/rustcloud-core/src/state.rs` tests
-- `crates/rustcloud-core/tests/app_state_build.rs`
-- `crates/rustcloud-http/src/routes/status.rs` tests
+- `crates/crabcloud-db/src/pool.rs` tests
+- `crates/crabcloud-db/src/migrate.rs` tests
+- `crates/crabcloud-db/src/core_migrations.rs` tests
+- `crates/crabcloud-db/tests/migrate_end_to_end.rs`
+- `crates/crabcloud-core/src/appconfig.rs` tests
+- `crates/crabcloud-core/src/state.rs` tests
+- `crates/crabcloud-core/tests/app_state_build.rs`
+- `crates/crabcloud-http/src/routes/status.rs` tests
 
 In each, find the literal `cache: CacheConfig::default(),` (or `cache: CacheConfig { ... }`) line and append after it inside the struct literal:
 
@@ -2190,7 +2190,7 @@ In each, find the literal `cache: CacheConfig::default(),` (or `cache: CacheConf
 
 Sanity-check by running `cargo build --workspace --all-targets` after the edits. Compilation errors are expected to pinpoint any remaining unfixed call sites.
 
-- [ ] **Step 3: Write `crates/rustcloud-http/src/extractors/mod.rs`**
+- [ ] **Step 3: Write `crates/crabcloud-http/src/extractors/mod.rs`**
 
 ```rust
 //! axum extractors for HTTP handlers.
@@ -2198,7 +2198,7 @@ Sanity-check by running `cargo build --workspace --all-targets` after the edits.
 pub mod auth;
 ```
 
-- [ ] **Step 4: Write `crates/rustcloud-http/src/extractors/auth.rs`**
+- [ ] **Step 4: Write `crates/crabcloud-http/src/extractors/auth.rs`**
 
 ```rust
 //! `AuthenticatedUser` and `OptionalUser` axum extractors. Phase 3 resolves
@@ -2351,10 +2351,10 @@ mod tests {
 
 - [ ] **Step 5: Re-export the extractors**
 
-Modify `crates/rustcloud-http/src/lib.rs`:
+Modify `crates/crabcloud-http/src/lib.rs`:
 
 ```rust
-//! HTTP layer for Rustcloud — axum router, middleware stack, session + CSRF,
+//! HTTP layer for Crabcloud — axum router, middleware stack, session + CSRF,
 //! and Phase 3's concrete handlers.
 //!
 //! See `docs/superpowers/specs/2026-05-10-platform-core-design.md` §7.
@@ -2380,12 +2380,12 @@ pub use session::{Session, SessionHandle, SessionId, SessionLayer, SessionStore}
 cargo xtask check-all
 ```
 
-Expected: green. New tests: 4 auth + 1 bootstrap_admin TOML = 5 new tests. Workspace total now around 33 in `rustcloud-http`.
+Expected: green. New tests: 4 auth + 1 bootstrap_admin TOML = 5 new tests. Workspace total now around 33 in `crabcloud-http`.
 
 - [ ] **Step 7: Commit**
 
 ```
-git add crates/rustcloud-config crates/rustcloud-http crates/rustcloud-db crates/rustcloud-core
+git add crates/crabcloud-config crates/crabcloud-http crates/crabcloud-db crates/crabcloud-core
 git commit -m "feat(http,config): add bootstrap_admin + AuthenticatedUser/OptionalUser extractors
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
@@ -2396,13 +2396,13 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 ## Task 9: `POST /index.php/login` against bootstrap admin
 
 **Files:**
-- Create: `crates/rustcloud-http/src/routes/login.rs`
-- Modify: `crates/rustcloud-http/src/routes/mod.rs`
-- Modify: `crates/rustcloud-http/src/router.rs`
+- Create: `crates/crabcloud-http/src/routes/login.rs`
+- Modify: `crates/crabcloud-http/src/routes/mod.rs`
+- Modify: `crates/crabcloud-http/src/router.rs`
 
 Handler accepts form-encoded `username` + `password`, verifies via bcrypt against `state.config.bootstrap_admin`, sets `session.user_id`, rotates the CSRF token, and returns 303 to `/`. Bad credentials return 401 (no redirect).
 
-- [ ] **Step 1: Write `crates/rustcloud-http/src/routes/login.rs`**
+- [ ] **Step 1: Write `crates/crabcloud-http/src/routes/login.rs`**
 
 ```rust
 //! `POST /index.php/login` — bootstrap-admin login. Form-encoded body with
@@ -2415,7 +2415,7 @@ use axum::extract::{Form, State};
 use axum::http::{HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::Extension;
-use rustcloud_core::{AppState, Error as CoreError};
+use crabcloud_core::{AppState, Error as CoreError};
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
@@ -2459,7 +2459,7 @@ pub async fn handler(
 
 - [ ] **Step 2: Re-export from `routes/mod.rs`**
 
-Modify `crates/rustcloud-http/src/routes/mod.rs`:
+Modify `crates/crabcloud-http/src/routes/mod.rs`:
 
 ```rust
 //! HTTP route modules. Each handler lives in its own file.
@@ -2470,7 +2470,7 @@ pub mod status;
 
 - [ ] **Step 3: Mount `/index.php/login` in `build_router`**
 
-Modify `crates/rustcloud-http/src/router.rs`:
+Modify `crates/crabcloud-http/src/router.rs`:
 
 ```rust
 //! axum router composition. `build_router(state)` returns the assembled
@@ -2478,7 +2478,7 @@ Modify `crates/rustcloud-http/src/router.rs`:
 
 use axum::routing::{get, post};
 use axum::Router;
-use rustcloud_core::AppState;
+use crabcloud_core::AppState;
 use tower_http::limit::RequestBodyLimitLayer;
 
 use crate::csrf::CsrfLayer;
@@ -2522,7 +2522,7 @@ pub fn build_router(state: AppState) -> Router {
 
 - [ ] **Step 4: Add a login test using a real bcrypt hash**
 
-Append to `crates/rustcloud-http/src/routes/login.rs`:
+Append to `crates/crabcloud-http/src/routes/login.rs`:
 
 ```rust
 #[cfg(test)]
@@ -2531,8 +2531,8 @@ mod tests {
     use crate::router::build_router;
     use axum::body::Body;
     use axum::http::Request;
-    use rustcloud_config::{BootstrapAdminConfig, CacheConfig, DbType, FileConfig};
-    use rustcloud_core::AppStateBuilder;
+    use crabcloud_config::{BootstrapAdminConfig, CacheConfig, DbType, FileConfig};
+    use crabcloud_core::AppStateBuilder;
     use secrecy::SecretString;
     use std::net::SocketAddr;
     use std::path::PathBuf;
@@ -2639,7 +2639,7 @@ mod tests {
 - [ ] **Step 5: Run the tests**
 
 ```
-cargo test -p rustcloud-http
+cargo test -p crabcloud-http
 ```
 
 Expected: ~36 tests pass (33 prior + 3 login).
@@ -2647,7 +2647,7 @@ Expected: ~36 tests pass (33 prior + 3 login).
 - [ ] **Step 6: Commit**
 
 ```
-git add crates/rustcloud-http
+git add crates/crabcloud-http
 git commit -m "feat(http): /index.php/login with bootstrap_admin bcrypt verification
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
@@ -2658,25 +2658,25 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 ## Task 10: OCS router + `/ocs/v2.php/cloud/capabilities`
 
 **Files:**
-- Create: `crates/rustcloud-http/src/routes/ocs/mod.rs`
-- Create: `crates/rustcloud-http/src/routes/ocs/capabilities.rs`
-- Create: `crates/rustcloud-http/src/extractors/format.rs`
-- Modify: `crates/rustcloud-http/src/extractors/mod.rs`
-- Modify: `crates/rustcloud-http/src/routes/mod.rs`
-- Modify: `crates/rustcloud-http/src/router.rs`
-- Modify: `crates/rustcloud-core/src/state.rs` (helper to seed CoreCapabilities)
+- Create: `crates/crabcloud-http/src/routes/ocs/mod.rs`
+- Create: `crates/crabcloud-http/src/routes/ocs/capabilities.rs`
+- Create: `crates/crabcloud-http/src/extractors/format.rs`
+- Modify: `crates/crabcloud-http/src/extractors/mod.rs`
+- Modify: `crates/crabcloud-http/src/routes/mod.rs`
+- Modify: `crates/crabcloud-http/src/router.rs`
+- Modify: `crates/crabcloud-core/src/state.rs` (helper to seed CoreCapabilities)
 
 The OCS sub-router lives under `/ocs/v2.php`. The capabilities handler resolves format from `?format=` query or `Accept` header, runs the Phase 2 aggregator, and emits the assembled OCS response. The aggregator needs at least one provider; we add `with_core_capabilities()` to `AppStateBuilder` so the default `CoreCapabilities` provider is registered automatically.
 
 - [ ] **Step 1: Add an `AppStateBuilder::with_core_capabilities()` helper**
 
-Modify `crates/rustcloud-core/src/state.rs`. In `impl AppStateBuilder { ... }`, after `with_hook`:
+Modify `crates/crabcloud-core/src/state.rs`. In `impl AppStateBuilder { ... }`, after `with_hook`:
 
 ```rust
     /// Register the default `CoreCapabilities` provider on bootstrap so the
     /// `core` namespace is non-empty at the `/ocs/.../capabilities` route.
     pub fn with_core_capabilities(self) -> Self {
-        use rustcloud_ocs::CoreCapabilities;
+        use crabcloud_ocs::CoreCapabilities;
         let core = std::sync::Arc::new(CoreCapabilities::default());
         self.with_hook(crate::bootstrap::boxed_hook(move |state| async move {
             state.register_capability_provider(core).await;
@@ -2703,7 +2703,7 @@ Add a unit test in the state.rs tests module:
 
 - [ ] **Step 2: Write the OCS format extractor**
 
-Create `crates/rustcloud-http/src/extractors/format.rs`:
+Create `crates/crabcloud-http/src/extractors/format.rs`:
 
 ```rust
 //! `OcsFormat` extractor — resolves the response format from `?format=`
@@ -2712,7 +2712,7 @@ Create `crates/rustcloud-http/src/extractors/format.rs`:
 
 use axum::extract::FromRequestParts;
 use axum::http::request::Parts;
-use rustcloud_ocs::{negotiate, Format};
+use crabcloud_ocs::{negotiate, Format};
 use std::convert::Infallible;
 
 #[derive(Debug, Clone, Copy)]
@@ -2792,7 +2792,7 @@ mod tests {
 }
 ```
 
-Modify `crates/rustcloud-http/src/extractors/mod.rs`:
+Modify `crates/crabcloud-http/src/extractors/mod.rs`:
 
 ```rust
 //! axum extractors for HTTP handlers.
@@ -2801,7 +2801,7 @@ pub mod auth;
 pub mod format;
 ```
 
-- [ ] **Step 3: Write `crates/rustcloud-http/src/routes/ocs/mod.rs`**
+- [ ] **Step 3: Write `crates/crabcloud-http/src/routes/ocs/mod.rs`**
 
 ```rust
 //! OCS sub-router under `/ocs/v2.php`.
@@ -2810,14 +2810,14 @@ pub mod capabilities;
 
 use axum::routing::get;
 use axum::Router;
-use rustcloud_core::AppState;
+use crabcloud_core::AppState;
 
 pub fn router() -> Router<AppState> {
     Router::new().route("/v2.php/cloud/capabilities", get(capabilities::handler))
 }
 ```
 
-- [ ] **Step 4: Write `crates/rustcloud-http/src/routes/ocs/capabilities.rs`**
+- [ ] **Step 4: Write `crates/crabcloud-http/src/routes/ocs/capabilities.rs`**
 
 ```rust
 //! `GET /ocs/v2.php/cloud/capabilities`.
@@ -2828,8 +2828,8 @@ use crate::OcsError;
 use axum::extract::State;
 use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
-use rustcloud_core::{AppState, Error as CoreError};
-use rustcloud_ocs::{aggregate, render, CapabilityContext, OcsResponse, OcsStatus, OcsVersion};
+use crabcloud_core::{AppState, Error as CoreError};
+use crabcloud_ocs::{aggregate, render, CapabilityContext, OcsResponse, OcsStatus, OcsVersion};
 
 pub async fn handler(
     State(state): State<AppState>,
@@ -2872,8 +2872,8 @@ mod tests {
     use crate::router::build_router;
     use axum::body::Body;
     use axum::http::{Request, StatusCode};
-    use rustcloud_config::{CacheConfig, DbType, FileConfig};
-    use rustcloud_core::AppStateBuilder;
+    use crabcloud_config::{CacheConfig, DbType, FileConfig};
+    use crabcloud_core::AppStateBuilder;
     use secrecy::SecretString;
     use std::net::SocketAddr;
     use std::path::PathBuf;
@@ -2957,7 +2957,7 @@ mod tests {
 
 - [ ] **Step 5: Mount the OCS sub-router**
 
-Modify `crates/rustcloud-http/src/router.rs`:
+Modify `crates/crabcloud-http/src/router.rs`:
 
 Find the `Router::new()` chain in `build_router` and add `.nest("/ocs", crate::routes::ocs::router())` right after `.route("/index.php/login", post(login::handler))`:
 
@@ -2972,7 +2972,7 @@ Find the `Router::new()` chain in `build_router` and add `.nest("/ocs", crate::r
 
 - [ ] **Step 6: Re-export ocs sub-router**
 
-Modify `crates/rustcloud-http/src/routes/mod.rs`:
+Modify `crates/crabcloud-http/src/routes/mod.rs`:
 
 ```rust
 //! HTTP route modules. Each handler lives in its own file.
@@ -2988,12 +2988,12 @@ pub mod status;
 cargo xtask check-all
 ```
 
-Expected: green. New tests this task: 3 format + 2 capabilities + 1 state. Total `rustcloud-http` around 42 tests.
+Expected: green. New tests this task: 3 format + 2 capabilities + 1 state. Total `crabcloud-http` around 42 tests.
 
 - [ ] **Step 8: Commit**
 
 ```
-git add crates/rustcloud-http crates/rustcloud-core
+git add crates/crabcloud-http crates/crabcloud-core
 git commit -m "feat(http,core): /ocs/v2.php/cloud/capabilities + default CoreCapabilities helper
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
@@ -3004,13 +3004,13 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 ## Task 11: CORS + tracing + catch-panic middleware
 
 **Files:**
-- Modify: `crates/rustcloud-http/src/router.rs`
+- Modify: `crates/crabcloud-http/src/router.rs`
 
 Tower-http ships `TraceLayer`, `CatchPanicLayer`, and `CorsLayer`. Add them to the outer stack — CORS is permissive in dev (allow `http://localhost:8080` plus the configured trusted_domains as origins), strict in prod.
 
 - [ ] **Step 1: Modify `build_router` to add the remaining layers**
 
-Replace `crates/rustcloud-http/src/router.rs`:
+Replace `crates/crabcloud-http/src/router.rs`:
 
 ```rust
 //! axum router composition. `build_router(state)` returns the assembled
@@ -3020,7 +3020,7 @@ Replace `crates/rustcloud-http/src/router.rs`:
 use axum::http::{HeaderValue, Method};
 use axum::routing::{get, post};
 use axum::Router;
-use rustcloud_core::AppState;
+use crabcloud_core::AppState;
 use tower_http::catch_panic::CatchPanicLayer;
 use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_http::limit::RequestBodyLimitLayer;
@@ -3097,7 +3097,7 @@ Expected: green; no new tests but all previous tests should still pass.
 - [ ] **Step 3: Commit**
 
 ```
-git add crates/rustcloud-http
+git add crates/crabcloud-http
 git commit -m "feat(http): wire CORS, tracing, and catch-panic into the layer stack
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
@@ -3108,33 +3108,33 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 ## Task 12: Server `Cmd::Serve` runs axum + graceful shutdown
 
 **Files:**
-- Modify: `crates/rustcloud-server/Cargo.toml`
-- Modify: `crates/rustcloud-server/src/main.rs`
+- Modify: `crates/crabcloud-server/Cargo.toml`
+- Modify: `crates/crabcloud-server/src/main.rs`
 
 The serve subcommand becomes real: build `AppStateBuilder::new(cfg).with_core_capabilities().build()`, hand the resulting `AppState` to `build_router`, bind to `config.bind_address`, run `axum::serve` with a graceful shutdown driven by SIGINT/SIGTERM (or Ctrl-C on Windows).
 
 - [ ] **Step 1: Add the HTTP dep + ocs dep**
 
-Modify `crates/rustcloud-server/Cargo.toml` — extend `[dependencies]`:
+Modify `crates/crabcloud-server/Cargo.toml` — extend `[dependencies]`:
 
 ```toml
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
-rustcloud-config.workspace = true
-rustcloud-core.workspace = true
-rustcloud-http.workspace = true
-rustcloud-ocs.workspace = true
+crabcloud-config.workspace = true
+crabcloud-core.workspace = true
+crabcloud-http.workspace = true
+crabcloud-ocs.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal"] }
 tracing.workspace = true
 tracing-subscriber.workspace = true
 ```
 
-(`rustcloud-ocs` is needed because the server's `Cmd::Serve` references `CoreCapabilities` via the builder helper — actually the helper does the import internally. The dep can be omitted; verify after step 3. If `cargo build` flags missing imports, add it back.)
+(`crabcloud-ocs` is needed because the server's `Cmd::Serve` references `CoreCapabilities` via the builder helper — actually the helper does the import internally. The dep can be omitted; verify after step 3. If `cargo build` flags missing imports, add it back.)
 
 - [ ] **Step 2: Add a `shutdown_signal` helper**
 
-Modify `crates/rustcloud-server/src/main.rs` — add this helper above `main`:
+Modify `crates/crabcloud-server/src/main.rs` — add this helper above `main`:
 
 ```rust
 async fn shutdown_signal() {
@@ -3166,20 +3166,20 @@ Inside `main`'s match block, replace the existing `Cmd::Serve` arm:
 
 ```rust
         Cmd::Serve => {
-            let config = rustcloud_config::load(&cli.config, &[])?;
+            let config = crabcloud_config::load(&cli.config, &[])?;
             let bind = config.bind_address;
             info!(
                 dbtype = %config.dbtype.as_str(),
                 bind = %bind,
-                "starting Rustcloud server"
+                "starting Crabcloud server"
             );
 
-            let state = rustcloud_core::AppStateBuilder::new(config)
+            let state = crabcloud_core::AppStateBuilder::new(config)
                 .with_core_capabilities()
                 .build()
                 .await?;
 
-            let router = rustcloud_http::build_router(state.clone());
+            let router = crabcloud_http::build_router(state.clone());
 
             let listener = tokio::net::TcpListener::bind(bind).await?;
             let local_addr = listener.local_addr()?;
@@ -3223,14 +3223,14 @@ bind_address = "127.0.0.1:8765"
 '@ | Out-File -Encoding utf8 fixture.toml
 
 # Background: run the server
-Start-Process cargo -ArgumentList @('run', '-p', 'rustcloud-server', '--', '--config', 'fixture.toml', 'serve')
+Start-Process cargo -ArgumentList @('run', '-p', 'crabcloud-server', '--', '--config', 'fixture.toml', 'serve')
 Start-Sleep -Seconds 5
 
 # Probe
 curl http://127.0.0.1:8765/status.php
 
 # Stop the process (PID printed by Start-Process); for simplicity just kill the cargo run process
-Get-Process -Name "rustcloud-server" | Stop-Process
+Get-Process -Name "crabcloud-server" | Stop-Process
 Remove-Item fixture.toml
 Remove-Item phase3-smoke.db
 ```
@@ -3240,12 +3240,12 @@ Expected `curl` output (single line, JSON):
 {"installed":true,"maintenance":false,"needsDbUpgrade":false,"version":"31.0.0.0","versionstring":"31.0.0","edition":"","productname":"Nextcloud","extendedSupport":false}
 ```
 
-If `rustcloud-ocs` is needed in `[dependencies]`, the smoke-test build will fail with a missing-import error; add it back to `crates/rustcloud-server/Cargo.toml` and retry.
+If `crabcloud-ocs` is needed in `[dependencies]`, the smoke-test build will fail with a missing-import error; add it back to `crates/crabcloud-server/Cargo.toml` and retry.
 
 - [ ] **Step 5: Commit**
 
 ```
-git add crates/rustcloud-server Cargo.lock
+git add crates/crabcloud-server Cargo.lock
 git commit -m "feat(server): serve subcommand runs axum with graceful shutdown
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
@@ -3256,22 +3256,22 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 ## Task 13: End-to-end multi-endpoint integration test
 
 **Files:**
-- Create: `crates/rustcloud-http/tests/http_end_to_end.rs`
+- Create: `crates/crabcloud-http/tests/http_end_to_end.rs`
 
 A self-contained integration test that boots the server's router (no real TCP socket), hits the three Phase-3 endpoints in sequence, and verifies the full session+CSRF+capabilities flow.
 
 - [ ] **Step 1: Write the integration test**
 
-Create `crates/rustcloud-http/tests/http_end_to_end.rs`:
+Create `crates/crabcloud-http/tests/http_end_to_end.rs`:
 
 ```rust
 //! End-to-end Phase 3 HTTP flow: /status.php → capabilities → login → use session.
 
 use axum::body::{to_bytes, Body};
 use axum::http::{Request, StatusCode};
-use rustcloud_config::{BootstrapAdminConfig, CacheConfig, DbType, FileConfig};
-use rustcloud_core::AppStateBuilder;
-use rustcloud_http::build_router;
+use crabcloud_config::{BootstrapAdminConfig, CacheConfig, DbType, FileConfig};
+use crabcloud_core::AppStateBuilder;
+use crabcloud_http::build_router;
 use secrecy::SecretString;
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -3417,7 +3417,7 @@ async fn phase3_full_flow() {
 - [ ] **Step 2: Run the integration test**
 
 ```
-cargo test -p rustcloud-http --test http_end_to_end
+cargo test -p crabcloud-http --test http_end_to_end
 ```
 
 Expected: 1 test passes.
@@ -3433,7 +3433,7 @@ Expected: green.
 - [ ] **Step 4: Commit**
 
 ```
-git add crates/rustcloud-http/tests
+git add crates/crabcloud-http/tests
 git commit -m "test(http): end-to-end Phase 3 flow — status, capabilities, login, headers
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
@@ -3452,7 +3452,7 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 Replace `README.md` with the Phase 3-updated version:
 
 ```markdown
-# Rustcloud
+# Crabcloud
 
 A Rust port of [Nextcloud server](https://github.com/nextcloud/server), with a Dioxus frontend.
 
@@ -3468,7 +3468,7 @@ cp config/config.toml.example config/config.toml
 #  - Set installed = true.
 #  - Pick a dbtype (sqlite is easiest).
 #  - For login, add a [bootstrap_admin] section with a bcrypt password hash.
-#    Generate one with: cargo run -p rustcloud-server -- gen-admin-hash (TODO)
+#    Generate one with: cargo run -p crabcloud-server -- gen-admin-hash (TODO)
 #    Or via Python: python -c "import bcrypt; print(bcrypt.hashpw(b'hunter2', bcrypt.gensalt(12)).decode())"
 
 # 2a. SQLite: nothing else needed.
@@ -3476,10 +3476,10 @@ cp config/config.toml.example config/config.toml
 cargo xtask up
 
 # 3. Run migrations.
-cargo run -p rustcloud-server -- migrate
+cargo run -p crabcloud-server -- migrate
 
 # 4. Serve.
-cargo run -p rustcloud-server -- serve
+cargo run -p crabcloud-server -- serve
 
 # 5. Probe.
 curl http://127.0.0.1:8080/status.php
@@ -3491,25 +3491,25 @@ curl -H "OCS-APIRequest: true" "http://127.0.0.1:8080/ocs/v2.php/cloud/capabilit
 ```bash
 cargo xtask check-all     # fmt + clippy + tests (SQLite + HTTP integration)
 cargo xtask up            # start MySQL + Postgres for multi-dialect tests
-cargo test -p rustcloud-db --test migrate_end_to_end -- --include-ignored
+cargo test -p crabcloud-db --test migrate_end_to_end -- --include-ignored
 cargo xtask down
 ```
 
 ## Workspace layout
 
-- `crates/rustcloud-config` — layered TOML config loader (figment).
-- `crates/rustcloud-cache` — `Cache` trait + `MemoryCache` + `TypedCache<T>`.
-- `crates/rustcloud-db` — `DbPool` enum, `MigrationRunner`, core schema.
-- `crates/rustcloud-i18n` — gettext `.po` loader, `Locale`, `I18n`.
-- `crates/rustcloud-ocs` — OCS envelope (JSON/XML), capabilities aggregator.
-- `crates/rustcloud-core` — `AppState`, `Error`, `AppConfigService`, `BootstrapHook`.
-- `crates/rustcloud-http` — axum router, middleware (proxy/trusted-domain/security/CSRF/session/CORS/tracing/catch-panic), session machinery, auth extractors, route handlers (`/status.php`, `/ocs/...`, `/index.php/login`).
-- `crates/rustcloud-server` — the binary; CLI, tracing, lifecycle.
+- `crates/crabcloud-config` — layered TOML config loader (figment).
+- `crates/crabcloud-cache` — `Cache` trait + `MemoryCache` + `TypedCache<T>`.
+- `crates/crabcloud-db` — `DbPool` enum, `MigrationRunner`, core schema.
+- `crates/crabcloud-i18n` — gettext `.po` loader, `Locale`, `I18n`.
+- `crates/crabcloud-ocs` — OCS envelope (JSON/XML), capabilities aggregator.
+- `crates/crabcloud-core` — `AppState`, `Error`, `AppConfigService`, `BootstrapHook`.
+- `crates/crabcloud-http` — axum router, middleware (proxy/trusted-domain/security/CSRF/session/CORS/tracing/catch-panic), session machinery, auth extractors, route handlers (`/status.php`, `/ocs/...`, `/index.php/login`).
+- `crates/crabcloud-server` — the binary; CLI, tracing, lifecycle.
 - `xtask/` — project automation.
 - `migrations/core/` — core SQL migrations, per-dialect.
 - `l10n/<app>/<locale>.po` — translation catalogs.
 
-Future phase: `rustcloud-ui` (Phase 4) — Dioxus Fullstack UI.
+Future phase: `crabcloud-ui` (Phase 4) — Dioxus Fullstack UI.
 
 ## License
 
@@ -3527,7 +3527,7 @@ Completed: 2026-05-10
 
 ## What works
 
-- **`rustcloud-http`** crate with axum 0.8 router.
+- **`crabcloud-http`** crate with axum 0.8 router.
 - **`/status.php`** returns Nextcloud-shape JSON (installed/maintenance/needsDbUpgrade/version/versionstring/edition/productname/extendedSupport).
 - **`/ocs/v2.php/cloud/capabilities`** runs Phase 2's aggregator with content negotiation (XML default, JSON via `?format=json` or `Accept: application/json`); emits stable ETag.
 - **`/index.php/login`** validates form credentials against `config.bootstrap_admin` via bcrypt, opens a session, rotates CSRF, redirects to `/`.
@@ -3536,7 +3536,7 @@ Completed: 2026-05-10
 - **Middleware stack**: `TraceLayer`, `CatchPanicLayer`, `RequestBodyLimitLayer` (512 MiB), `ProxyHeadersLayer`, `TrustedDomainLayer`, `CorsLayer`, `SecurityHeadersLayer` (HSTS, X-Content-Type-Options, Referrer-Policy, X-Frame-Options, baseline CSP), `SessionLayer`, `CsrfLayer`.
 - **`AuthenticatedUser` / `OptionalUser`** axum extractors backed by the session.
 - **`AppStateBuilder::with_core_capabilities()`** seeds the default core-namespace provider so the capabilities endpoint is non-empty out of the box.
-- **`rustcloud-server serve`** binds to `config.bind_address`, runs `axum::serve` with `into_make_service_with_connect_info::<SocketAddr>` so peer info reaches the middleware, and shuts down gracefully on Ctrl-C / SIGTERM.
+- **`crabcloud-server serve`** binds to `config.bind_address`, runs `axum::serve` with `into_make_service_with_connect_info::<SocketAddr>` so peer info reaches the middleware, and shuts down gracefully on Ctrl-C / SIGTERM.
 
 ## What's deferred
 
@@ -3562,7 +3562,7 @@ Completed: 2026-05-10
 - **Sparse rustdoc on public type-level APIs** — carried; Phase 3 adds new public types (`SessionLayer`, `CsrfLayer`, `AuthenticatedUser`, etc.) — extend the doc rollout to cover them.
 - **`version` subcommand should print git SHA + dialect support** (spec §10.2 / §10.5) — carried.
 - **Test config-builder duplication** — now in 7+ places. Phase 3 added two more (`status.rs` tests, `login.rs` tests, `capabilities.rs` tests, `http_end_to_end.rs`). Consolidate to a `test_support` module.
-- **`AppConfigService::fetch_db`** repeats query_as logic three times — the `db_dispatch!` macro from the spec lands when the first non-trivial cross-dialect query in `rustcloud-http` needs it.
+- **`AppConfigService::fetch_db`** repeats query_as logic three times — the `db_dispatch!` macro from the spec lands when the first non-trivial cross-dialect query in `crabcloud-http` needs it.
 - **`X-Forwarded-For` → `ConnectInfo` rewrite** for accurate downstream client-IP.
 - **`gen-admin-hash` CLI subcommand** — UX polish.
 
@@ -3593,7 +3593,7 @@ Expected: PASS end-to-end.
 If Docker is available:
 ```
 cargo xtask up
-cargo test -p rustcloud-db --test migrate_end_to_end -- --include-ignored
+cargo test -p crabcloud-db --test migrate_end_to_end -- --include-ignored
 cargo xtask down
 ```
 
@@ -3624,13 +3624,13 @@ Run through each spec §13 in-scope criterion:
 
 | Criterion | Verified by |
 |---|---|
-| `/status.php` returns Nextcloud JSON | `crates/rustcloud-http/src/routes/status.rs::tests::status_returns_nextcloud_shape` + `http_end_to_end.rs` step 1 |
-| `/ocs/v2.php/cloud/capabilities` returns OCS envelope | `crates/rustcloud-http/src/routes/ocs/capabilities.rs::tests` (XML + JSON) + `http_end_to_end.rs` step 2 |
-| `/login` sets session cookie | `crates/rustcloud-http/src/routes/login.rs::tests` + `http_end_to_end.rs` step 3 |
-| Trusted-domain rejection | `crates/rustcloud-http/src/middleware/trusted_domain.rs::tests` |
-| Proxy header rewriting | `crates/rustcloud-http/src/middleware/proxy_headers.rs::tests` |
-| CSRF enforcement | `crates/rustcloud-http/src/csrf.rs::tests` |
-| Security headers present | `crates/rustcloud-http/src/middleware/security_headers.rs::tests` + `http_end_to_end.rs` step 6 |
+| `/status.php` returns Nextcloud JSON | `crates/crabcloud-http/src/routes/status.rs::tests::status_returns_nextcloud_shape` + `http_end_to_end.rs` step 1 |
+| `/ocs/v2.php/cloud/capabilities` returns OCS envelope | `crates/crabcloud-http/src/routes/ocs/capabilities.rs::tests` (XML + JSON) + `http_end_to_end.rs` step 2 |
+| `/login` sets session cookie | `crates/crabcloud-http/src/routes/login.rs::tests` + `http_end_to_end.rs` step 3 |
+| Trusted-domain rejection | `crates/crabcloud-http/src/middleware/trusted_domain.rs::tests` |
+| Proxy header rewriting | `crates/crabcloud-http/src/middleware/proxy_headers.rs::tests` |
+| CSRF enforcement | `crates/crabcloud-http/src/csrf.rs::tests` |
+| Security headers present | `crates/crabcloud-http/src/middleware/security_headers.rs::tests` + `http_end_to_end.rs` step 6 |
 | Multi-dialect tests green | CI on push |
 
 If any of those have not been touched by a test, fix before declaring complete.
