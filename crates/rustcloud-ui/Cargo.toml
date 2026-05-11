@@ -3,6 +3,7 @@ name = "rustcloud-ui"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+build = "build.rs"
 
 [lib]
 crate-type = ["rlib"]
@@ -23,8 +24,9 @@ serde_json.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 
-# Server-side rendering — only compile on non-wasm targets.
+# Server-side rendering + asset serving — only compile on non-wasm targets.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+axum.workspace = true
 dioxus-ssr.workspace = true
 
 # Browser WASM — only compile when targeting wasm32.

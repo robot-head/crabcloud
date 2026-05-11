@@ -61,6 +61,7 @@ pub fn build_router(state: AppState) -> Router {
     Router::new()
         .route("/status.php", get(status::handler))
         .route("/index.php/login", post(login::handler))
+        .route("/assets/{*path}", get(rustcloud_ui::assets::handler))
         .nest("/ocs", crate::routes::ocs::router())
         .fallback(ui::handler)
         .with_state(state)

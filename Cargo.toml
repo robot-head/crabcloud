@@ -79,7 +79,7 @@ dioxus-history = "0.6"
 dioxus-router = { version = "0.6", default-features = false }
 dioxus-ssr = "0.6"
 dioxus-web = { version = "0.6", default-features = false }
-rust-embed = { version = "8", features = ["debug-embed"] }
+rust-embed = { version = "8", features = ["debug-embed", "include-exclude", "interpolate-folder-path"] }
 
 [profile.release]
 lto = "thin"
