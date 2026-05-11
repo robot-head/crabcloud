@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "crates/rustcloud-config",
     "crates/rustcloud-server",
     "xtask",
 ]
@@ -40,7 +41,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 
 # Internal workspace deps. Entries are added by subsequent tasks when their crate exists.
-# rustcloud-config = { path = "crates/rustcloud-config" }   # Task 4
+rustcloud-config = { path = "crates/rustcloud-config" }
 # rustcloud-db     = { path = "crates/rustcloud-db" }       # Task 7
 
 [profile.release]
