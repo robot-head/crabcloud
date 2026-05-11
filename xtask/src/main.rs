@@ -62,7 +62,11 @@ fn check_all() -> Result<()> {
 
 fn build_all() -> Result<()> {
     // 1. Build the WASM client + bundle assets.
-    run_in_dir("crates/rustcloud-ui", "dx", &["build", "--release"])?;
+    run_in_dir(
+        "crates/rustcloud-ui",
+        "dx",
+        &["build", "--release", "--platform", "web"],
+    )?;
     // 2. Build the server binary (which embeds the assets via rust-embed).
     run("cargo", &["build", "--release", "-p", "rustcloud-server"])?;
     Ok(())
