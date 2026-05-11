@@ -1,6 +1,7 @@
-//! OCS envelope rendering. JSON via `serde_json`; XML hand-rolled via `quick-xml`'s
-//! `Writer` because the spec wants a specific element shape that's painful to
-//! coax out of the serializer.
+//! OCS envelope rendering. JSON via `serde_json`; XML is hand-rolled — Nextcloud's
+//! envelope wants a specific JSON-as-XML shape that's painful to produce via
+//! `quick-xml`'s typed serializer, so we walk the JSON tree and emit elements
+//! directly.
 
 use crate::format::Format;
 use crate::status::{OcsStatus, OcsVersion};

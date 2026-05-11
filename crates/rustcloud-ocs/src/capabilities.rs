@@ -10,6 +10,10 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use std::time::Duration;
 
+/// Capabilities cache TTL. Short enough that provider config changes propagate
+/// within a minute; long enough that the per-request hash work is amortized.
+const CACHE_TTL: Duration = Duration::from_secs(60);
+
 /// Per-request context passed to `CapabilityProvider::contribute`.
 /// Lightweight (no `AppState` reference) so providers don't accidentally couple
 /// to the wider state machinery.
@@ -72,11 +76,12 @@ pub async fn aggregate(
         caps.insert(p.namespace().to_string(), p.contribute(ctx));
     }
 
+    let (major, minor, micro) = parse_version(version);
     let body = json!({
         "version": {
-            "major": 31,
-            "minor": 0,
-            "micro": 0,
+            "major": major,
+            "minor": minor,
+            "micro": micro,
             "string": version,
             "edition": ""
         },
@@ -89,9 +94,9 @@ pub async fn aggregate(
         body: body.clone(),
     };
     let serialized = serde_json::to_vec(&cached)?;
-    let _ = cache
-        .set(&cache_key, &serialized, Some(Duration::from_secs(60)))
-        .await;
+    if let Err(e) = cache.set(&cache_key, &serialized, Some(CACHE_TTL)).await {
+        tracing::warn!(error = %e, key = %cache_key, "failed to cache aggregated capabilities");
+    }
 
     Ok(CapabilitiesPayload { etag, body })
 }
@@ -117,6 +122,17 @@ fn compute_etag(
     ctx.locale.unwrap_or("").hash(&mut hasher);
     ctx.user_id.unwrap_or("").hash(&mut hasher);
     format!("W/\"{:x}\"", hasher.finish())
+}
+
+/// Parse a dotted version string like "31.0.5" into (major, minor, micro).
+/// Components that don't parse as `u32` default to `0` so we never crash on
+/// a strange version string.
+fn parse_version(s: &str) -> (u32, u32, u32) {
+    let mut parts = s.split('.').map(|p| p.parse::<u32>().unwrap_or(0));
+    let major = parts.next().unwrap_or(0);
+    let minor = parts.next().unwrap_or(0);
+    let micro = parts.next().unwrap_or(0);
+    (major, minor, micro)
 }
 
 #[cfg(test)]
@@ -206,6 +222,14 @@ mod tests {
             .await
             .unwrap();
         assert_ne!(a.etag, b.etag);
+    }
+
+    #[test]
+    fn parses_version_triplet() {
+        assert_eq!(parse_version("31.0.5"), (31, 0, 5));
+        assert_eq!(parse_version("32"), (32, 0, 0));
+        assert_eq!(parse_version(""), (0, 0, 0));
+        assert_eq!(parse_version("garbage"), (0, 0, 0));
     }
 
     #[tokio::test]
