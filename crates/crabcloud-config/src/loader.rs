@@ -15,8 +15,11 @@ pub enum LoadError {
         path: String,
     },
     /// The TOML or environment overlay failed to parse / deserialize into `FileConfig`.
+    ///
+    /// `figment::Error` is large (~200 bytes), so it's boxed to keep
+    /// `LoadError` small per clippy::result_large_err.
     #[error("config parse error: {0}")]
-    Parse(#[from] figment::Error),
+    Parse(#[from] Box<figment::Error>),
     /// The merged configuration failed `FileConfig::validate`.
     #[error(transparent)]
     Validate(#[from] FileConfigError),
@@ -60,7 +63,7 @@ pub fn load(base: &Path, cli_overrides: &[(&str, &str)]) -> Result<FileConfig, L
         ));
     }
 
-    let cfg: FileConfig = fig.extract()?;
+    let cfg: FileConfig = fig.extract().map_err(Box::new)?;
     cfg.validate()?;
     Ok(cfg)
 }
