@@ -1049,8 +1049,14 @@ mod tests {
             )
             .await
             .unwrap();
-        prefs.set(&uid, "files", "max_upload", "1024").await.unwrap();
-        prefs.set(&uid, "files", "max_upload", "2048").await.unwrap();
+        prefs
+            .set(&uid, "files", "max_upload", "1024")
+            .await
+            .unwrap();
+        prefs
+            .set(&uid, "files", "max_upload", "2048")
+            .await
+            .unwrap();
         assert_eq!(
             prefs
                 .get(&uid, "files", "max_upload")

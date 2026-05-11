@@ -32,8 +32,11 @@ impl Default for BcryptVerifier {
 fn sentinel() -> &'static str {
     static SENTINEL: OnceLock<String> = OnceLock::new();
     SENTINEL.get_or_init(|| {
-        bcrypt::hash("invalid sentinel — never matches a real password", BCRYPT_COST)
-            .expect("bcrypt::hash on a literal never fails")
+        bcrypt::hash(
+            "invalid sentinel — never matches a real password",
+            BCRYPT_COST,
+        )
+        .expect("bcrypt::hash on a literal never fails")
     })
 }
 
@@ -47,7 +50,7 @@ impl PasswordVerifier for BcryptVerifier {
         if password.is_empty() {
             return Err(UsersError::PasswordTooWeak("must not be empty"));
         }
-        if password.as_bytes().len() > 72 {
+        if password.len() > 72 {
             return Err(UsersError::PasswordTooWeak("max 72 bytes (bcrypt limit)"));
         }
         bcrypt::hash(password, BCRYPT_COST)

@@ -6,6 +6,7 @@ mod email;
 mod error;
 mod group;
 mod password;
+mod service;
 mod store;
 mod user;
 
@@ -13,6 +14,7 @@ pub use email::Email;
 pub use error::{UsersError, UsersResult};
 pub use group::{Group, GroupId};
 pub use password::{BcryptVerifier, PasswordVerifier, BCRYPT_COST};
+pub use service::UsersService;
 pub use store::sql::{SqlGroupStore, SqlPreferenceStore, SqlUserStore};
 pub use store::{GroupStore, PreferenceStore, UserStore, UserWithHash};
 pub use user::{User, UserId};
