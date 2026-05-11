@@ -39,15 +39,13 @@ pub fn build_router(state: AppState) -> Router {
 
     let cors_origins: Vec<HeaderValue> = trusted_domains
         .iter()
-        .filter_map(|d| {
-            HeaderValue::from_str(&format!("https://{d}"))
-                .ok()
-                .into_iter()
-                .chain(HeaderValue::from_str(&format!("http://{d}")).ok())
-                .collect::<Vec<_>>()
-                .into_iter()
-                .next()
+        .flat_map(|d| {
+            [
+                HeaderValue::from_str(&format!("https://{d}")).ok(),
+                HeaderValue::from_str(&format!("http://{d}")).ok(),
+            ]
         })
+        .flatten()
         .collect();
     let cors_layer = CorsLayer::new()
         .allow_methods([
