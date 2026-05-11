@@ -14,6 +14,8 @@ use std::sync::Arc;
 /// amortized.
 const APPCONFIG_CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(60);
 
+/// Read/write access to the per-app key/value store in `oc_appconfig`, fronted
+/// by the shared `Cache` for hot reads.
 #[derive(Clone)]
 pub struct AppConfigService {
     pool: DbPool,
@@ -32,6 +34,8 @@ impl std::fmt::Debug for AppConfigService {
 }
 
 impl AppConfigService {
+    /// Build a service bound to `pool` + `cache`, applying `prefix` to the
+    /// `appconfig` table name and namespacing cache keys with `instance_id`.
     pub fn new(pool: DbPool, cache: Arc<dyn Cache>, prefix: &str, instance_id: &str) -> Self {
         Self {
             pool,
@@ -45,6 +49,8 @@ impl AppConfigService {
         format!("{}:appconfig:{appid}:{key}", self.instance_id)
     }
 
+    /// Fetch the value for `(appid, key)`. Returns `Ok(None)` for a missing
+    /// row. Cache misses fall through to the database and prime the cache.
     pub async fn get(&self, appid: &str, key: &str) -> CoreResult<Option<String>> {
         let ck = self.cache_key(appid, key);
         if let Some(bytes) = self.cache.get(&ck).await? {
@@ -69,6 +75,8 @@ impl AppConfigService {
         Ok(v)
     }
 
+    /// Upsert the value for `(appid, key)` and invalidate the cache so the
+    /// next read repopulates it.
     pub async fn set(&self, appid: &str, key: &str, value: &str) -> CoreResult<()> {
         self.write_db(appid, key, value).await?;
         // Invalidate; next read will repopulate.

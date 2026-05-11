@@ -1,3 +1,6 @@
+//! `rustcloud-server` binary: parses the CLI, initializes tracing, and
+//! dispatches to subcommands (`serve`, `migrate`, `status`, `version`).
+
 mod cli;
 mod telemetry;
 

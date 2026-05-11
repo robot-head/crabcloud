@@ -6,6 +6,8 @@
 pub struct Locale(String);
 
 impl Locale {
+    /// Build a `Locale` from any string-like value. Normalizes to lowercase and
+    /// converts `-` separators to `_` so `EN-US` and `en_us` collapse to one form.
     pub fn new(s: impl Into<String>) -> Self {
         let raw = s.into();
         // Normalize: lowercase, hyphen → underscore (Accept-Language uses hyphens;
@@ -14,6 +16,7 @@ impl Locale {
         Locale(normalized)
     }
 
+    /// Returns the normalized tag (e.g. `en`, `fr_fr`).
     pub fn as_str(&self) -> &str {
         &self.0
     }

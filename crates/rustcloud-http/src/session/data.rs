@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 pub struct SessionId(pub String);
 
 impl SessionId {
+    /// Generate a fresh random session id (32 bytes, hex-encoded).
     pub fn new_random() -> Self {
         use rand::RngCore;
         let mut buf = [0u8; 32];
@@ -14,6 +15,7 @@ impl SessionId {
         SessionId(hex::encode(buf))
     }
 
+    /// Hex string form of the session id, used for cookies + cache keys.
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -31,6 +33,8 @@ pub struct Session {
 }
 
 impl Session {
+    /// Create a fresh session with a random CSRF token and `last_activity` set
+    /// to the current time.
     pub fn new() -> Self {
         Self {
             user_id: None,
@@ -39,6 +43,7 @@ impl Session {
         }
     }
 
+    /// Replace the CSRF token with a fresh random value. Called at login/logout.
     pub fn rotate_csrf(&mut self) {
         self.csrf_token = random_token();
     }

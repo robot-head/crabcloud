@@ -16,14 +16,19 @@ use thiserror::Error;
 
 type HmacSha256 = Hmac<Sha256>;
 
+/// Errors produced while decoding a signed session cookie.
 #[derive(Debug, Error)]
 pub enum CookieError {
+    /// The cookie value did not match the expected `<id>.<sig>` shape.
     #[error("cookie value is not a valid signed-session token")]
     Malformed,
+    /// The HMAC over the session id did not verify against the configured secret.
     #[error("cookie signature mismatch")]
     BadSignature,
 }
 
+/// Encode a hex-form session id into the signed cookie value
+/// `<base64url(id)>.<base64url(hmac)>`.
 pub fn encode_cookie(session_id_hex: &str, secret: &[u8]) -> String {
     let id_bytes = hex::decode(session_id_hex).unwrap_or_default();
     let mut mac = HmacSha256::new_from_slice(secret).expect("hmac accepts any key length");
@@ -32,6 +37,8 @@ pub fn encode_cookie(session_id_hex: &str, secret: &[u8]) -> String {
     format!("{}.{}", B64.encode(&id_bytes), B64.encode(sig))
 }
 
+/// Verify and decode a signed cookie produced by [`encode_cookie`]. Returns
+/// the hex-form session id on success.
 pub fn decode_cookie(raw: &str, secret: &[u8]) -> Result<String, CookieError> {
     let (id_b64, sig_b64) = raw.split_once('.').ok_or(CookieError::Malformed)?;
     let id_bytes = B64.decode(id_b64).map_err(|_| CookieError::Malformed)?;

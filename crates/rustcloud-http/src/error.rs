@@ -35,12 +35,16 @@ impl IntoResponse for ApiError {
 /// rendered as XML by default (or JSON via the `?format=json` query / Accept).
 #[derive(Debug)]
 pub struct OcsError {
+    /// Underlying core error.
     pub error: CoreError,
+    /// OCS protocol version to use when rendering.
     pub version: OcsVersion,
+    /// Output format (XML/JSON).
     pub format: Format,
 }
 
 impl OcsError {
+    /// Build an `OcsError` wrapping `error` with the requested version + format.
     pub fn new(error: CoreError, version: OcsVersion, format: Format) -> Self {
         Self {
             error,

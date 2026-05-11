@@ -5,16 +5,28 @@ use figment::{
 };
 use std::path::Path;
 
+/// Errors produced by [`load`] when assembling the layered configuration.
 #[derive(Debug, thiserror::Error)]
 pub enum LoadError {
+    /// The base config file does not exist on disk.
     #[error("config file `{path}` not found")]
-    NotFound { path: String },
+    NotFound {
+        /// Path that was probed (display string of the requested file).
+        path: String,
+    },
+    /// The TOML or environment overlay failed to parse / deserialize into `FileConfig`.
     #[error("config parse error: {0}")]
     Parse(#[from] figment::Error),
+    /// The merged configuration failed `FileConfig::validate`.
     #[error(transparent)]
     Validate(#[from] FileConfigError),
 }
 
+/// Load and validate the layered configuration.
+///
+/// Merge order (later layers win): the TOML file at `base` → an optional
+/// sibling `config.local.toml` → `RUSTCLOUD_*` env vars (with `__` as nested
+/// separator) → `cli_overrides` (pairs of dotted key + string value).
 pub fn load(base: &Path, cli_overrides: &[(&str, &str)]) -> Result<FileConfig, LoadError> {
     if !base.exists() {
         return Err(LoadError::NotFound {

@@ -19,10 +19,12 @@ fn is_safe_method(m: &Method) -> bool {
     matches!(*m, Method::GET | Method::HEAD | Method::OPTIONS)
 }
 
+/// `tower::Layer` that enforces Nextcloud-style CSRF tokens on unsafe methods.
 #[derive(Clone, Default)]
 pub struct CsrfLayer;
 
 impl CsrfLayer {
+    /// Construct the layer with default behavior.
     pub fn new() -> Self {
         Self
     }

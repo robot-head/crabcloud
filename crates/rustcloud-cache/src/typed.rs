@@ -38,6 +38,8 @@ impl<T> TypedCache<T> {
 }
 
 impl<T: Serialize + DeserializeOwned + Send + Sync> TypedCache<T> {
+    /// Fetch and JSON-decode the value at `key`, applying the configured prefix.
+    /// Returns `Ok(None)` for missing or expired entries.
     pub async fn get(&self, key: &str) -> CacheResult<Option<T>> {
         let raw = self.inner.get(&self.full_key(key)).await?;
         match raw {
@@ -50,12 +52,14 @@ impl<T: Serialize + DeserializeOwned + Send + Sync> TypedCache<T> {
         }
     }
 
+    /// JSON-encode `value` and store it at `key` with optional TTL.
     pub async fn set(&self, key: &str, value: &T, ttl: Option<Duration>) -> CacheResult<()> {
         let bytes = serde_json::to_vec(value)
             .map_err(|e| CacheError::Io(format!("typed set encode: {e}")))?;
         self.inner.set(&self.full_key(key), &bytes, ttl).await
     }
 
+    /// Remove the entry at `key`. No-op if absent.
     pub async fn del(&self, key: &str) -> CacheResult<()> {
         self.inner.del(&self.full_key(key)).await
     }

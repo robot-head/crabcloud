@@ -10,14 +10,21 @@ use dioxus::prelude::*;
 #[derive(Routable, Clone, PartialEq, Debug)]
 #[rustfmt::skip]
 pub enum Route {
+    /// Authenticated landing page (or login redirect for anonymous users).
     #[route("/")]
     HomeRoute {},
 
+    /// Login form.
     #[route("/login")]
     LoginRoute {},
 
+    /// Catch-all 404 page. SSR uses this to detect unknown paths and emit
+    /// an HTTP 404 status.
     #[route("/:..segments")]
-    NotFoundRoute { segments: Vec<String> },
+    NotFoundRoute {
+        /// Captured path segments; ignored by the page itself.
+        segments: Vec<String>,
+    },
 }
 
 #[component]

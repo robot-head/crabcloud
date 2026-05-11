@@ -7,30 +7,50 @@ use rustcloud_cache::CacheError;
 use rustcloud_config::{FileConfigError, LoadError};
 use rustcloud_db::DbError;
 
+/// Unified error type used throughout the core surface. Each variant maps to a
+/// specific HTTP status via [`Error::http_status`].
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    /// Resource not found.
     #[error("not found")]
     NotFound,
+    /// Caller is not authenticated.
     #[error("unauthorized")]
     Unauthorized,
+    /// Caller is authenticated but not permitted.
     #[error("forbidden")]
     Forbidden,
+    /// Caller-provided data was malformed; message is safe to surface.
     #[error("bad request: {0}")]
     BadRequest(String),
+    /// State conflict (e.g. duplicate key); message is safe to surface.
     #[error("conflict: {0}")]
     Conflict(String),
+    /// Resource is locked (WebDAV-style 423).
     #[error("locked")]
     Locked,
+    /// OCS-protocol-level failure with an explicit status code and message.
     #[error("OCS error {code}: {message}")]
-    Ocs { code: u16, message: String },
+    Ocs {
+        /// OCS-level status code to surface.
+        code: u16,
+        /// Human-readable message to include in the envelope.
+        message: String,
+    },
+    /// Wrapped configuration load error.
     #[error(transparent)]
     Config(#[from] LoadError),
+    /// Wrapped configuration validation error.
     #[error(transparent)]
     ConfigValidation(#[from] FileConfigError),
+    /// Wrapped database error.
     #[error(transparent)]
     Db(#[from] DbError),
+    /// Wrapped cache backend error.
     #[error(transparent)]
     Cache(#[from] CacheError),
+    /// Catch-all for unexpected internal failures. The wrapped `anyhow::Error`
+    /// is logged but not exposed to clients.
     #[error("internal error: {0:#}")]
     Internal(anyhow::Error),
 }
@@ -74,6 +94,7 @@ impl Error {
     }
 }
 
+/// Convenience alias for `Result<T, Error>` used throughout the core API.
 pub type CoreResult<T> = Result<T, Error>;
 
 #[cfg(test)]

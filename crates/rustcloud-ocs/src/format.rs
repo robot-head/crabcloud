@@ -3,11 +3,14 @@
 /// Which serialization the response should use.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Format {
+    /// `application/xml` envelope.
     Xml,
+    /// `application/json` envelope.
     Json,
 }
 
 impl Format {
+    /// MIME type that should be set on the response when this format is used.
     pub fn content_type(self) -> &'static str {
         match self {
             Format::Xml => "application/xml; charset=utf-8",

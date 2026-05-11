@@ -7,10 +7,14 @@ use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::{mysql::MySqlPoolOptions, postgres::PgPoolOptions};
 use sqlx::{MySqlPool, PgPool, SqlitePool};
 
+/// Dialect-tagged connection pool. Cloning shares the underlying pool.
 #[derive(Debug, Clone)]
 pub enum DbPool {
+    /// SQLite-backed pool.
     Sqlite(SqlitePool),
+    /// MySQL/MariaDB-backed pool.
     MySql(MySqlPool),
+    /// PostgreSQL-backed pool.
     Postgres(PgPool),
 }
 

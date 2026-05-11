@@ -21,12 +21,15 @@ use tower::{Layer, Service};
 const X_FORWARDED_PROTO: HeaderName = HeaderName::from_static("x-forwarded-proto");
 const X_FORWARDED_HOST: HeaderName = HeaderName::from_static("x-forwarded-host");
 
+/// `tower::Layer` that honors `X-Forwarded-*` headers from trusted proxies.
 #[derive(Clone)]
 pub struct ProxyHeadersLayer {
+    /// CIDRs/IPs/`"loopback"` that are allowed to inject forwarding headers.
     pub trusted_proxies: Arc<Vec<String>>,
 }
 
 impl ProxyHeadersLayer {
+    /// Build the layer from a configured list of trusted proxy peers.
     pub fn new(trusted_proxies: Vec<String>) -> Self {
         Self {
             trusted_proxies: Arc::new(trusted_proxies),
@@ -44,6 +47,7 @@ impl<S> Layer<S> for ProxyHeadersLayer {
     }
 }
 
+/// Middleware service produced by [`ProxyHeadersLayer`].
 #[derive(Clone)]
 pub struct ProxyHeaders<S> {
     inner: S,
@@ -101,6 +105,8 @@ where
     }
 }
 
+/// Request extension carrying the trusted-proxy-supplied scheme (`http`/`https`).
+/// Inserted by [`ProxyHeaders`] only when `X-Forwarded-Proto` came from a trusted peer.
 #[derive(Debug, Clone)]
 pub struct EffectiveScheme(pub String);
 

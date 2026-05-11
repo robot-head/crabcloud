@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 /// A single migration: its version within a namespace, and SQL for each dialect.
 #[derive(Debug, Clone)]
 pub struct Migration {
+    /// Strictly-increasing per-namespace version number.
     pub version: i64,
     /// Short human-readable identifier.
     pub name: &'static str,
@@ -25,10 +26,14 @@ pub struct Migration {
 /// version numbers; this is debug-asserted in `MigrationRunner::register`.
 #[derive(Debug, Clone)]
 pub struct MigrationSet {
+    /// Namespace identifier (e.g. `core`, `files`); recorded alongside applied versions.
     pub namespace: &'static str,
+    /// Sorted migrations for this namespace.
     pub migrations: &'static [Migration],
 }
 
+/// Drives migration sets to completion against a [`DbPool`], tracking applied
+/// versions in a `<prefix>migrations` table.
 pub struct MigrationRunner<'a> {
     pool: &'a DbPool,
     sets: Vec<MigrationSet>,
@@ -36,6 +41,8 @@ pub struct MigrationRunner<'a> {
 }
 
 impl<'a> MigrationRunner<'a> {
+    /// Build a runner targeting `pool` with the given table-name `prefix`
+    /// (`oc_` matches Nextcloud's convention).
     pub fn new(pool: &'a DbPool, prefix: impl Into<String>) -> Self {
         Self {
             pool,
@@ -44,6 +51,8 @@ impl<'a> MigrationRunner<'a> {
         }
     }
 
+    /// Add a migration set to be applied on the next `run`. Sets are applied
+    /// in registration order.
     pub fn register(&mut self, set: MigrationSet) -> &mut Self {
         debug_assert!(
             set.migrations

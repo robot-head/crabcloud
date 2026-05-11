@@ -9,6 +9,8 @@ use std::time::Duration;
 /// ships the idle-TTL only; absolute-TTL enforcement is a Phase 4 concern.
 pub const SESSION_IDLE_TTL: Duration = Duration::from_secs(30 * 60);
 
+/// Typed wrapper over the shared `Cache` for session payloads. Keys are
+/// scoped by `instance_id`.
 #[derive(Clone)]
 pub struct SessionStore {
     cache: Arc<dyn Cache>,
@@ -16,6 +18,7 @@ pub struct SessionStore {
 }
 
 impl SessionStore {
+    /// Build a store backed by `cache`, scoping keys with `instance_id`.
     pub fn new(cache: Arc<dyn Cache>, instance_id: impl Into<String>) -> Self {
         Self {
             cache,
@@ -27,6 +30,7 @@ impl SessionStore {
         format!("{}:session:{}", self.instance_id, id.as_str())
     }
 
+    /// Load the session at `id`. Returns `Ok(None)` if the cache has no entry.
     pub async fn load(&self, id: &SessionId) -> Result<Option<Session>, CacheError> {
         let raw = self.cache.get(&self.key(id)).await?;
         match raw {
@@ -39,6 +43,7 @@ impl SessionStore {
         }
     }
 
+    /// Persist `session` at `id` with the idle TTL refreshed.
     pub async fn save(&self, id: &SessionId, session: &Session) -> Result<(), CacheError> {
         let bytes = serde_json::to_vec(session)
             .map_err(|e| CacheError::Io(format!("session encode: {e}")))?;
@@ -47,6 +52,7 @@ impl SessionStore {
             .await
     }
 
+    /// Remove the session at `id`. No-op if it doesn't exist.
     pub async fn destroy(&self, id: &SessionId) -> Result<(), CacheError> {
         self.cache.del(&self.key(id)).await
     }

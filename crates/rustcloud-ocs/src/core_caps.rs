@@ -6,6 +6,8 @@ use crate::capabilities::{CapabilityContext, CapabilityProvider};
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
+/// Built-in `core` namespace contributor for the capabilities aggregator.
+/// Provides the shape Nextcloud clients expect when sniffing server features.
 #[derive(Debug, Clone)]
 pub struct CoreCapabilities {
     /// In seconds. Nextcloud default is 60.

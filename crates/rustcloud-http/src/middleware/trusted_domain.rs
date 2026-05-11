@@ -13,12 +13,16 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 use tower::{Layer, Service};
 
+/// `tower::Layer` that enforces the `trusted_domains` allowlist on inbound
+/// `Host` headers. Loopback peers bypass the check.
 #[derive(Clone)]
 pub struct TrustedDomainLayer {
+    /// Allowed host names (without port).
     pub allowed: Arc<Vec<String>>,
 }
 
 impl TrustedDomainLayer {
+    /// Build the layer from a configured `trusted_domains` list.
     pub fn new(allowed: Vec<String>) -> Self {
         Self {
             allowed: Arc::new(allowed),
@@ -36,6 +40,7 @@ impl<S> Layer<S> for TrustedDomainLayer {
     }
 }
 
+/// Middleware service produced by [`TrustedDomainLayer`].
 #[derive(Clone)]
 pub struct TrustedDomain<S> {
     inner: S,

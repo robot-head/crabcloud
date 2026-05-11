@@ -19,12 +19,15 @@ impl Entry {
     }
 }
 
+/// In-process [`Cache`] implementation backed by a tokio-mutex-guarded
+/// `HashMap`. Single-node only; cloning shares the same backing store.
 #[derive(Debug, Clone, Default)]
 pub struct MemoryCache {
     inner: Arc<Mutex<HashMap<String, Entry>>>,
 }
 
 impl MemoryCache {
+    /// Construct an empty in-process cache.
     pub fn new() -> Self {
         Self::default()
     }

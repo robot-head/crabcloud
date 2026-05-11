@@ -8,15 +8,22 @@ use crate::status::{OcsStatus, OcsVersion};
 use serde::Serialize;
 use serde_json::{json, Value};
 
+/// An OCS-shaped response: status code + message + arbitrary serializable data,
+/// tagged with the OCS protocol version used to render it.
 #[derive(Debug)]
 pub struct OcsResponse<T: Serialize> {
+    /// OCS-level status code (separate from HTTP status).
     pub status: OcsStatus,
+    /// Human-readable status message shown in the envelope.
     pub message: String,
+    /// Payload placed under `ocs.data`.
     pub data: T,
+    /// OCS protocol version; controls the `statuscode` mapping (100 vs 200 for OK).
     pub version: OcsVersion,
 }
 
 impl<T: Serialize> OcsResponse<T> {
+    /// Build a successful response with status `Ok` and message `"OK"`.
     pub fn ok(data: T, version: OcsVersion) -> Self {
         Self {
             status: OcsStatus::Ok,
@@ -26,6 +33,7 @@ impl<T: Serialize> OcsResponse<T> {
         }
     }
 
+    /// Build an error response with an explicit status code and message.
     pub fn failure(
         status: OcsStatus,
         message: impl Into<String>,

@@ -5,6 +5,8 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Per-request data threaded through SSR rendering and re-hydrated on the
+/// client. JSON-serialized into the HTML payload for the WASM bundle to pick up.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RequestContext {
     /// Authenticated user ID, or `None` for anonymous requests.
@@ -23,6 +25,7 @@ pub struct RequestContext {
 }
 
 impl RequestContext {
+    /// Build a context for an unauthenticated request.
     pub fn anonymous(locale: impl Into<String>, request_token: impl Into<String>) -> Self {
         Self {
             user_id: None,
@@ -33,6 +36,8 @@ impl RequestContext {
         }
     }
 
+    /// Build a context for an authenticated request. `display_name` is set to
+    /// `user_id` as a Phase 4 simplification.
     pub fn authenticated(
         user_id: impl Into<String>,
         locale: impl Into<String>,

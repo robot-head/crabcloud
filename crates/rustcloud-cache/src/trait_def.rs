@@ -8,10 +8,12 @@ use std::time::Duration;
 /// such as a value that can't be parsed during `incr`.
 #[derive(Debug, thiserror::Error)]
 pub enum CacheError {
+    /// Generic I/O or serialization error reported by a backend.
     #[error("cache I/O error: {0}")]
     Io(String),
 }
 
+/// Convenience alias for `Result<T, CacheError>`.
 pub type CacheResult<T> = Result<T, CacheError>;
 
 /// Bytes-in, bytes-out cache. Callers handle serialization; the `TypedCache<T>`

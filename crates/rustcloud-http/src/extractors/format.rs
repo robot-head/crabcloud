@@ -7,6 +7,8 @@ use axum::http::request::Parts;
 use rustcloud_ocs::{negotiate, Format};
 use std::convert::Infallible;
 
+/// Axum extractor that resolves the desired OCS response [`Format`] from the
+/// request's `?format=` query parameter and `Accept` header.
 #[derive(Debug, Clone, Copy)]
 pub struct OcsFormat(pub Format);
 

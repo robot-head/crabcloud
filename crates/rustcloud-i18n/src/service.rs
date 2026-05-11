@@ -19,6 +19,8 @@ struct Inner {
 }
 
 impl I18n {
+    /// Build the service from a pre-loaded catalog map and the fallback locale
+    /// (used when no `Accept-Language` preference matches).
     pub fn new(catalogs: HashMap<(String, Locale), Catalog>, fallback: Locale) -> Self {
         let mut available: Vec<Locale> = catalogs.keys().map(|(_, l)| l.clone()).collect();
         available.sort_by(|a, b| a.as_str().cmp(b.as_str()));
@@ -32,10 +34,13 @@ impl I18n {
         }
     }
 
+    /// Returns the sorted, deduplicated list of locales for which at least one
+    /// catalog was loaded.
     pub fn available_locales(&self) -> &[Locale] {
         &self.inner.available
     }
 
+    /// Returns the configured fallback locale.
     pub fn fallback(&self) -> &Locale {
         &self.inner.fallback
     }

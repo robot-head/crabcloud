@@ -9,18 +9,25 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use std::convert::Infallible;
 
+/// Extractor that resolves the authenticated user from the session cookie.
+/// Returns [`UnauthorizedRejection`] (401) when no valid session is present.
 #[derive(Debug, Clone)]
 pub struct AuthenticatedUser {
+    /// Identifier of the authenticated user.
     pub user_id: String,
+    /// Method used to authenticate the request.
     pub auth_method: AuthMethod,
 }
 
+/// Mechanism by which the request was authenticated.
 #[derive(Debug, Clone)]
 pub enum AuthMethod {
+    /// Authenticated via session cookie.
     Session,
     // Bearer / Basic / AppPassword variants land in the users sub-project.
 }
 
+/// Rejection produced when `AuthenticatedUser` fails to resolve; renders as HTTP 401.
 pub struct UnauthorizedRejection;
 
 impl IntoResponse for UnauthorizedRejection {

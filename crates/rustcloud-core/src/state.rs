@@ -15,11 +15,17 @@ use tokio::sync::Mutex;
 /// so cloning is cheap.
 #[derive(Clone)]
 pub struct AppState {
+    /// Loaded, validated configuration.
     pub config: Arc<FileConfig>,
+    /// Database connection pool.
     pub pool: DbPool,
+    /// Shared cache backend.
     pub cache: Arc<dyn Cache>,
+    /// Translation service.
     pub i18n: Arc<I18n>,
+    /// Cached read/write access to the `appconfig` table.
     pub appconfig: AppConfigService,
+    /// Mutable registry of capability providers (filled by bootstrap hooks).
     pub capability_providers: Arc<Mutex<Vec<Arc<dyn CapabilityProvider>>>>,
 }
 
@@ -33,7 +39,8 @@ impl std::fmt::Debug for AppState {
 }
 
 impl AppState {
-    /// Convenience: register a capability provider at runtime.
+    /// Convenience: register a capability provider at runtime. Subsequent
+    /// `/ocs/.../capabilities` requests will include its contribution.
     pub async fn register_capability_provider(&self, p: Arc<dyn CapabilityProvider>) {
         self.capability_providers.lock().await.push(p);
     }
@@ -48,6 +55,7 @@ pub struct AppStateBuilder {
 }
 
 impl AppStateBuilder {
+    /// Start a builder from a parsed configuration.
     pub fn new(config: FileConfig) -> Self {
         Self {
             config: Arc::new(config),
@@ -57,16 +65,19 @@ impl AppStateBuilder {
         }
     }
 
+    /// Override the i18n catalog root (defaults to "no catalogs").
     pub fn with_catalog_root(mut self, p: impl Into<std::path::PathBuf>) -> Self {
         self.catalog_root = Some(p.into());
         self
     }
 
+    /// Override the cache backend (defaults to `MemoryCache`).
     pub fn with_cache(mut self, c: Arc<dyn Cache>) -> Self {
         self.cache = Some(c);
         self
     }
 
+    /// Register a bootstrap hook to run during `build`.
     pub fn with_hook(mut self, hook: crate::bootstrap::BootstrapHook) -> Self {
         self.registry.register(hook);
         self

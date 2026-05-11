@@ -8,17 +8,26 @@
 /// HTTP one in the wire-level response status line.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OcsStatus {
-    Ok,           // 100 in v1, 200 in v2
-    Created,      // 201 (v2 only — rare; map to Ok in v1)
-    BadRequest,   // 400
-    Unauthorized, // 997 — yes, really
-    Forbidden,    // 403
-    NotFound,     // 998
-    UnknownError, // 999
-    ServerError,  // 996
+    /// Successful operation. `100` in OCS v1, `200` in v2.
+    Ok,
+    /// Resource created. `201` in v2; collapses to `Ok` in v1.
+    Created,
+    /// Client sent a malformed request (`400`).
+    BadRequest,
+    /// Authentication required or rejected (Nextcloud-specific `997`).
+    Unauthorized,
+    /// Authentication accepted but action denied (`403`).
+    Forbidden,
+    /// Target resource missing (Nextcloud-specific `998`).
+    NotFound,
+    /// Catch-all client-visible failure (`999`).
+    UnknownError,
+    /// Internal server error (Nextcloud-specific `996`).
+    ServerError,
 }
 
 impl OcsStatus {
+    /// Numeric `statuscode` value for OCS v1 envelopes.
     pub fn v1_code(self) -> u16 {
         match self {
             OcsStatus::Ok => 100,
@@ -32,6 +41,7 @@ impl OcsStatus {
         }
     }
 
+    /// Numeric `statuscode` value for OCS v2 envelopes.
     pub fn v2_code(self) -> u16 {
         match self {
             OcsStatus::Ok => 200,
@@ -45,6 +55,7 @@ impl OcsStatus {
         }
     }
 
+    /// Short `status` string (`"ok"` or `"failure"`) shown in the envelope.
     pub fn label(self) -> &'static str {
         match self {
             OcsStatus::Ok => "ok",
@@ -58,6 +69,7 @@ impl OcsStatus {
         }
     }
 
+    /// Wire-level HTTP status code that should accompany the envelope.
     pub fn http_code(self) -> u16 {
         match self {
             OcsStatus::Ok => 200,
@@ -76,11 +88,14 @@ impl OcsStatus {
 /// the `statuscode` mapping (100 vs 200 for OK).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OcsVersion {
+    /// OCS v1 protocol; OK is `100`.
     V1,
+    /// OCS v2 protocol; OK is `200`.
     V2,
 }
 
 impl OcsStatus {
+    /// Returns the numeric statuscode appropriate for the given OCS protocol version.
     pub fn code_for(self, version: OcsVersion) -> u16 {
         match version {
             OcsVersion::V1 => self.v1_code(),

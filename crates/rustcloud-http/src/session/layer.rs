@@ -17,30 +17,41 @@ use std::task::{Context, Poll};
 use tokio::sync::Mutex;
 use tower::{Layer, Service};
 
+/// Name of the session cookie (Nextcloud-compatible).
 pub const COOKIE_NAME: &str = "oc_sessionPassphrase";
 
 /// Wrapper inserted into request extensions so handlers can mutate the session.
 #[derive(Clone)]
 pub struct SessionHandle {
+    /// Session id (matches the cookie value).
     pub id: SessionId,
+    /// Mutable session payload guarded by an async mutex.
     pub inner: Arc<Mutex<Session>>,
     /// Set to true when the handler wants the session destroyed on response.
     pub destroy: Arc<Mutex<bool>>,
 }
 
 impl SessionHandle {
+    /// Read a snapshot of the current session state.
     pub async fn read(&self) -> Session {
         self.inner.lock().await.clone()
     }
+    /// Mutate the session under the lock; changes are persisted by the layer
+    /// when the response is flushed.
     pub async fn mutate<F: FnOnce(&mut Session)>(&self, f: F) {
         let mut s = self.inner.lock().await;
         f(&mut s);
     }
+    /// Mark the session for destruction. The layer will purge the cache entry
+    /// and emit a clearing `Set-Cookie` on response.
     pub async fn destroy(&self) {
         *self.destroy.lock().await = true;
     }
 }
 
+/// `tower::Layer` that loads the session referenced by the request cookie,
+/// makes it available via [`SessionHandle`] extension, and writes back any
+/// changes on response.
 #[derive(Clone)]
 pub struct SessionLayer {
     store: SessionStore,
@@ -49,6 +60,8 @@ pub struct SessionLayer {
 }
 
 impl SessionLayer {
+    /// Build the layer from a store, signing `secret`, and whether to set the
+    /// `Secure` cookie flag (true in production / behind HTTPS).
     pub fn new(store: SessionStore, secret: SecretString, secure: bool) -> Self {
         Self {
             store,
@@ -70,6 +83,7 @@ impl<S> Layer<S> for SessionLayer {
     }
 }
 
+/// Middleware service produced by [`SessionLayer`].
 #[derive(Clone)]
 pub struct SessionMiddleware<S> {
     inner: S,

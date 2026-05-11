@@ -27,10 +27,13 @@ fn csp_for_content_type(ct: Option<&axum::http::HeaderValue>) -> &'static str {
     }
 }
 
+/// `tower::Layer` that appends the spec §7.2 security headers to every response,
+/// choosing the CSP variant based on the response `Content-Type`.
 #[derive(Clone, Default)]
 pub struct SecurityHeadersLayer;
 
 impl SecurityHeadersLayer {
+    /// Build the layer with default settings.
     pub fn new() -> Self {
         Self
     }
@@ -43,6 +46,7 @@ impl<S> Layer<S> for SecurityHeadersLayer {
     }
 }
 
+/// Middleware service produced by [`SecurityHeadersLayer`].
 #[derive(Clone)]
 pub struct SecurityHeaders<S> {
     inner: S,

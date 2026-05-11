@@ -7,8 +7,10 @@
 
 use crate::migrate::{Migration, MigrationSet};
 
+/// Migration namespace identifier for the core schema.
 pub const CORE_NAMESPACE: &str = "core";
 
+/// All migrations for the `core` namespace, in version order.
 pub const CORE_MIGRATIONS: &[Migration] = &[Migration {
     version: 1,
     name: "initial",
@@ -17,6 +19,8 @@ pub const CORE_MIGRATIONS: &[Migration] = &[Migration {
     postgres: include_str!("../../../migrations/core/0001_initial/postgres.sql"),
 }];
 
+/// Returns the `core` migration set ready to be registered with a
+/// [`crate::MigrationRunner`].
 pub fn core_set() -> MigrationSet {
     MigrationSet {
         namespace: CORE_NAMESPACE,

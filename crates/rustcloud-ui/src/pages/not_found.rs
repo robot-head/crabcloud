@@ -2,6 +2,7 @@
 
 use dioxus::prelude::*;
 
+/// Static 404 page rendered for unknown paths in both SSR and client routes.
 #[component]
 pub fn NotFound() -> Element {
     rsx! {

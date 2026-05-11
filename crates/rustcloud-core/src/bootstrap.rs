@@ -40,18 +40,22 @@ pub struct BootstrapRegistry {
 }
 
 impl BootstrapRegistry {
+    /// Create an empty registry.
     pub fn new() -> Self {
         Self { hooks: Vec::new() }
     }
 
+    /// Append `hook` to the registry. Hooks fire in registration order.
     pub fn register(&mut self, hook: BootstrapHook) {
         self.hooks.push(hook);
     }
 
+    /// Number of pending hooks.
     pub fn len(&self) -> usize {
         self.hooks.len()
     }
 
+    /// Whether the registry has no pending hooks.
     pub fn is_empty(&self) -> bool {
         self.hooks.is_empty()
     }

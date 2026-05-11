@@ -5,12 +5,21 @@ use polib::po_file;
 use std::collections::HashMap;
 use std::path::Path;
 
+/// Errors that can occur while scanning or parsing `.po` catalog files.
 #[derive(Debug, thiserror::Error)]
 pub enum CatalogError {
+    /// I/O error while reading the catalog directory or a file within it.
     #[error("scan I/O error: {0}")]
     Io(#[from] std::io::Error),
+    /// The `.po` file failed to parse; `path` identifies the file and
+    /// `message` is the underlying parser error.
     #[error("parse error in {path}: {message}")]
-    Parse { path: String, message: String },
+    Parse {
+        /// Filesystem path of the `.po` file that failed to parse.
+        path: String,
+        /// Human-readable parser error message.
+        message: String,
+    },
 }
 
 /// One catalog: a flat msgid → msgstr lookup for a specific `(app, locale)`.

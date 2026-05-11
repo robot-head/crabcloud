@@ -1,3 +1,8 @@
+//! Rustcloud workspace automation. Wraps common multi-step developer
+//! workflows (`check-all`, `build`, `up`/`down`, `release`) so contributors
+//! don't have to remember the underlying cargo + dx + docker-compose
+//! incantations.
+
 use anyhow::{bail, Result};
 use clap::{Parser, Subcommand};
 use std::process::Command;

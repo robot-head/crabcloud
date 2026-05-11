@@ -7,12 +7,16 @@ use std::path::PathBuf;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum DbType {
+    /// In-process SQLite database; default and easiest for dev/test.
     Sqlite,
+    /// MySQL / MariaDB over a TCP connection.
     Mysql,
+    /// PostgreSQL over a TCP connection.
     Pgsql,
 }
 
 impl DbType {
+    /// String form used by config files and the legacy `dbtype` field.
     pub fn as_str(self) -> &'static str {
         match self {
             DbType::Sqlite => "sqlite",
@@ -28,55 +32,79 @@ impl DbType {
 #[serde(deny_unknown_fields)]
 pub struct FileConfig {
     // --- Identity / instance ---
+    /// Stable per-installation identifier (Nextcloud `instanceid`). Used as a
+    /// suffix on cookies, cache keys, and the OCS payload.
     pub instanceid: String,
+    /// Server-wide secret for signing session cookies / CSRF tokens.
     pub secret: SecretString,
+    /// Per-user password salt used for legacy Nextcloud hashing schemes.
     pub passwordsalt: SecretString,
     /// Installation flag; false means the installer must run first.
     #[serde(default)]
     pub installed: bool,
     /// Stored upstream-Nextcloud-compatible version string for clients.
     pub version: String,
+    /// Human-readable version (e.g. `31.0.0`) shipped on `/status.php`.
     pub versionstring: String,
 
     // --- Database ---
+    /// Selected database backend.
     pub dbtype: DbType,
+    /// Host for MySQL/Postgres; ignored for SQLite.
     pub dbhost: Option<String>,
+    /// TCP port for the database host; defaults are backend-specific.
     pub dbport: Option<u16>,
+    /// Database name (or filesystem path for SQLite).
     pub dbname: String,
+    /// Username for authenticated DB backends.
     pub dbuser: Option<String>,
+    /// Password for authenticated DB backends.
     pub dbpassword: Option<SecretString>,
+    /// Table-name prefix applied to all schema objects.
     #[serde(default = "default_db_prefix")]
     pub dbtableprefix: String,
+    /// Maximum size of the connection pool.
     #[serde(default = "default_db_pool_max")]
     pub db_pool_max: u32,
 
     // --- Data ---
+    /// Filesystem path where user data lives.
     pub datadirectory: PathBuf,
 
     // --- Web / proxy ---
+    /// Hostnames the server will answer requests for (Nextcloud trusted_domains).
     #[serde(default)]
     pub trusted_domains: Vec<String>,
+    /// IP CIDRs allowed to set forwarding headers (`X-Forwarded-*`).
     #[serde(default)]
     pub trusted_proxies: Vec<String>,
+    /// Forced base URL for CLI-issued links (e.g. `occ` output, share emails).
     #[serde(rename = "overwrite.cli.url")]
     pub overwrite_cli_url: Option<String>,
+    /// Forced protocol (`http`/`https`) when behind a TLS-terminating proxy.
     #[serde(rename = "overwrite.protocol")]
     pub overwrite_protocol: Option<String>,
+    /// Forced `Host` value when behind a reverse proxy.
     #[serde(rename = "overwrite.host")]
     pub overwrite_host: Option<String>,
 
     // --- Logging ---
+    /// `tracing` env-filter directive (e.g. `info`, `rustcloud_http=debug,info`).
     #[serde(default = "default_loglevel")]
     pub loglevel: String,
+    /// Optional path to a log file; if unset, logs go to stderr.
     pub logfile: Option<PathBuf>,
 
     // --- i18n ---
+    /// Fallback locale when no `Accept-Language` preference matches.
     #[serde(default = "default_language")]
     pub default_language: String,
 
     // --- Rustcloud-specific ---
+    /// Address the HTTP server binds to.
     #[serde(default = "default_bind_address")]
     pub bind_address: SocketAddr,
+    /// Cache backend selection (currently `memory` only).
     #[serde(default)]
     pub cache: CacheConfig,
 
@@ -84,9 +112,11 @@ pub struct FileConfig {
     pub bootstrap_admin: Option<BootstrapAdminConfig>,
 }
 
+/// Cache subsystem configuration. Currently selects the backend.
 #[derive(Debug, Clone, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 pub struct CacheConfig {
+    /// Backend identifier (`memory` is the only implemented value).
     #[serde(default = "default_cache_backend")]
     pub backend: String,
 }
@@ -96,6 +126,7 @@ pub struct CacheConfig {
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
 #[serde(deny_unknown_fields)]
 pub struct BootstrapAdminConfig {
+    /// Username of the bootstrap administrator. Compared verbatim against form input.
     pub username: String,
     /// bcrypt hash of the password. Generate with `htpasswd -nBC 12` or
     /// `bcrypt::hash`.
@@ -124,11 +155,15 @@ fn default_cache_backend() -> String {
 /// Errors raised while validating a parsed config.
 #[derive(Debug, thiserror::Error)]
 pub enum FileConfigError {
+    /// A required field was missing or empty.
     #[error("missing required field: {0}")]
     MissingField(&'static str),
+    /// A field had a value that's syntactically valid but semantically wrong.
     #[error("invalid value for `{field}`: {message}")]
     InvalidValue {
+        /// Name of the offending field.
         field: &'static str,
+        /// Human-readable reason the value was rejected.
         message: String,
     },
 }

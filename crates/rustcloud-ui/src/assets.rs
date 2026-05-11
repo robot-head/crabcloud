@@ -17,6 +17,8 @@ use rust_embed::RustEmbed;
 #[exclude = "*.map"]
 struct Assets;
 
+/// Axum handler mounted at `/assets/{*path}` that serves the embedded UI bundle.
+/// Returns 404 for unknown paths and applies long cache headers to hashed assets.
 pub async fn handler(Path(path): Path<String>) -> Response {
     let file = match Assets::get(&path) {
         Some(f) => f,

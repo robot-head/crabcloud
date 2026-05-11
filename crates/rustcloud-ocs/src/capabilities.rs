@@ -19,18 +19,27 @@ const CACHE_TTL: Duration = Duration::from_secs(60);
 /// to the wider state machinery.
 #[derive(Debug, Default, Clone)]
 pub struct CapabilityContext<'a> {
+    /// Locale of the requesting user, if known. Used for cache keying.
     pub locale: Option<&'a str>,
+    /// Authenticated user identifier, if any. Used for cache keying so
+    /// personalized capability sets don't bleed across users.
     pub user_id: Option<&'a str>,
 }
 
+/// Errors produced by [`aggregate`] while assembling the capabilities payload.
 #[derive(Debug, thiserror::Error)]
 pub enum CapabilityError {
+    /// The cache backend returned an error fetching or storing the cached payload.
     #[error("cache error: {0}")]
     Cache(#[from] CacheError),
+    /// `serde_json` failed to serialize/deserialize the cached payload.
     #[error("JSON serialization failed: {0}")]
     Json(#[from] serde_json::Error),
 }
 
+/// One contributor to the aggregated `/ocs/v2.php/cloud/capabilities` payload.
+/// Each app/sub-project registers a provider that owns a top-level namespace
+/// (e.g. `core`, `files`, `dav`).
 #[async_trait]
 pub trait CapabilityProvider: Send + Sync {
     /// The top-level key under `ocs.data.capabilities` this provider contributes to.
@@ -43,7 +52,9 @@ pub trait CapabilityProvider: Send + Sync {
 /// The aggregated payload returned to clients.
 #[derive(Debug, Clone)]
 pub struct CapabilitiesPayload {
+    /// Weak ETag covering the payload contents; suitable for `If-None-Match`.
     pub etag: String,
+    /// The full aggregated JSON body that goes inside the OCS envelope.
     pub body: Value,
 }
 
