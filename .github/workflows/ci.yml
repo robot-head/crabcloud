@@ -216,9 +216,13 @@ jobs:
         shell: bash --noprofile --norc {0}
         run: |
           set +e +o pipefail
-          # Dump on-disk public directory (where the server serves from).
-          PUBLIC_FILES=$(find target/dx/crabcloud-ui/release/web/public -type f 2>/dev/null | sed "s|target/dx/crabcloud-ui/release/web/public/||" | tr '\n' ' ')
+          # Dump on-disk public directory (including symlinks).
+          PUBLIC_FILES=$(find target/dx/crabcloud-ui/release/web/public \( -type f -o -type l \) 2>/dev/null | sed "s|target/dx/crabcloud-ui/release/web/public/||" | tr '\n' ' ')
           echo "::error title=Public dir files::$PUBLIC_FILES"
+          # Probe both the un-hashed and hashed wasm URLs to verify the
+          # workaround actually wired both names.
+          UNHASHED_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:18765/assets/crabcloud-ui_bg.wasm")
+          echo "::error title=Wasm URL probes::unhashed=/assets/crabcloud-ui_bg.wasm -> $UNHASHED_STATUS"
           STATUS=$(curl -s -o /tmp/index.html -w "%{http_code}" http://127.0.0.1:18765/)
           BYTES=$(wc -c < /tmp/index.html)
           HEAD=$(head -c 600 /tmp/index.html | tr '\n' ' ' | tr -s ' ' | tr -d '\r')
