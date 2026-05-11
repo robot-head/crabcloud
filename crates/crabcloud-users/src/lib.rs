@@ -2,6 +2,7 @@
 //!
 //! See `docs/superpowers/specs/2026-05-11-users-core-design.md`.
 
+pub mod cli;
 mod email;
 mod error;
 mod group;
