@@ -83,6 +83,43 @@ pub fn html_escape(s: &str) -> String {
     out
 }
 
+/// Parse a request path into a `Route`. Falls back to `NotFoundRoute` so the
+/// caller doesn't have to unwrap.
+pub fn resolve_route(path: &str) -> crate::Route {
+    use std::str::FromStr;
+    crate::Route::from_str(path)
+        .unwrap_or_else(|_| crate::Route::NotFoundRoute { segments: vec![] })
+}
+
+/// True if the resolved route is the catch-all 404. Used by the HTTP handler
+/// to set the response status.
+pub fn is_not_found(route: &crate::Route) -> bool {
+    matches!(route, crate::Route::NotFoundRoute { .. })
+}
+
+#[cfg(test)]
+mod resolve_tests {
+    use super::*;
+
+    #[test]
+    fn home_path_resolves_to_home_route() {
+        let r = resolve_route("/");
+        assert!(!is_not_found(&r));
+    }
+
+    #[test]
+    fn login_path_resolves() {
+        let r = resolve_route("/login");
+        assert!(!is_not_found(&r));
+    }
+
+    #[test]
+    fn unknown_path_resolves_to_not_found() {
+        let r = resolve_route("/nonexistent/path");
+        assert!(is_not_found(&r));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

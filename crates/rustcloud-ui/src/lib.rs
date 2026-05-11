@@ -23,4 +23,6 @@ pub use context::RequestContext;
 pub use hydration::render_hydration_script;
 
 #[cfg(not(target_arch = "wasm32"))]
-pub use ssr::{html_escape, render_app_html, render_head_html, HTML_DOCTYPE};
+pub use ssr::{
+    html_escape, is_not_found, render_app_html, render_head_html, resolve_route, HTML_DOCTYPE,
+};

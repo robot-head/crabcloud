@@ -39,7 +39,15 @@ pub async fn handler(
         None => RequestContext::anonymous(locale.as_str(), request_token),
     };
 
-    let body_html = render_app_html(ctx.clone(), uri.path());
+    let path = uri.path();
+    let resolved_route = rustcloud_ui::resolve_route(path);
+    let status = if rustcloud_ui::is_not_found(&resolved_route) {
+        StatusCode::NOT_FOUND
+    } else {
+        StatusCode::OK
+    };
+
+    let body_html = render_app_html(ctx.clone(), path);
     let head_html = render_head_html(&ctx);
     let document = format!(
         "{doctype}<html lang=\"{lang}\"><head>{head}</head><body><div id=\"main\">{body}</div></body></html>",
@@ -49,7 +57,7 @@ pub async fn handler(
         body = body_html,
     );
 
-    let mut resp = (StatusCode::OK, document).into_response();
+    let mut resp = (status, document).into_response();
     resp.headers_mut().insert(
         header::CONTENT_TYPE,
         HeaderValue::from_static("text/html; charset=utf-8"),

@@ -84,10 +84,7 @@ async fn unknown_path_returns_404_dioxus_page() {
         .unwrap();
     let resp = app.oneshot(req).await.unwrap();
 
-    // SSR handler always returns 200; the body indicates 404 via content.
-    // (axum's default fall-through would have been 404, but our fallback IS the
-    // SSR handler. Phase 5 can wire a proper 404 status via the Dioxus router.)
-    assert_eq!(resp.status(), StatusCode::OK);
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
     let body = to_bytes(resp.into_body(), 64 * 1024).await.unwrap();
     let html = String::from_utf8(body.to_vec()).unwrap();
     assert!(html.contains("404"), "404 page didn't render");
