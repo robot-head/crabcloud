@@ -31,6 +31,7 @@ dioxus-ssr.workspace = true
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 dioxus-web.workspace = true
 console_error_panic_hook.workspace = true
+web-sys.workspace = true
 
 [dev-dependencies]
 rustcloud-cache.workspace = true

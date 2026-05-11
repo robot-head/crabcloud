@@ -80,6 +80,7 @@ dioxus-router = { version = "0.6", default-features = false }
 dioxus-ssr = "0.6"
 dioxus-web = { version = "0.6", default-features = false }
 console_error_panic_hook = "0.1"
+web-sys = { version = "0.3", features = ["Window", "Document", "Element"] }
 rust-embed = { version = "8", features = ["debug-embed", "include-exclude", "interpolate-folder-path"] }
 
 [workspace.lints.rust]
