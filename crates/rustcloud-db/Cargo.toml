@@ -5,7 +5,6 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-async-trait.workspace = true
 rustcloud-config.workspace = true
 secrecy.workspace = true
 sqlx.workspace = true
