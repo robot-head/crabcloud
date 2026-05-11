@@ -1,10 +1,15 @@
 //! axum router composition. `build_router(state)` returns the assembled
-//! `Router` that the server binds to.
+//! `Router` that the server binds to. The outermost-to-innermost layer order
+//! follows spec §7.2.
 
+use axum::http::{HeaderValue, Method};
 use axum::routing::{get, post};
 use axum::Router;
 use rustcloud_core::AppState;
+use tower_http::catch_panic::CatchPanicLayer;
+use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_http::limit::RequestBodyLimitLayer;
+use tower_http::trace::TraceLayer;
 
 use crate::csrf::CsrfLayer;
 use crate::middleware::proxy_headers::ProxyHeadersLayer;
@@ -32,6 +37,29 @@ pub fn build_router(state: AppState) -> Router {
 
     let session_store = SessionStore::new(cache, &instance_id);
 
+    let cors_origins: Vec<HeaderValue> = trusted_domains
+        .iter()
+        .filter_map(|d| {
+            HeaderValue::from_str(&format!("https://{d}"))
+                .ok()
+                .into_iter()
+                .chain(HeaderValue::from_str(&format!("http://{d}")).ok())
+                .collect::<Vec<_>>()
+                .into_iter()
+                .next()
+        })
+        .collect();
+    let cors_layer = CorsLayer::new()
+        .allow_methods([
+            Method::GET,
+            Method::POST,
+            Method::PUT,
+            Method::DELETE,
+            Method::OPTIONS,
+        ])
+        .allow_credentials(true)
+        .allow_origin(AllowOrigin::list(cors_origins));
+
     Router::new()
         .route("/status.php", get(status::handler))
         .route("/index.php/login", post(login::handler))
@@ -40,7 +68,10 @@ pub fn build_router(state: AppState) -> Router {
         .layer(CsrfLayer::new())
         .layer(SessionLayer::new(session_store, secret, secure_cookies))
         .layer(SecurityHeadersLayer::new())
+        .layer(cors_layer)
         .layer(TrustedDomainLayer::new(trusted_domains))
         .layer(ProxyHeadersLayer::new(trusted_proxies))
         .layer(RequestBodyLimitLayer::new(DEFAULT_BODY_LIMIT_BYTES))
+        .layer(CatchPanicLayer::new())
+        .layer(TraceLayer::new_for_http())
 }
