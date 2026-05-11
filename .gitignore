@@ -16,3 +16,6 @@ Thumbs.db
 .vscode/*
 !.vscode/settings.json
 !.vscode/extensions.json
+
+# Node (e2e)
+node_modules/
