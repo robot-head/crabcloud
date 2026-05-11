@@ -204,15 +204,31 @@ jobs:
           first_script=$(grep -oE '<script[^>]+src="[^"]+"' /tmp/index.html | head -1 | grep -oE 'src="[^"]+"' | sed 's/src="//;s/"//')
           if [ -n "$first_script" ]; then
             asset_url="http://127.0.0.1:18765$first_script"
-            ASTAT=$(curl -s -o /dev/null -w "%{http_code}" "$asset_url")
+            ASTAT=$(curl -s -o /tmp/bundle.js -w "%{http_code}" "$asset_url")
+            BUNDLE_BYTES=$(wc -c < /tmp/bundle.js)
+            # The wasm-bindgen glue references the .wasm via `new URL(...)`
+            # or a string literal — pull it out and verify reachability.
+            wasm_ref=$(grep -oE '[A-Za-z0-9._/-]+\.wasm' /tmp/bundle.js | head -1)
+            if [ -n "$wasm_ref" ]; then
+              # Try a couple of likely resolutions
+              base_dir=$(dirname "$first_script")
+              for candidate in "$wasm_ref" "$base_dir/$wasm_ref" "/$wasm_ref" "/assets/$wasm_ref"; do
+                # collapse `/./`
+                norm=$(echo "$candidate" | sed 's|/\./|/|g; s|//|/|g')
+                S=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:18765$norm")
+                echo "::notice title=WASM candidate::$norm -> $S"
+              done
+            fi
+            INIT=$(head -c 600 /tmp/bundle.js | tr '\n' ' ' | tr -d '\r')
           else
             ASTAT="(no script)"
+            BUNDLE_BYTES=0
+            INIT=""
+            wasm_ref="(no wasm ref)"
           fi
-          # Emit via ::error:: so the message is visible in the public job page
-          # annotation panel — step logs are auth-walled, annotations are not.
           echo "::error title=Served HTML diagnostic::status=$STATUS bytes=$BYTES head=$HEAD"
-          echo "::error title=Asset diagnostic::scripts=$SCRIPTS first_script=$first_script first_script_status=$ASTAT"
-          echo "--- full HTML ---"
+          echo "::error title=Asset diagnostic::scripts=$SCRIPTS first_script=$first_script first_script_status=$ASTAT bundle_bytes=$BUNDLE_BYTES wasm_ref=$wasm_ref"
+          echo "::error title=Bundle head::$INIT"
           cat /tmp/index.html
       - name: Run Playwright tests
         working-directory: e2e
