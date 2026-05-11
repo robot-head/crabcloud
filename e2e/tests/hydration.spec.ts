@@ -58,9 +58,13 @@ test.describe("Crabcloud SSR + hydration", () => {
         );
     });
 
-    test("404 path returns 404 status", async ({ page }) => {
+    test("404 path returns 404 status with rendered NotFound page", async ({ page }) => {
         const response = await page.goto("/this/does/not/exist");
         expect(response!.status()).toBe(404);
-        await expect(page.locator("body")).toContainText("Not Found");
+        // Assert against the SSR response body (what crawlers see) rather
+        // than the live DOM. The status code is set by the NotFoundRoute
+        // component via `FullstackContext::commit_http_status`.
+        const html = await response!.text();
+        expect(html).toContain("404 — Not Found");
     });
 });
