@@ -56,7 +56,14 @@ pub fn render_app_html(ctx: RequestContext, path: &str) -> String {
         },
     );
     vdom.rebuild_in_place();
-    dioxus_ssr::render(&vdom)
+    // `pre_render` (vs plain `render`) is what emits `data-node-hydration`
+    // markers on every element. The WASM client's `dioxus_web` runtime reads
+    // them on launch to map the existing DOM tree back to its virtual-DOM
+    // nodes; without them, hydration silently no-ops and `use_effect`s never
+    // fire — so e.g. our `App` component's `data-hydrated` signal stays
+    // stuck at `"false"`. This is the dx 0.7 split that bit us after the
+    // Dioxus 0.6 → 0.7 upgrade.
+    dioxus_ssr::pre_render(&vdom)
 }
 
 #[component]
