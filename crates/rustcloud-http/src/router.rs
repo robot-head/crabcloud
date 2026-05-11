@@ -35,6 +35,7 @@ pub fn build_router(state: AppState) -> Router {
     Router::new()
         .route("/status.php", get(status::handler))
         .route("/index.php/login", post(login::handler))
+        .nest("/ocs", crate::routes::ocs::router())
         .with_state(state)
         .layer(CsrfLayer::new())
         .layer(SessionLayer::new(session_store, secret, secure_cookies))

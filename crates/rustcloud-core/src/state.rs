@@ -72,6 +72,17 @@ impl AppStateBuilder {
         self
     }
 
+    /// Register the default `CoreCapabilities` provider on bootstrap so the
+    /// `core` namespace is non-empty at the `/ocs/.../capabilities` route.
+    pub fn with_core_capabilities(self) -> Self {
+        use rustcloud_ocs::CoreCapabilities;
+        let core = std::sync::Arc::new(CoreCapabilities::default());
+        self.with_hook(crate::bootstrap::boxed_hook(move |state| async move {
+            state.register_capability_provider(core).await;
+            Ok(())
+        }))
+    }
+
     /// Build the `AppState`:
     /// 1. Connect the DB pool.
     /// 2. Run core migrations.
@@ -199,6 +210,20 @@ mod tests {
             state.appconfig.get("core", "bootstrapped").await.unwrap(),
             Some("yes".to_string())
         );
+    }
+
+    #[tokio::test]
+    async fn with_core_capabilities_registers_the_provider() {
+        let dir = tempdir().unwrap();
+        let cfg = cfg_sqlite(dir.path().join("caps.db"));
+        let state = AppStateBuilder::new(cfg)
+            .with_core_capabilities()
+            .build()
+            .await
+            .unwrap();
+        let guard = state.capability_providers.lock().await;
+        assert_eq!(guard.len(), 1);
+        assert_eq!(guard[0].namespace(), "core");
     }
 
     #[tokio::test]
