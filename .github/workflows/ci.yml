@@ -60,7 +60,7 @@ jobs:
         with:
           name: dx-public
           path: target/dx/rustcloud-ui/release/web/public
-      - run: cargo test --workspace --lib --bins
+      - run: cargo test --workspace
 
   test-multidialect:
     runs-on: ubuntu-latest
