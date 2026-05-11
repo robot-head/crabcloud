@@ -15,11 +15,7 @@ pub use error::{UsersError, UsersResult};
 pub use group::{Group, GroupId};
 pub use password::{BcryptVerifier, PasswordVerifier, BCRYPT_COST};
 pub use service::UsersService;
+pub use store::bootstrap_shim::BootstrapAdminBackend;
 pub use store::sql::{SqlGroupStore, SqlPreferenceStore, SqlUserStore};
 pub use store::{GroupStore, PreferenceStore, UserStore, UserWithHash};
 pub use user::{User, UserId};
-
-// Workspace deps consumed by later batches in this sub-project. Keeping them
-// listed here lets each batch add the needed code without a Cargo.toml churn
-// commit, but the lint requires we acknowledge them until first use.
-use tracing as _;

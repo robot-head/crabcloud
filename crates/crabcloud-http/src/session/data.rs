@@ -30,6 +30,11 @@ pub struct Session {
     pub csrf_token: String,
     /// Last access timestamp (seconds since epoch). Used for sliding TTL.
     pub last_activity: u64,
+    /// True once the user has cleared 2FA for this session. `#[serde(default)]`
+    /// keeps backwards compatibility with sessions cached before this field
+    /// existed.
+    #[serde(default)]
+    pub two_factor_passed: bool,
 }
 
 impl Session {
@@ -40,6 +45,7 @@ impl Session {
             user_id: None,
             csrf_token: random_token(),
             last_activity: now_secs(),
+            two_factor_passed: false,
         }
     }
 
