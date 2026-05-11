@@ -17,7 +17,7 @@ jobs:
   fmt-and-clippy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -30,7 +30,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: fmt-and-clippy
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
@@ -50,7 +50,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: build-wasm
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
@@ -97,7 +97,7 @@ jobs:
       CRABCLOUD_TEST_MYSQL_URL:    mysql://crabcloud:crabcloud@127.0.0.1:3307/crabcloud
       CRABCLOUD_TEST_POSTGRES_URL: postgres://crabcloud:crabcloud@127.0.0.1:5433/crabcloud
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --test migrate_end_to_end -- --include-ignored
@@ -107,7 +107,7 @@ jobs:
     needs: build-wasm
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
