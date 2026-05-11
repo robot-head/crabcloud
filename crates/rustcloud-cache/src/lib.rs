@@ -8,4 +8,4 @@ mod typed;
 
 pub use memory::MemoryCache;
 pub use trait_def::{Cache, CacheError, CacheResult};
-// `TypedCache` is re-exported in Task 3.
+pub use typed::TypedCache;
