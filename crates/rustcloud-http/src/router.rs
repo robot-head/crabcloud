@@ -1,16 +1,22 @@
 //! axum router composition. `build_router(state)` returns the assembled
-//! `Router` that the server binds to. Sub-routers are added one at a time
-//! as Phase 3 tasks land them.
+//! `Router` that the server binds to.
 
 use axum::routing::get;
 use axum::Router;
 use rustcloud_core::AppState;
 
+use crate::middleware::proxy_headers::ProxyHeadersLayer;
+use crate::middleware::trusted_domain::TrustedDomainLayer;
 use crate::routes::status;
 
 /// Build the full HTTP router for the application.
 pub fn build_router(state: AppState) -> Router {
+    let trusted_proxies = state.config.trusted_proxies.clone();
+    let trusted_domains = state.config.trusted_domains.clone();
+
     Router::new()
         .route("/status.php", get(status::handler))
         .with_state(state)
+        .layer(TrustedDomainLayer::new(trusted_domains))
+        .layer(ProxyHeadersLayer::new(trusted_proxies))
 }

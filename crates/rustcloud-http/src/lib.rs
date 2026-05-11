@@ -4,6 +4,7 @@
 //! See `docs/superpowers/specs/2026-05-10-platform-core-design.md` §7.
 
 mod error;
+pub mod middleware;
 mod router;
 mod routes;
 

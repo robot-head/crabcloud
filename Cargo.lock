@@ -1757,6 +1757,7 @@ dependencies = [
  "base64",
  "bcrypt",
  "cookie",
+ "futures",
  "hmac",
  "hyper",
  "rand",

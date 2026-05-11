@@ -29,6 +29,7 @@ bcrypt = "0.16"
 clap = { version = "4.5", features = ["derive", "env"] }
 cookie = { version = "0.18", features = ["percent-encode"] }
 figment = { version = "0.10", features = ["toml", "env"] }
+futures = "0.3"
 hmac = "0.12"
 hyper = { version = "1.5", features = ["http1", "server"] }
 rand = "0.8"
