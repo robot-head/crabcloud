@@ -8,6 +8,7 @@ members = [
     "crates/rustcloud-i18n",
     "crates/rustcloud-ocs",
     "crates/rustcloud-server",
+    "crates/rustcloud-ui",
     "xtask",
 ]
 resolver = "2"
@@ -71,6 +72,13 @@ rustcloud-db = { path = "crates/rustcloud-db" }
 rustcloud-http = { path = "crates/rustcloud-http" }
 rustcloud-i18n = { path = "crates/rustcloud-i18n" }
 rustcloud-ocs = { path = "crates/rustcloud-ocs" }
+rustcloud-ui = { path = "crates/rustcloud-ui" }
+
+dioxus = { version = "0.6", default-features = false, features = ["macro", "html", "signals", "hooks"] }
+dioxus-router = { version = "0.6", default-features = false }
+dioxus-ssr = "0.6"
+dioxus-web = { version = "0.6", default-features = false }
+rust-embed = { version = "8", features = ["debug-embed"] }
 
 [profile.release]
 lto = "thin"

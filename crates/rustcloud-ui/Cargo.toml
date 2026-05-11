@@ -1,0 +1,44 @@
+[package]
+name = "rustcloud-ui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[lib]
+crate-type = ["rlib"]
+
+# A native `[[bin]]` target for the WASM client. `dx` compiles this against
+# `wasm32-unknown-unknown` for the browser.
+[[bin]]
+name = "rustcloud-ui-web"
+path = "src/main.rs"
+
+[dependencies]
+axum.workspace = true
+dioxus = { workspace = true, features = ["router"] }
+dioxus-router.workspace = true
+rust-embed.workspace = true
+rustcloud-core.workspace = true
+rustcloud-http.workspace = true
+rustcloud-i18n.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tower.workspace = true
+tracing.workspace = true
+
+# Server-side rendering — only compile on non-wasm targets.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+dioxus-ssr.workspace = true
+
+# Browser WASM — only compile when targeting wasm32.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+dioxus-web.workspace = true
+
+[dev-dependencies]
+rustcloud-cache.workspace = true
+rustcloud-config.workspace = true
+rustcloud-db.workspace = true
+secrecy = { workspace = true, features = ["serde"] }
+tempfile.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
