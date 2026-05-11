@@ -8,18 +8,20 @@
 
 #[cfg(target_arch = "wasm32")]
 mod web {
-    use crabcloud_ui::{RequestContext, Route};
+    use crabcloud_ui::{App, RequestContext};
     use dioxus::prelude::*;
 
     /// Top-level component. Reads the hydration payload from the DOM on first
-    /// render, installs it as the request context, then mounts the router.
+    /// render, installs it as the request context, then mounts the same `App`
+    /// component the SSR side renders so the DOM trees line up for hydration
+    /// (the `#app-root` / `data-hydrated` marker lives inside `App`).
     #[component]
     pub fn AppRoot() -> Element {
         let ctx = use_hook(|| {
             read_hydration_context().unwrap_or_else(|| RequestContext::anonymous("en", ""))
         });
         use_context_provider(|| ctx.clone());
-        rsx! { Router::<Route> {} }
+        rsx! { App {} }
     }
 
     pub fn launch() {
