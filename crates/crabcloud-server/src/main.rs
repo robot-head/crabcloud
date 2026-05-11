@@ -47,9 +47,10 @@ async fn main() -> Result<()> {
                  dialects:  sqlite, mysql, postgres\n\
                  subproject: platform-core",
                 pkg_ver = env!("CARGO_PKG_VERSION"),
-                git_sha = option_env!("VERGEN_GIT_SHA")
-                    .or_else(|| option_env!("CRABCLOUD_GIT_SHA"))
-                    .unwrap_or("unknown"),
+                // `CRABCLOUD_GIT_SHA` is set by `build.rs` via `git rev-parse`.
+                // `VERGEN_GIT_SHA` fallback was dropped: `vergen-gix` requires
+                // a Rust 1.88+ transitive, above our 1.85 MSRV.
+                git_sha = option_env!("CRABCLOUD_GIT_SHA").unwrap_or("unknown"),
             );
             return Ok(());
         }

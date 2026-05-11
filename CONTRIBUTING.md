@@ -24,6 +24,10 @@ the dep tree buildable on 1.85. If `cargo update` pulls a crate that
 requires a newer rustc, either pin via `cargo update -p <crate> --precise <ver>`
 or update the toolchain. Don't drift silently.
 
+## Asset placeholder
+
+`crates/crabcloud-ui/build.rs` creates an empty `target/dx/crabcloud-ui/release/web/public/` directory at compile time so the `rust-embed`-based asset handler compiles on fresh checkouts before `dx build` has populated the real bundle. Don't delete it.
+
 ## Workflow
 
 ```bash
