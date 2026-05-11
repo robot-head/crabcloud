@@ -8,7 +8,11 @@ use crate::error::{CoreResult, Error};
 use rustcloud_cache::Cache;
 use rustcloud_db::DbPool;
 use std::sync::Arc;
-use std::time::Duration;
+
+/// Per-key TTL for the `oc_appconfig` write-through cache. Short enough that
+/// admin-UI changes propagate within a minute; long enough that hot reads are
+/// amortized.
+const APPCONFIG_CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(60);
 
 #[derive(Clone)]
 pub struct AppConfigService {
@@ -55,17 +59,22 @@ impl AppConfigService {
             Some(s) => s.as_bytes(),
             None => &[],
         };
-        let _ = self
+        if let Err(e) = self
             .cache
-            .set(&ck, sentinel, Some(Duration::from_secs(60)))
-            .await;
+            .set(&ck, sentinel, Some(APPCONFIG_CACHE_TTL))
+            .await
+        {
+            tracing::warn!(error = %e, appid, key, "failed to write appconfig cache");
+        }
         Ok(v)
     }
 
     pub async fn set(&self, appid: &str, key: &str, value: &str) -> CoreResult<()> {
         self.write_db(appid, key, value).await?;
         // Invalidate; next read will repopulate.
-        let _ = self.cache.del(&self.cache_key(appid, key)).await;
+        if let Err(e) = self.cache.del(&self.cache_key(appid, key)).await {
+            tracing::warn!(error = %e, appid, key, "failed to invalidate appconfig cache");
+        }
         Ok(())
     }
 
