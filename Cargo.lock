@@ -1542,6 +1542,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "rustcloud-cache"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "rustcloud-config"
 version = "0.1.0"
 dependencies = [
