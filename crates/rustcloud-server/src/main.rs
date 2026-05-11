@@ -7,6 +7,30 @@ use tracing::info;
 
 use crate::cli::{Cli, Cmd};
 
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("install Ctrl-C handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("install SIGTERM handler")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => info!("received Ctrl-C, shutting down"),
+        _ = terminate => info!("received SIGTERM, shutting down"),
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     crate::telemetry::init();
@@ -22,12 +46,34 @@ async fn main() -> Result<()> {
         }
         Cmd::Serve => {
             let config = rustcloud_config::load(&cli.config, &[])?;
+            let bind = config.bind_address;
             info!(
-                instanceid = %config.instanceid,
                 dbtype = %config.dbtype.as_str(),
-                "loaded config; serve subcommand not yet implemented"
+                bind = %bind,
+                "starting Rustcloud server"
             );
-            anyhow::bail!("`serve` is implemented in a later phase");
+
+            let state = rustcloud_core::AppStateBuilder::new(config)
+                .with_core_capabilities()
+                .build()
+                .await?;
+
+            let router = rustcloud_http::build_router(state.clone());
+
+            let listener = tokio::net::TcpListener::bind(bind).await?;
+            let local_addr = listener.local_addr()?;
+            info!(addr = %local_addr, "listening");
+
+            axum::serve(
+                listener,
+                router.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+            )
+            .with_graceful_shutdown(shutdown_signal())
+            .await?;
+
+            info!("server stopped");
+            state.pool.close().await;
+            Ok(())
         }
         Cmd::Migrate => {
             let config = rustcloud_config::load(&cli.config, &[])?;

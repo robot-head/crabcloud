@@ -1810,9 +1810,11 @@ name = "rustcloud-server"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "axum",
  "clap",
  "rustcloud-config",
  "rustcloud-core",
+ "rustcloud-http",
  "tokio",
  "tracing",
  "tracing-subscriber",
