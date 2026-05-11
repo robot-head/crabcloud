@@ -24,6 +24,10 @@ fn map_sqlx<T>(r: Result<T, sqlx::Error>) -> UsersResult<T> {
     r.map_err(|e| UsersError::Db(DbError::Sqlx(e)))
 }
 
+/// Strict-by-design: returns `Err` if a DB email fails to re-parse. Writes
+/// canonicalize through `Email::parse` (`set_email`, `create`), so a parse
+/// failure here means DB corruption or an import path that bypassed
+/// `set_email`.
 fn row_to_user(
     uid: String,
     display: Option<String>,
@@ -460,6 +464,8 @@ impl UserStore for SqlUserStore {
         Ok(())
     }
 
+    /// Best-effort: silently ignores missing rows so we don't fail an
+    /// otherwise-successful auth on a concurrent-delete race.
     async fn touch_last_seen(&self, uid: &UserId) -> UsersResult<()> {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -1119,5 +1125,39 @@ mod tests {
             .await
             .unwrap_err();
         assert!(matches!(err, UsersError::EmailAlreadyTaken));
+    }
+
+    #[tokio::test]
+    async fn lookup_for_auth_returns_hash_when_login_matches_email() {
+        let pool = fresh_pool().await;
+        let store = SqlUserStore::new(pool);
+        store
+            .create(
+                &User {
+                    uid: UserId::new("frank").unwrap(),
+                    display_name: "Frank".into(),
+                    email: Some(Email::parse("frank@example.com").unwrap()),
+                    enabled: true,
+                    last_seen: 0,
+                },
+                Some("stored-hash-value"),
+            )
+            .await
+            .unwrap();
+
+        let by_uid = store.lookup_for_auth("frank").await.unwrap().unwrap();
+        assert_eq!(by_uid.password_hash.as_deref(), Some("stored-hash-value"));
+        assert_eq!(by_uid.user.uid.as_str(), "frank");
+
+        let by_email = store
+            .lookup_for_auth("FRANK@example.com")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(by_email.password_hash.as_deref(), Some("stored-hash-value"));
+        assert_eq!(by_email.user.uid.as_str(), "frank");
+
+        let miss = store.lookup_for_auth("nobody@nowhere.com").await.unwrap();
+        assert!(miss.is_none());
     }
 }
