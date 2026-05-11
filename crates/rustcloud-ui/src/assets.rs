@@ -29,7 +29,7 @@ pub async fn handler(Path(path): Path<String>) -> Response {
         HeaderValue::from_str(mime).unwrap_or(HeaderValue::from_static("application/octet-stream")),
     );
     // Long-cache hashed assets (Dioxus names them with content hashes).
-    if path.ends_with(".wasm") || path.contains("/dioxus/") {
+    if path.ends_with(".wasm") || path.starts_with("dioxus/") || path.contains("/dioxus/") {
         resp.headers_mut().insert(
             header::CACHE_CONTROL,
             HeaderValue::from_static("public, max-age=31536000, immutable"),
