@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "crates/rustcloud-server",
     "xtask",
 ]
 resolver = "2"
