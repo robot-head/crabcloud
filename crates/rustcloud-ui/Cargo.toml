@@ -14,17 +14,13 @@ name = "rustcloud-ui-web"
 path = "src/main.rs"
 
 [dependencies]
-axum.workspace = true
 dioxus = { workspace = true, features = ["router"] }
+dioxus-history.workspace = true
 dioxus-router.workspace = true
 rust-embed.workspace = true
-rustcloud-core.workspace = true
-rustcloud-http.workspace = true
-rustcloud-i18n.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
-tower.workspace = true
 tracing.workspace = true
 
 # Server-side rendering — only compile on non-wasm targets.

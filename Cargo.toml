@@ -75,6 +75,7 @@ rustcloud-ocs = { path = "crates/rustcloud-ocs" }
 rustcloud-ui = { path = "crates/rustcloud-ui" }
 
 dioxus = { version = "0.6", default-features = false, features = ["macro", "html", "signals", "hooks"] }
+dioxus-history = "0.6"
 dioxus-router = { version = "0.6", default-features = false }
 dioxus-ssr = "0.6"
 dioxus-web = { version = "0.6", default-features = false }

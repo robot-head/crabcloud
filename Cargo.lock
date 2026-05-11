@@ -2292,6 +2292,7 @@ dependencies = [
  "rustcloud-db",
  "rustcloud-i18n",
  "rustcloud-ocs",
+ "rustcloud-ui",
  "secrecy",
  "serde",
  "serde_json",
@@ -2348,25 +2349,21 @@ dependencies = [
 name = "rustcloud-ui"
 version = "0.1.0"
 dependencies = [
- "axum",
  "dioxus",
+ "dioxus-history",
  "dioxus-router",
  "dioxus-ssr",
  "dioxus-web",
  "rust-embed",
  "rustcloud-cache",
  "rustcloud-config",
- "rustcloud-core",
  "rustcloud-db",
- "rustcloud-http",
- "rustcloud-i18n",
  "secrecy",
  "serde",
  "serde_json",
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
- "tower",
  "tracing",
 ]
 
