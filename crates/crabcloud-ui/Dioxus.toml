@@ -9,7 +9,11 @@ out_dir = "public"
 
 [web.app]
 title = "Crabcloud"
-base_path = "assets"
+# `base_path` was previously "assets", which made dx emit script src URLs like
+# `/assets/assets/<bundle>.js` — double `assets/` prefix → 404 in the browser.
+# The bundle already lives under `public/assets/`, and the fullstack server
+# (`dioxus::server::router`) serves the public dir at the URL root, so paths
+# resolve correctly without a base_path override.
 
 [web.watcher]
 reload_html = false
