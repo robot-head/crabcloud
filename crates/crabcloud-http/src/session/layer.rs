@@ -186,7 +186,13 @@ where
             } else {
                 let final_session = handle.inner.lock().await.clone();
                 if let Some(uid) = &final_session.user_id {
-                    let _ = store.record_for_user(uid, &handle.id).await;
+                    if let Err(e) = store.record_for_user(uid, &handle.id).await {
+                        ::tracing::warn!(
+                            error = ?e,
+                            uid = %uid,
+                            "failed to record session in user index; destroy_all_for may miss this session"
+                        );
+                    }
                 }
                 let _ = store.save(&handle.id, &final_session).await;
                 let cookie_value =

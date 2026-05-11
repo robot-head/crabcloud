@@ -64,6 +64,11 @@ impl SessionStore {
     /// Record `id` in the per-user session index so it can later be revoked
     /// via [`destroy_all_for`] / [`destroy_all_for_except`]. Idempotent.
     pub async fn record_for_user(&self, uid: &str, id: &SessionId) -> Result<(), CacheError> {
+        // Read-modify-write: concurrent logins for the same user can race and
+        // lose an index entry (last writer wins). Accepted per plan §8 — the
+        // impact is that `destroy_all_for` may miss one session on a tight
+        // race; the sliding SESSION_IDLE_TTL refresh recovers the index once
+        // either session re-saves.
         let key = self.user_index_key(uid);
         let current: Vec<String> = match self.cache.get(&key).await? {
             Some(bytes) => serde_json::from_slice(&bytes).unwrap_or_default(),

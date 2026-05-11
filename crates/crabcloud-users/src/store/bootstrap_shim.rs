@@ -81,6 +81,12 @@ impl UserStore for BootstrapAdminBackend {
         Ok(None)
     }
 
+    /// Promote-on-write: if `uid` matches the virtual admin, INSERT into oc_users
+    /// and add to the admin group. The two operations are not atomic — if
+    /// `add_to_group` fails after `inner.create` succeeds, the user lands in
+    /// oc_users without admin group membership and the shim will not auto-recover
+    /// (subsequent calls go through the delegate path). Operators should restore
+    /// admin membership via the CLI (`group-add-member admin <uid>`) in that case.
     async fn set_password(&self, uid: &UserId, new_hash: &str) -> UsersResult<()> {
         if self.inner.lookup(uid).await?.is_some() {
             return self.inner.set_password(uid, new_hash).await;
@@ -88,9 +94,14 @@ impl UserStore for BootstrapAdminBackend {
         if uid.as_str() == self.admin.username {
             let user = self.synthesized_user()?;
             self.inner.create(&user, Some(new_hash)).await?;
-            self.groups
-                .add_to_group(&user.uid, &GroupId::new("admin")?)
-                .await?;
+            let admin = GroupId::new("admin")?;
+            // Idempotency: a re-run after a partial create+add failure is not
+            // reachable through the shim (the inner.lookup branch will short-
+            // circuit), but defend anyway in case a future bootstrap path
+            // pre-seeds the user row without the group.
+            if !self.groups.is_in_group(&user.uid, &admin).await? {
+                self.groups.add_to_group(&user.uid, &admin).await?;
+            }
             tracing::info!(
                 uid = uid.as_str(),
                 "promoted bootstrap admin to oc_users; remove [bootstrap_admin] from config.toml"
@@ -100,6 +111,10 @@ impl UserStore for BootstrapAdminBackend {
         Err(UsersError::NotFound)
     }
 
+    /// Non-password mutators on the virtual admin return `ReadOnly`. Promote
+    /// the admin first by calling `set_password` (which INSERTs into oc_users),
+    /// then these mutators take effect on the real DB row. Promote-then-set in
+    /// one call is intentionally deferred — see plan §7.
     async fn set_display_name(&self, uid: &UserId, new: &str) -> UsersResult<()> {
         if self.inner.lookup(uid).await?.is_some() {
             return self.inner.set_display_name(uid, new).await;
