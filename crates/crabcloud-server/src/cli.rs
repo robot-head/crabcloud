@@ -25,6 +25,24 @@ pub enum Cmd {
     Migrate,
     /// Print version information.
     Version,
+    /// Create a user (prompts for password on stdin).
+    UserAdd {
+        uid: String,
+        #[arg(long)]
+        admin: bool,
+        #[arg(long)]
+        email: Option<String>,
+        #[arg(long = "display-name")]
+        display_name: Option<String>,
+    },
+    /// Reset a user's password (prompts on stdin).
+    UserSetPassword { uid: String },
+    /// Delete a user (irreversible; prompts for confirmation).
+    UserDelete { uid: String },
+    /// Add a user to a group.
+    GroupAddMember { gid: String, uid: String },
+    /// Remove a user from a group.
+    GroupRemoveMember { gid: String, uid: String },
 }
 
 impl Cli {
@@ -65,5 +83,43 @@ mod tests {
             "version",
         ]);
         assert_eq!(cli.config, std::path::PathBuf::from("/tmp/custom.toml"));
+    }
+
+    #[test]
+    fn user_add_subcommand_parses() {
+        let cli = Cli::parse_from([
+            "crabcloud-server",
+            "user-add",
+            "alice",
+            "--admin",
+            "--email",
+            "alice@example.com",
+        ]);
+        match cli.selected() {
+            Cmd::UserAdd {
+                uid,
+                admin,
+                email,
+                display_name,
+            } => {
+                assert_eq!(uid, "alice");
+                assert!(admin);
+                assert_eq!(email.as_deref(), Some("alice@example.com"));
+                assert!(display_name.is_none());
+            }
+            _ => panic!("expected UserAdd"),
+        }
+    }
+
+    #[test]
+    fn group_add_member_subcommand_parses() {
+        let cli = Cli::parse_from(["crabcloud-server", "group-add-member", "admin", "bob"]);
+        match cli.selected() {
+            Cmd::GroupAddMember { gid, uid } => {
+                assert_eq!(gid, "admin");
+                assert_eq!(uid, "bob");
+            }
+            _ => panic!("expected GroupAddMember"),
+        }
     }
 }
