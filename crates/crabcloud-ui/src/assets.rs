@@ -13,7 +13,7 @@ use axum::response::{IntoResponse, Response};
 use rust_embed::RustEmbed;
 
 #[derive(RustEmbed)]
-#[folder = "$CARGO_MANIFEST_DIR/../../target/dx/crabcloud-ui/release/web/public"]
+#[folder = "$CARGO_MANIFEST_DIR/../../target/dx/crabcloud-ui-web/release/web/public"]
 #[exclude = "*.map"]
 struct Assets;
 

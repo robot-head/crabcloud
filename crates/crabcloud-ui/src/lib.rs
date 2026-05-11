@@ -6,6 +6,19 @@
 // own test build. Quiet those here so the genuine signal stays visible.
 #![cfg_attr(test, allow(unused_crate_dependencies))]
 
+// Wasm32 target pulls in deps consumed only by the WASM bin or by SSR code
+// that's cfg-gated out for this target; the lib build flags them as unused
+// extern crates. Silence them on the wasm32 target only.
+#[cfg(target_arch = "wasm32")]
+#[allow(unused_extern_crates)]
+mod _wasm_lint_silencer {
+    use console_error_panic_hook as _;
+    use dioxus_history as _;
+    use dioxus_web as _;
+    use rust_embed as _;
+    use web_sys as _;
+}
+
 // `dioxus_router` is referenced indirectly via `dioxus::prelude::*` re-exports.
 // Keep an explicit crate-level use so the unused-crate-dependencies lint
 // recognizes the dependency.
