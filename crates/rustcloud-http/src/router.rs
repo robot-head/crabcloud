@@ -15,7 +15,7 @@ use crate::csrf::CsrfLayer;
 use crate::middleware::proxy_headers::ProxyHeadersLayer;
 use crate::middleware::security_headers::SecurityHeadersLayer;
 use crate::middleware::trusted_domain::TrustedDomainLayer;
-use crate::routes::{login, status};
+use crate::routes::{login, status, ui};
 use crate::session::{SessionLayer, SessionStore};
 
 /// Default request body limit (matches spec §7.2): 512 MiB.
@@ -62,6 +62,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/status.php", get(status::handler))
         .route("/index.php/login", post(login::handler))
         .nest("/ocs", crate::routes::ocs::router())
+        .fallback(ui::handler)
         .with_state(state)
         .layer(CsrfLayer::new())
         .layer(SessionLayer::new(session_store, secret, secure_cookies))

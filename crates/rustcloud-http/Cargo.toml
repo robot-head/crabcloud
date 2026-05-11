@@ -21,6 +21,7 @@ rustcloud-config.workspace = true
 rustcloud-core.workspace = true
 rustcloud-i18n.workspace = true
 rustcloud-ocs.workspace = true
+rustcloud-ui.workspace = true
 secrecy.workspace = true
 serde.workspace = true
 serde_json.workspace = true

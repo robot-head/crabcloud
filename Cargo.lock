@@ -2292,7 +2292,6 @@ dependencies = [
  "rustcloud-db",
  "rustcloud-i18n",
  "rustcloud-ocs",
- "rustcloud-ui",
  "secrecy",
  "serde",
  "serde_json",
