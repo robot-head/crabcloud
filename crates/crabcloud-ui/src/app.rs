@@ -56,6 +56,11 @@ pub fn NotFoundRoute(segments: Vec<String>) -> Element {
     rsx! { NotFound {} }
 }
 
+/// App stylesheet. Bundled via `asset!()` so dx hashes the path and copies
+/// the file into the wasm bundle (otherwise the Dioxus.toml `style` reference
+/// would point at a path the bundler doesn't ship).
+const APP_CSS: Asset = asset!("/assets/app.css");
+
 /// Root component. Captures the per-request context on the server, replays it
 /// on the client via the hydration payload, and provides it to descendants.
 /// Emits `<meta name="requesttoken">` and the `data-hydrated` marker the
@@ -82,6 +87,7 @@ pub fn App() -> Element {
     let request_token = ctx.request_token.clone();
 
     rsx! {
+        document::Stylesheet { href: APP_CSS }
         document::Meta { name: "requesttoken", content: request_token }
         div { id: "app-root", "data-hydrated": "{value}",
             Router::<Route> {}

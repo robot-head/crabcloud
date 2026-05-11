@@ -20,7 +20,10 @@ reload_html = false
 watch_path = ["src", "assets"]
 
 [web.resource]
-style = ["assets/app.css"]
+# Stylesheets are bundled from Rust via `document::Stylesheet { href: asset!(..) }`
+# so dx hashes + ships them. Listing them here would add a second untracked
+# <link> tag that 404s when the served path doesn't match the on-disk one.
+style = []
 script = []
 
 [web.resource.dev]

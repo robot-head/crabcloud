@@ -18,7 +18,12 @@ const XCTO: (&str, &str) = ("x-content-type-options", "nosniff");
 const REFERRER: (&str, &str) = ("referrer-policy", "strict-origin-when-cross-origin");
 const XFO: (&str, &str) = ("x-frame-options", "SAMEORIGIN");
 const CSP_API: &str = "default-src 'none'; frame-ancestors 'self'; base-uri 'self'";
-const CSP_UI: &str = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'self'; base-uri 'self'";
+// `'unsafe-inline'` for scripts is required by dx's generated index.html: the
+// fullstack bundle appends a `<script type="module">__wbg_init({module_or_path:
+// ...})</script>` block that boots wasm-bindgen. Without inline allowance the
+// browser blocks the bootstrap, WASM never initializes, and hydration never
+// fires. Tighten to nonces once dx 0.7 supports them in its template.
+const CSP_UI: &str = "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'self'; base-uri 'self'";
 
 fn csp_for_content_type(ct: Option<&axum::http::HeaderValue>) -> &'static str {
     match ct.and_then(|v| v.to_str().ok()) {
