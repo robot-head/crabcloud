@@ -36,7 +36,10 @@ dioxus-web.workspace = true
 [dev-dependencies]
 rustcloud-cache.workspace = true
 rustcloud-config.workspace = true
+rustcloud-core.workspace = true
 rustcloud-db.workspace = true
+rustcloud-http.workspace = true
 secrecy = { workspace = true, features = ["serde"] }
 tempfile.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tower = { workspace = true, features = ["util"] }

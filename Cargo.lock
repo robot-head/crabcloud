@@ -2421,13 +2421,16 @@ dependencies = [
  "rust-embed",
  "rustcloud-cache",
  "rustcloud-config",
+ "rustcloud-core",
  "rustcloud-db",
+ "rustcloud-http",
  "secrecy",
  "serde",
  "serde_json",
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
+ "tower",
  "tracing",
 ]
 
