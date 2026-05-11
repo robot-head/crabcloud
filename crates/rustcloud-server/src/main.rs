@@ -18,14 +18,24 @@ async fn main() -> Result<()> {
                 "rustcloud-server {} (build target subproject: platform-core)",
                 env!("CARGO_PKG_VERSION")
             );
-            Ok(())
+            return Ok(());
         }
         Cmd::Serve => {
-            info!(config = %cli.config.display(), "serve subcommand not yet implemented");
+            let config = rustcloud_config::load(&cli.config, &[])?;
+            info!(
+                instanceid = %config.instanceid,
+                dbtype = %config.dbtype.as_str(),
+                "loaded config; serve subcommand not yet implemented"
+            );
             anyhow::bail!("`serve` is implemented in a later phase");
         }
         Cmd::Migrate => {
-            info!(config = %cli.config.display(), "migrate subcommand not yet implemented");
+            let config = rustcloud_config::load(&cli.config, &[])?;
+            info!(
+                instanceid = %config.instanceid,
+                dbtype = %config.dbtype.as_str(),
+                "loaded config; migrate subcommand not yet implemented"
+            );
             anyhow::bail!("`migrate` is implemented in Task 10");
         }
     }
