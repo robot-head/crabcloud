@@ -79,6 +79,9 @@ pub struct FileConfig {
     pub bind_address: SocketAddr,
     #[serde(default)]
     pub cache: CacheConfig,
+
+    /// Optional bootstrap admin (Phase 3 deferred-users stand-in).
+    pub bootstrap_admin: Option<BootstrapAdminConfig>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -86,6 +89,17 @@ pub struct FileConfig {
 pub struct CacheConfig {
     #[serde(default = "default_cache_backend")]
     pub backend: String,
+}
+
+/// Phase 3 stub for the deferred users sub-project. A single admin account
+/// whose credentials live in `config.toml`. Real user store lands later.
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+#[serde(deny_unknown_fields)]
+pub struct BootstrapAdminConfig {
+    pub username: String,
+    /// bcrypt hash of the password. Generate with `htpasswd -nBC 12` or
+    /// `bcrypt::hash`.
+    pub password_hash: String,
 }
 
 fn default_db_prefix() -> String {
@@ -175,6 +189,7 @@ mod tests {
             cache: CacheConfig {
                 backend: "memory".to_string(),
             },
+            bootstrap_admin: None,
         }
     }
 
@@ -255,5 +270,30 @@ trusted_domains = ["localhost"]
             Some("https://cloud.example.com")
         );
         assert_eq!(cfg.overwrite_protocol.as_deref(), Some("https"));
+    }
+
+    #[test]
+    fn bootstrap_admin_round_trips_via_toml() {
+        let input = r#"
+instanceid = "i1"
+secret = "s"
+passwordsalt = "ps"
+installed = true
+version = "31.0.0.0"
+versionstring = "31.0.0"
+dbtype = "sqlite"
+dbname = "rustcloud"
+datadirectory = "/var/lib/rustcloud"
+trusted_domains = ["localhost"]
+
+[bootstrap_admin]
+username = "admin"
+password_hash = "$2b$12$abcdefghijklmnopqrstuv"
+"#;
+        let cfg: FileConfig = toml::from_str(input).unwrap();
+        cfg.validate().unwrap();
+        let ba = cfg.bootstrap_admin.unwrap();
+        assert_eq!(ba.username, "admin");
+        assert!(ba.password_hash.starts_with("$2b$"));
     }
 }

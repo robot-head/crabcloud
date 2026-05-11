@@ -160,6 +160,7 @@ mod tests {
             default_language: "en".into(),
             bind_address: "127.0.0.1:0".parse::<SocketAddr>().unwrap(),
             cache: CacheConfig::default(),
+            bootstrap_admin: None,
         }
     }
 
