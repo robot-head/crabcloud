@@ -44,7 +44,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: dx-public
-          path: target/dx/crabcloud-ui/release/web/public
+          path: target/dx/crabcloud-ui-web/release/web/public
 
   test-sqlite:
     runs-on: ubuntu-latest
@@ -59,7 +59,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: dx-public
-          path: target/dx/crabcloud-ui/release/web/public
+          path: target/dx/crabcloud-ui-web/release/web/public
       - run: cargo test --workspace
 
   test-multidialect:
@@ -116,7 +116,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: dx-public
-          path: target/dx/crabcloud-ui/release/web/public
+          path: target/dx/crabcloud-ui-web/release/web/public
       - name: Build release server
         run: cargo build --release -p crabcloud-server
       - uses: actions/setup-node@v4

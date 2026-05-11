@@ -1,4 +1,4 @@
-//! Ensure the `target/dx/crabcloud-ui/release/web/public/` directory exists
+//! Ensure the `target/dx/crabcloud-ui-web/release/web/public/` directory exists
 //! before `rust-embed`'s proc macro inspects it. On a fresh checkout that
 //! never ran `dx build`, the directory wouldn't exist and `#[derive(RustEmbed)]`
 //! would error at compile time. Creating an empty placeholder lets the macro
@@ -17,7 +17,7 @@ fn main() {
     dir.push("..");
     dir.push("target");
     dir.push("dx");
-    dir.push("crabcloud-ui");
+    dir.push("crabcloud-ui-web");
     dir.push("release");
     dir.push("web");
     dir.push("public");
