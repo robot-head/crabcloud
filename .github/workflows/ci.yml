@@ -127,6 +127,23 @@ jobs:
           path: target/dx/crabcloud-ui/release/web/public
       - name: Build release server
         run: cargo build --release -p crabcloud-server
+      - name: Workaround dx wasm-bundle mismatch
+        # `dx build --release` fingerprints both the JS bundle and the .wasm
+        # (`crabcloud-ui-<hash>.js`, `crabcloud-ui_bg-<hash>.wasm`), but the
+        # JS bundle still contains `new URL('./crabcloud-ui_bg.wasm',
+        # import.meta.url)` from wasm-bindgen's ESM glue — that import isn't
+        # rewritten to the hashed name. The dx-appended `__wbg_init(...)`
+        # override fetches the hashed path, but wasm-bindgen's own preload
+        # against the un-hashed name 404s first. Symlink the un-hashed name
+        # to the hashed payload so both code paths resolve.
+        run: |
+          set -e
+          pub=target/dx/crabcloud-ui/release/web/public/assets
+          hashed=$(find "$pub" -name 'crabcloud-ui_bg-*.wasm' -print -quit)
+          if [ -n "$hashed" ] && [ ! -e "$pub/crabcloud-ui_bg.wasm" ]; then
+            ln -sf "$(basename "$hashed")" "$pub/crabcloud-ui_bg.wasm"
+            echo "linked $pub/crabcloud-ui_bg.wasm -> $(basename "$hashed")"
+          fi
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
