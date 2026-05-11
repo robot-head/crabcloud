@@ -1,0 +1,24 @@
+[package]
+name = "rustcloud-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+async-trait.workspace = true
+rustcloud-cache.workspace = true
+rustcloud-config.workspace = true
+rustcloud-db.workspace = true
+rustcloud-i18n.workspace = true
+rustcloud-ocs.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sqlx.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["sync"] }
+tracing.workspace = true
+
+[dev-dependencies]
+secrecy.workspace = true
+tempfile.workspace = true

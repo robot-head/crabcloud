@@ -2,6 +2,7 @@
 members = [
     "crates/rustcloud-cache",
     "crates/rustcloud-config",
+    "crates/rustcloud-core",
     "crates/rustcloud-db",
     "crates/rustcloud-i18n",
     "crates/rustcloud-ocs",
@@ -51,6 +52,7 @@ quick-xml = { version = "0.36", features = ["serialize"] }
 # Internal workspace deps. Entries are added by subsequent tasks when their crate exists.
 rustcloud-cache = { path = "crates/rustcloud-cache" }
 rustcloud-config = { path = "crates/rustcloud-config" }
+rustcloud-core = { path = "crates/rustcloud-core" }
 rustcloud-db = { path = "crates/rustcloud-db" }
 rustcloud-i18n = { path = "crates/rustcloud-i18n" }
 rustcloud-ocs = { path = "crates/rustcloud-ocs" }

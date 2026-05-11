@@ -1597,6 +1597,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "rustcloud-core"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "rustcloud-cache",
+ "rustcloud-config",
+ "rustcloud-db",
+ "rustcloud-i18n",
+ "rustcloud-ocs",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "rustcloud-db"
 version = "0.1.0"
 dependencies = [
