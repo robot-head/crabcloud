@@ -20,6 +20,9 @@ pub struct Migration {
 }
 
 /// A set of migrations for one namespace.
+///
+/// The `migrations` slice MUST be sorted by ascending `version` and contain no duplicate
+/// version numbers; this is debug-asserted in `MigrationRunner::register`.
 #[derive(Debug, Clone)]
 pub struct MigrationSet {
     pub namespace: &'static str,
@@ -42,6 +45,13 @@ impl<'a> MigrationRunner<'a> {
     }
 
     pub fn register(&mut self, set: MigrationSet) -> &mut Self {
+        debug_assert!(
+            set.migrations
+                .windows(2)
+                .all(|w| w[0].version < w[1].version),
+            "migrations for namespace `{}` must be sorted by ascending version and use distinct version numbers",
+            set.namespace
+        );
         self.sets.push(set);
         self
     }

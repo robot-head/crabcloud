@@ -1,6 +1,8 @@
 use crate::error::{DbError, DbResult};
 use rustcloud_config::{DbType, FileConfig};
 use secrecy::ExposeSecret;
+use sqlx::mysql::MySqlConnectOptions;
+use sqlx::postgres::PgConnectOptions;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::{mysql::MySqlPoolOptions, postgres::PgPoolOptions};
 use sqlx::{MySqlPool, PgPool, SqlitePool};
@@ -28,18 +30,44 @@ impl DbPool {
                 Ok(DbPool::Sqlite(pool))
             }
             DbType::Mysql => {
-                let url = build_url(config)?;
+                let host = config
+                    .dbhost
+                    .as_deref()
+                    .ok_or_else(|| DbError::InvalidUrl("dbhost required".into()))?;
+                let mut opts = MySqlConnectOptions::new()
+                    .host(host)
+                    .port(config.dbport.unwrap_or(3306))
+                    .database(&config.dbname);
+                if let Some(user) = config.dbuser.as_deref() {
+                    opts = opts.username(user);
+                }
+                if let Some(pw) = config.dbpassword.as_ref() {
+                    opts = opts.password(pw.expose_secret());
+                }
                 let pool = MySqlPoolOptions::new()
                     .max_connections(max)
-                    .connect(&url)
+                    .connect_with(opts)
                     .await?;
                 Ok(DbPool::MySql(pool))
             }
             DbType::Pgsql => {
-                let url = build_url(config)?;
+                let host = config
+                    .dbhost
+                    .as_deref()
+                    .ok_or_else(|| DbError::InvalidUrl("dbhost required".into()))?;
+                let mut opts = PgConnectOptions::new()
+                    .host(host)
+                    .port(config.dbport.unwrap_or(5432))
+                    .database(&config.dbname);
+                if let Some(user) = config.dbuser.as_deref() {
+                    opts = opts.username(user);
+                }
+                if let Some(pw) = config.dbpassword.as_ref() {
+                    opts = opts.password(pw.expose_secret());
+                }
                 let pool = PgPoolOptions::new()
                     .max_connections(max)
-                    .connect(&url)
+                    .connect_with(opts)
                     .await?;
                 Ok(DbPool::Postgres(pool))
             }
@@ -61,50 +89,6 @@ impl DbPool {
             DbPool::Sqlite(p) => p.close().await,
             DbPool::MySql(p) => p.close().await,
             DbPool::Postgres(p) => p.close().await,
-        }
-    }
-}
-
-/// Build the dialect-appropriate connection URL for MySQL or Postgres.
-/// SQLite uses `SqliteConnectOptions` directly to avoid Windows-path URL issues.
-fn build_url(config: &FileConfig) -> DbResult<String> {
-    match config.dbtype {
-        DbType::Sqlite => Err(DbError::InvalidUrl(
-            "build_url is not used for sqlite; SqliteConnectOptions is used directly".into(),
-        )),
-        DbType::Mysql => {
-            let host = config
-                .dbhost
-                .as_deref()
-                .ok_or_else(|| DbError::InvalidUrl("dbhost required".into()))?;
-            let port = config.dbport.unwrap_or(3306);
-            let user = config.dbuser.as_deref().unwrap_or("");
-            let password = config
-                .dbpassword
-                .as_ref()
-                .map(|s| s.expose_secret().to_string())
-                .unwrap_or_default();
-            Ok(format!(
-                "mysql://{}:{}@{}:{}/{}",
-                user, password, host, port, config.dbname
-            ))
-        }
-        DbType::Pgsql => {
-            let host = config
-                .dbhost
-                .as_deref()
-                .ok_or_else(|| DbError::InvalidUrl("dbhost required".into()))?;
-            let port = config.dbport.unwrap_or(5432);
-            let user = config.dbuser.as_deref().unwrap_or("");
-            let password = config
-                .dbpassword
-                .as_ref()
-                .map(|s| s.expose_secret().to_string())
-                .unwrap_or_default();
-            Ok(format!(
-                "postgres://{}:{}@{}:{}/{}",
-                user, password, host, port, config.dbname
-            ))
         }
     }
 }
@@ -165,25 +149,12 @@ mod tests {
         pool.close().await;
     }
 
-    #[test]
-    fn mysql_url_without_host_errors() {
+    #[tokio::test]
+    async fn mysql_without_host_errors() {
         let mut cfg = cfg_sqlite(PathBuf::from("ignored.db"));
         cfg.dbtype = DbType::Mysql;
         cfg.dbhost = None;
-        let err = build_url(&cfg).unwrap_err();
+        let err = DbPool::connect(&cfg).await.unwrap_err();
         assert!(matches!(err, DbError::InvalidUrl(_)));
-    }
-
-    #[test]
-    fn pgsql_url_builds() {
-        let mut cfg = cfg_sqlite(PathBuf::from("ignored.db"));
-        cfg.dbtype = DbType::Pgsql;
-        cfg.dbhost = Some("127.0.0.1".into());
-        cfg.dbport = Some(5433);
-        cfg.dbuser = Some("u".into());
-        cfg.dbpassword = Some(SecretString::new("p".into()));
-        cfg.dbname = "d".into();
-        let url = build_url(&cfg).unwrap();
-        assert_eq!(url, "postgres://u:p@127.0.0.1:5433/d");
     }
 }
