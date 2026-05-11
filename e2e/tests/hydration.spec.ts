@@ -12,7 +12,10 @@ test.describe("Crabcloud SSR + hydration", () => {
         const htmlBeforeJs = await response!.text();
         expect(htmlBeforeJs).toContain("Welcome, guest");
         expect(htmlBeforeJs).toContain("data-hydrated=\"false\"");
-        expect(htmlBeforeJs).toContain("<script id=\"__dx_ctx\"");
+        // CSRF token surfaces as a <meta requesttoken> tag in the document
+        // head; the custom __dx_ctx JSON payload is gone — context now rides
+        // the standard Dioxus 0.7 hydration data channel via use_server_cached.
+        expect(htmlBeforeJs).toContain("name=\"requesttoken\"");
 
         // After the WASM bundle loads + use_effect runs, the marker flips.
         await expect(page.locator("#app-root")).toHaveAttribute(
@@ -23,13 +26,14 @@ test.describe("Crabcloud SSR + hydration", () => {
     });
 
     test("login flow then home shows authenticated greeting", async ({ page, request }) => {
-        // POST to /index.php/login directly (the form's action). Use the
-        // request context so we can capture and replay the cookie.
+        // /index.php/login is a Dioxus #[server] function (JSON codec, 200 on
+        // success). SessionLayer still attaches the session cookie via
+        // Set-Cookie regardless of the body shape.
         const loginResp = await request.post("/index.php/login", {
-            form: { username: "admin", password: "hunter2" },
-            maxRedirects: 0,
+            data: { username: "admin", password: "hunter2" },
+            headers: { "content-type": "application/json" },
         });
-        expect(loginResp.status()).toBe(303);
+        expect(loginResp.status()).toBe(200);
 
         const cookie = loginResp.headers()["set-cookie"];
         expect(cookie).toContain("oc_sessionPassphrase=");
