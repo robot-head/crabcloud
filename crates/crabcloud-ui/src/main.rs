@@ -33,10 +33,21 @@ mod web {
     }
 
     pub fn launch() {
+        // Hydration (`Config::new().hydrate(true)`) needs a base64 hydration
+        // blob in `window.initial_dioxus_hydration_data` produced by dx 0.7's
+        // *fullstack* server pipeline (serialized signal/suspense state). Our
+        // manual SSR via `dioxus_ssr::pre_render` doesn't emit that blob, so
+        // calling `atob(undefined)` would JS-panic the WASM the moment the
+        // bundle ran — which is why post-Dioxus-0.6→0.7 the page froze with
+        // `data-hydrated="false"`. Fall back to fresh client-side mount: the
+        // SSR DOM is briefly visible, then `dioxus_web` rebuilds the same
+        // tree on top of `#main`, and `App`'s `use_effect` flips the marker.
+        // Migrating to the fullstack feature (needed for true hydration +
+        // streaming) is tracked separately.
         dioxus_web::launch::launch(
             AppRoot,
             Vec::new(),
-            vec![Box::new(dioxus_web::Config::new().hydrate(true))],
+            vec![Box::new(dioxus_web::Config::new().hydrate(false))],
         );
     }
 
