@@ -1,10 +1,12 @@
 //! Rustcloud UI — Dioxus 0.6 application. SSR-first; the WASM client hydrates
 //! the same component tree.
 
+mod app;
 mod context;
 mod hydration;
 pub mod pages;
 
+pub use app::{App, Route};
 pub use context::RequestContext;
 pub use hydration::render_hydration_script;
 
