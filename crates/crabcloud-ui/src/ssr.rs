@@ -57,7 +57,11 @@ pub fn render_app_html(ctx: RequestContext, path: &str) -> String {
         },
     );
     vdom.rebuild_in_place();
-    dioxus_ssr::render(&vdom)
+    // `pre_render` (not `render`) emits the hydration markers dioxus-web 0.7's
+    // client-side hydrator needs to walk the SSR DOM. With plain `render`,
+    // hydration silently fails (no markers to anchor on) and the `App`
+    // component's `use_effect` never fires, so `data-hydrated` stays "false".
+    dioxus_ssr::pre_render(&vdom)
 }
 
 #[component]
