@@ -12,6 +12,7 @@ base64.workspace = true
 bcrypt.workspace = true
 cookie.workspace = true
 futures.workspace = true
+hex.workspace = true
 hmac.workspace = true
 hyper.workspace = true
 rand.workspace = true
@@ -20,6 +21,7 @@ rustcloud-config.workspace = true
 rustcloud-core.workspace = true
 rustcloud-i18n.workspace = true
 rustcloud-ocs.workspace = true
+secrecy.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
@@ -32,6 +34,5 @@ tracing.workspace = true
 
 [dev-dependencies]
 rustcloud-db.workspace = true
-secrecy.workspace = true
 tempfile.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

@@ -7,6 +7,8 @@ mod error;
 pub mod middleware;
 mod router;
 mod routes;
+pub mod session;
 
 pub use error::{ApiError, OcsError};
 pub use router::build_router;
+pub use session::{Session, SessionHandle, SessionId, SessionLayer, SessionStore};
