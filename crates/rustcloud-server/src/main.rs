@@ -39,8 +39,14 @@ async fn main() -> Result<()> {
     match cli.selected() {
         Cmd::Version => {
             println!(
-                "rustcloud-server {} (build target subproject: platform-core)",
-                env!("CARGO_PKG_VERSION")
+                "rustcloud-server {pkg_ver}\n\
+                 git:       {git_sha}\n\
+                 dialects:  sqlite, mysql, postgres\n\
+                 subproject: platform-core",
+                pkg_ver = env!("CARGO_PKG_VERSION"),
+                git_sha = option_env!("VERGEN_GIT_SHA")
+                    .or_else(|| option_env!("RUSTCLOUD_GIT_SHA"))
+                    .unwrap_or("unknown"),
             );
             return Ok(());
         }
