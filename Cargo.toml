@@ -1,6 +1,7 @@
 [workspace]
-# Members are added by subsequent tasks as the corresponding crates are created.
-members = []
+members = [
+    "xtask",
+]
 resolver = "2"
 
 [workspace.package]
