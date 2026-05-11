@@ -2,8 +2,10 @@
 //! the same component tree.
 
 mod context;
+mod hydration;
 
 pub use context::RequestContext;
+pub use hydration::render_hydration_script;
 
 use axum::Router;
 use rustcloud_core::AppState;
