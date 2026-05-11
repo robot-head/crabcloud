@@ -67,3 +67,37 @@ async fn cors_allows_both_http_and_https_origins_for_trusted_domain() {
         assert_eq!(acao.unwrap().to_str().unwrap(), origin);
     }
 }
+
+#[tokio::test]
+async fn cors_preflight_response_has_security_headers() {
+    let dir = tempdir().unwrap();
+    let state = AppStateBuilder::new(cfg(dir.path().join("cors2.db")))
+        .build()
+        .await
+        .unwrap();
+    let app = build_router(state);
+
+    let req = Request::builder()
+        .method(Method::OPTIONS)
+        .uri("/status.php")
+        .header("origin", "http://cloud.example.com")
+        .header("access-control-request-method", "GET")
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+
+    // Security headers must be present even on CORS short-circuit responses.
+    let h = resp.headers();
+    assert!(
+        h.get("strict-transport-security").is_some(),
+        "HSTS missing on preflight"
+    );
+    assert!(
+        h.get("x-content-type-options").is_some(),
+        "XCTO missing on preflight"
+    );
+    assert!(
+        h.get("content-security-policy").is_some(),
+        "CSP missing on preflight"
+    );
+}
