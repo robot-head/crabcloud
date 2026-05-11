@@ -4,6 +4,7 @@ members = [
     "crates/rustcloud-config",
     "crates/rustcloud-core",
     "crates/rustcloud-db",
+    "crates/rustcloud-http",
     "crates/rustcloud-i18n",
     "crates/rustcloud-ocs",
     "crates/rustcloud-server",
@@ -22,11 +23,19 @@ repository = "https://github.com/mdstone/rustcloud"
 [workspace.dependencies]
 anyhow = "1.0"
 async-trait = "0.1"
+axum = { version = "0.8", default-features = false, features = ["http1", "json", "tokio", "tower-log", "matched-path", "original-uri", "query"] }
+base64 = "0.22"
+bcrypt = "0.16"
 clap = { version = "4.5", features = ["derive", "env"] }
+cookie = { version = "0.18", features = ["percent-encode"] }
 figment = { version = "0.10", features = ["toml", "env"] }
+hmac = "0.12"
+hyper = { version = "1.5", features = ["http1", "server"] }
+rand = "0.8"
 secrecy = { version = "0.10", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+sha2 = "0.10"
 sqlx = { version = "0.8", default-features = false, features = [
     "runtime-tokio-rustls",
     "sqlite",
@@ -36,12 +45,15 @@ sqlx = { version = "0.8", default-features = false, features = [
     "macros",
     "migrate",
 ] }
+subtle = "2.6"
 thiserror = "2"
 tempfile = "3"
 testcontainers = "0.23"
 testcontainers-modules = { version = "0.11", features = ["mysql", "postgres"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "fs", "time"] }
 toml = "0.8"
+tower = { version = "0.5", features = ["util"] }
+tower-http = { version = "0.6", features = ["trace", "limit", "cors", "catch-panic"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 
@@ -54,6 +66,7 @@ rustcloud-cache = { path = "crates/rustcloud-cache" }
 rustcloud-config = { path = "crates/rustcloud-config" }
 rustcloud-core = { path = "crates/rustcloud-core" }
 rustcloud-db = { path = "crates/rustcloud-db" }
+rustcloud-http = { path = "crates/rustcloud-http" }
 rustcloud-i18n = { path = "crates/rustcloud-i18n" }
 rustcloud-ocs = { path = "crates/rustcloud-ocs" }
 
