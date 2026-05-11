@@ -26,7 +26,10 @@ pub async fn handler(
         .users
         .verify(&form.username, &form.password)
         .await
-        .map_err(|_| ApiError(CoreError::Unauthorized))?;
+        .map_err(|e| {
+            ::tracing::warn!(username = %form.username, error = %e, "login verify failed");
+            ApiError(CoreError::Unauthorized)
+        })?;
 
     let uid_str = user.uid.as_str().to_string();
     handle
