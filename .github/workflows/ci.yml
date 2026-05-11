@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  SQLX_OFFLINE: "true"
+
+jobs:
+  fmt-and-clippy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+
+  test-sqlite:
+    runs-on: ubuntu-latest
+    needs: fmt-and-clippy
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --workspace --lib --bins
+
+  test-multidialect:
+    runs-on: ubuntu-latest
+    needs: fmt-and-clippy
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: rustcloud
+          MYSQL_DATABASE: rustcloud
+          MYSQL_USER: rustcloud
+          MYSQL_PASSWORD: rustcloud
+        ports:
+          - 3307:3306
+        options: >-
+          --health-cmd="mysqladmin ping -prustcloud"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=12
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: rustcloud
+          POSTGRES_USER: rustcloud
+          POSTGRES_PASSWORD: rustcloud
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd="pg_isready -U rustcloud"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=12
+    env:
+      RUSTCLOUD_TEST_MYSQL_URL:    mysql://rustcloud:rustcloud@127.0.0.1:3307/rustcloud
+      RUSTCLOUD_TEST_POSTGRES_URL: postgres://rustcloud:rustcloud@127.0.0.1:5433/rustcloud
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --test migrate_end_to_end -- --include-ignored
