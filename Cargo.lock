@@ -635,16 +635,21 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "axum",
  "bcrypt",
  "crabcloud-cache",
  "crabcloud-config",
+ "crabcloud-core",
  "crabcloud-db",
+ "crabcloud-http",
  "email_address",
  "serde",
+ "serde_json",
  "sqlx",
  "tempfile",
  "thiserror",
  "tokio",
+ "tower",
  "tracing",
 ]
 

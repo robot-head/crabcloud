@@ -2,6 +2,12 @@
 //!
 //! See `docs/superpowers/specs/2026-05-11-users-core-design.md`.
 
+// Integration tests under `tests/` pull in axum / crabcloud-core / crabcloud-http /
+// serde_json / tower as dev-deps. Those deps are not referenced from the library
+// crate proper, so the `unused-crate-dependencies` lint complains when the lib's
+// own test target is built. Silence it for test builds only.
+#![cfg_attr(test, allow(unused_crate_dependencies))]
+
 pub mod cli;
 mod email;
 mod error;
