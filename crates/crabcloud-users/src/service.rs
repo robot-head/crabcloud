@@ -107,6 +107,43 @@ impl UsersService {
         Ok(())
     }
 
+    /// Flip `enabled=false` AND delete every `oc_authtoken` row for `uid`.
+    ///
+    /// **Non-atomic.** The `set_enabled` UPDATE and the cascade `DELETE` on
+    /// `oc_authtoken` are two separate statements. If the cascade fails after
+    /// the enabled flag is flipped, the user is `enabled=false` with some
+    /// token rows still present — but the AuthLayer's cookie-auth path checks
+    /// `user.enabled` via `service.verify`, so subsequent cookie auth fails.
+    /// Bearer/Basic auth via AuthLayer does NOT currently re-check enabled
+    /// (see the parent spec §6.6); the token-row delete is the primary
+    /// defense. Retry is idempotent: both target tables converge on the
+    /// desired state.
+    pub async fn disable_user(&self, uid: &UserId) -> UsersResult<()> {
+        self.users.set_enabled(uid, false).await?;
+        if let Some(ap) = &self.app_passwords {
+            ap.revoke_all_for_user(uid).await?;
+        }
+        Ok(())
+    }
+
+    /// Delete every `oc_authtoken` row for `uid`, then delete the `oc_users`
+    /// row (which cascades to `oc_group_user` + `oc_preferences` per
+    /// `SqlUserStore::delete`).
+    ///
+    /// **Token-first ordering** is intentional: a racing in-flight auth
+    /// either finds no token (already gone) or 401s. If the order were
+    /// reversed, the brief window between row-delete and token-delete
+    /// could allow a stale token to find a deleted user.
+    ///
+    /// Non-atomic, retry-idempotent — same shape as `disable_user`.
+    pub async fn delete_user(&self, uid: &UserId) -> UsersResult<()> {
+        if let Some(ap) = &self.app_passwords {
+            ap.revoke_all_for_user(uid).await?;
+        }
+        self.users.delete(uid).await?;
+        Ok(())
+    }
+
     pub async fn is_admin(&self, uid: &UserId) -> UsersResult<bool> {
         let admin = GroupId::new("admin")?;
         self.groups.is_in_group(uid, &admin).await
@@ -279,5 +316,118 @@ mod tests {
         svc.set_password(&uid, "new").await.unwrap();
         let err = app_passwords.verify(raw.expose()).await.unwrap_err();
         assert!(matches!(err, crate::UsersError::TokenNotFound));
+    }
+
+    async fn fresh_service_with_app_passwords() -> UsersService {
+        use crate::app_password::AppPasswordService;
+        use crate::store::auth_token::{SqlTokenStore, TokenAuthCache, TokenStore};
+        use crabcloud_cache::MemoryCache;
+        use secrecy::SecretString;
+        let dir = tempdir().unwrap();
+        let cfg =
+            crabcloud_config::test_support::minimal_sqlite_config(dir.path().join("svcap.db"));
+        std::mem::forget(dir);
+        let pool = DbPool::connect(&cfg).await.unwrap();
+        let mut runner = MigrationRunner::new(&pool, &cfg.dbtableprefix);
+        runner.register(core_set());
+        runner.run().await.unwrap();
+        let users: Arc<dyn crate::store::UserStore> = Arc::new(SqlUserStore::new(pool.clone()));
+        let groups: Arc<dyn crate::store::GroupStore> = Arc::new(SqlGroupStore::new(pool.clone()));
+        let prefs: Arc<dyn crate::store::PreferenceStore> =
+            Arc::new(SqlPreferenceStore::new(pool.clone()));
+        let token_store: Arc<dyn TokenStore> = Arc::new(SqlTokenStore::new(pool));
+        let token_cache = Arc::new(TokenAuthCache::new(
+            token_store,
+            Arc::new(MemoryCache::new()),
+            "inst1",
+        ));
+        let app_passwords = Arc::new(AppPasswordService::new(
+            token_cache,
+            SecretString::new("s".into()),
+        ));
+        UsersService::new(users, groups, prefs, Arc::new(BcryptVerifier::new()))
+            .with_app_passwords(app_passwords)
+    }
+
+    #[tokio::test]
+    async fn disable_user_flips_enabled_and_revokes_tokens() {
+        use crate::auth_token::AuthTokenType;
+        let svc = fresh_service_with_app_passwords().await;
+        let uid = UserId::new("alice").unwrap();
+        let hash = svc.verifier.hash("hunter2").unwrap();
+        svc.users
+            .create(
+                &User {
+                    uid: uid.clone(),
+                    display_name: "A".into(),
+                    email: None,
+                    enabled: true,
+                    last_seen: 0,
+                },
+                Some(&hash),
+            )
+            .await
+            .unwrap();
+        let ap = svc.app_passwords().unwrap().clone();
+        let (_row, raw) = ap
+            .mint(&uid, "alice", "DAV", AuthTokenType::AppPassword, false)
+            .await
+            .unwrap();
+        assert!(ap.verify(raw.expose()).await.is_ok());
+
+        svc.disable_user(&uid).await.unwrap();
+
+        let u = svc.users.lookup(&uid).await.unwrap().unwrap();
+        assert!(!u.enabled);
+        let err = ap.verify(raw.expose()).await.unwrap_err();
+        assert!(matches!(err, UsersError::TokenNotFound));
+    }
+
+    #[tokio::test]
+    async fn delete_user_revokes_tokens_then_deletes_row_and_cascades() {
+        use crate::auth_token::AuthTokenType;
+        let svc = fresh_service_with_app_passwords().await;
+        let uid = UserId::new("alice").unwrap();
+        let hash = svc.verifier.hash("hunter2").unwrap();
+        svc.users
+            .create(
+                &User {
+                    uid: uid.clone(),
+                    display_name: "A".into(),
+                    email: None,
+                    enabled: true,
+                    last_seen: 0,
+                },
+                Some(&hash),
+            )
+            .await
+            .unwrap();
+        svc.groups
+            .add_to_group(&uid, &GroupId::new("admin").unwrap())
+            .await
+            .unwrap();
+        svc.prefs.set(&uid, "core", "lang", "en").await.unwrap();
+        let ap = svc.app_passwords().unwrap().clone();
+        let (_row, raw) = ap
+            .mint(&uid, "alice", "DAV", AuthTokenType::AppPassword, false)
+            .await
+            .unwrap();
+
+        svc.delete_user(&uid).await.unwrap();
+
+        // user row gone
+        assert!(svc.users.lookup(&uid).await.unwrap().is_none());
+        // group membership gone (cascade from SqlUserStore::delete)
+        let admins = svc
+            .groups
+            .members_of(&GroupId::new("admin").unwrap())
+            .await
+            .unwrap();
+        assert!(!admins.iter().any(|u| u.as_str() == "alice"));
+        // preference gone (cascade from SqlUserStore::delete)
+        assert!(svc.prefs.get(&uid, "core", "lang").await.unwrap().is_none());
+        // token revoked
+        let err = ap.verify(raw.expose()).await.unwrap_err();
+        assert!(matches!(err, UsersError::TokenNotFound));
     }
 }
