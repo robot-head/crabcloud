@@ -44,7 +44,7 @@ test.describe("Admin OCS endpoints", () => {
         const cookie = `oc_sessionPassphrase=${sessionValue}`;
 
         // 2. Create bob.
-        const create = await request.post("/ocs/v2.php/cloud/users", {
+        const create = await request.post("/ocs/v2.php/cloud/users?format=json", {
             form: { userid: "bob", password: "bobpw", email: "bob@example.com" },
             headers: { "ocs-apirequest": "true", cookie },
         });
@@ -145,7 +145,7 @@ test.describe("Admin OCS endpoints", () => {
         expect(groupMatch).not.toBeNull();
         const cookie = `oc_sessionPassphrase=${groupMatch![1]}`;
 
-        const create = await request.post("/ocs/v2.php/cloud/groups", {
+        const create = await request.post("/ocs/v2.php/cloud/groups?format=json", {
             form: { groupid: "qa", displayname: "QA Team" },
             headers: { "ocs-apirequest": "true", cookie },
         });
