@@ -77,9 +77,9 @@ impl AuthToken {
 pub struct RawToken(SecretString);
 
 impl RawToken {
-    /// Generate a fresh 72-byte token from `OsRng`, base64-URL-encoded
-    /// without padding (~96 ASCII chars). The alphabet is `[A-Za-z0-9_-]`
-    /// — URL-safe and safe to embed in HTTP Basic auth.
+    /// Generate a fresh 72-byte token from the thread-local CSPRNG,
+    /// base64-URL-encoded without padding (~96 ASCII chars). The alphabet is
+    /// `[A-Za-z0-9_-]` — URL-safe and safe to embed in HTTP Basic auth.
     pub fn generate() -> Self {
         let mut buf = [0u8; 72];
         rand::rng().fill_bytes(&mut buf);
