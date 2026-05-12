@@ -32,7 +32,6 @@ pub use view::View;
 // anchor goes away as the corresponding feature is wired up.
 use base64 as _; // used in Batch D (upload_id encode/decode)
 use crabcloud_config as _; // used in Batch E (datadirectory resolution + AppState)
-use tokio as _; // used in Batch B via async stream IO
 use tracing as _; // used in Batches B-D for warn!/info!
 
 // Anchor dev-deps used by integration tests in later batches. Their lib-test
