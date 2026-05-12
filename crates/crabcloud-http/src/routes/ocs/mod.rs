@@ -1,5 +1,6 @@
 //! OCS sub-router under `/ocs/v2.php`.
 
+pub mod admin_groups;
 pub mod admin_users;
 pub mod app_password;
 pub mod capabilities;
@@ -47,5 +48,13 @@ pub fn router() -> Router<AppState> {
             get(admin_users::list_user_groups)
                 .post(admin_users::add_user_to_group)
                 .delete(admin_users::remove_user_from_group),
+        )
+        .route(
+            "/v2.php/cloud/groups",
+            get(admin_groups::list_groups).post(admin_groups::create_group),
+        )
+        .route(
+            "/v2.php/cloud/groups/{gid}",
+            get(admin_groups::list_group_members).delete(admin_groups::delete_group),
         )
 }

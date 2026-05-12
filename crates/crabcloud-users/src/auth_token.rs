@@ -4,7 +4,7 @@ use crate::error::UsersError;
 use crate::user::UserId;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64;
 use base64::Engine;
-use rand::RngCore;
+use rand::Rng;
 use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
 
@@ -82,7 +82,7 @@ impl RawToken {
     /// — URL-safe and safe to embed in HTTP Basic auth.
     pub fn generate() -> Self {
         let mut buf = [0u8; 72];
-        rand::rngs::OsRng.fill_bytes(&mut buf);
+        rand::rng().fill_bytes(&mut buf);
         Self(SecretString::new(B64.encode(buf).into()))
     }
 
