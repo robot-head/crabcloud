@@ -41,6 +41,13 @@ cargo run -p crabcloud-server -- user-add admin --admin
 #     - Alternatively, point your client at https://<your-server>/index.php/login/v2
 #       and follow Nextcloud's authorize-in-browser flow.
 
+# 3d. Administer users + groups via the OCS API (Nextcloud-compatible):
+#     - `POST /ocs/v2.php/cloud/users` with form `userid=<>&password=<>&email=<>&displayName=<>`
+#     - `PUT /ocs/v2.php/cloud/users/<uid>/disable` to force-logout a user everywhere
+#     - `GET /ocs/v2.php/cloud/users?search=<term>` to search by uid/displayname/email
+#     - Authenticate via the admin's session cookie (after logging in) or admin app password.
+#     - The Nextcloud Admin app speaks this API natively — point it at https://<server>.
+
 # 4. Visit http://127.0.0.1:8080/ in a browser.
 ```
 
@@ -52,7 +59,7 @@ cargo run -p crabcloud-server -- user-add admin --admin
 - `crates/crabcloud-i18n` — gettext `.po` loader, `Locale`, `I18n`.
 - `crates/crabcloud-ocs` — OCS envelope (JSON/XML), capabilities aggregator.
 - `crates/crabcloud-core` — `AppState`, `Error`, `AppConfigService`, `BootstrapHook`.
-- `crates/crabcloud-http` — axum router, middleware, session, CSRF, auth extractors, API handlers.
+- `crates/crabcloud-http` — axum router, middleware, session, CSRF, auth extractors, API handlers (including the Nextcloud-compatible admin OCS surface at `/ocs/v2.php/cloud/{users,groups}`).
 - `crates/crabcloud-users` — user/group/preference stores, password verifier, `UsersService` façade, bootstrap-admin shim, `AppPasswordService` + `TokenStore` (auth tokens + Bearer/Basic).
 - `crates/crabcloud-ui` — Dioxus 0.6 SSR + WASM hydration UI.
 - `crates/crabcloud-server` — the binary; CLI, tracing, lifecycle.
