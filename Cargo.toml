@@ -55,7 +55,7 @@ tempfile = "3"
 testcontainers = "0.27"
 testcontainers-modules = { version = "0.15", features = ["mysql", "postgres"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "fs", "time"] }
-toml = "0.9"
+toml = "1.0"
 tower = { version = "0.5", features = ["util"] }
 tower-http = { version = "0.6", features = ["trace", "limit", "cors", "catch-panic"] }
 tracing = "0.1"
