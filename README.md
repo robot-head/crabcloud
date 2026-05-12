@@ -33,6 +33,14 @@ cargo run -p crabcloud-server -- user-add admin --admin
 #     Add [bootstrap_admin] to config.toml with a bcrypt hash;
 #     log in, change your password — your account is now a real DB user.
 
+# 3c. Pair a DAV / desktop / mobile client (Nextcloud-client-compatible):
+#     - Visit https://<your-server>/settings/security in your browser.
+#     - Click "Create app password", enter a device name (e.g. "Phone").
+#     - Copy the displayed token (shown ONCE).
+#     - Configure your client with username + that token as the password.
+#     - Alternatively, point your client at https://<your-server>/index.php/login/v2
+#       and follow Nextcloud's authorize-in-browser flow.
+
 # 4. Visit http://127.0.0.1:8080/ in a browser.
 ```
 
@@ -45,7 +53,7 @@ cargo run -p crabcloud-server -- user-add admin --admin
 - `crates/crabcloud-ocs` — OCS envelope (JSON/XML), capabilities aggregator.
 - `crates/crabcloud-core` — `AppState`, `Error`, `AppConfigService`, `BootstrapHook`.
 - `crates/crabcloud-http` — axum router, middleware, session, CSRF, auth extractors, API handlers.
-- `crates/crabcloud-users` — user/group/preference stores, password verifier, `UsersService` façade, bootstrap-admin shim.
+- `crates/crabcloud-users` — user/group/preference stores, password verifier, `UsersService` façade, bootstrap-admin shim, `AppPasswordService` + `TokenStore` (auth tokens + Bearer/Basic).
 - `crates/crabcloud-ui` — Dioxus 0.6 SSR + WASM hydration UI.
 - `crates/crabcloud-server` — the binary; CLI, tracing, lifecycle.
 - `xtask/` — project automation.
