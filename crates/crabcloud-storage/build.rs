@@ -42,8 +42,15 @@ fn main() {
         })
         .collect();
 
-    for (ext, mime) in &leaked {
-        map.entry(*ext, &format!("\"{}\"", mime));
+    // phf_codegen 0.13 requires the value arg to `entry` to outlive the call,
+    // so format up-front and hold the strings in `quoted_values` for the
+    // lifetime of the map builder.
+    let quoted_values: Vec<String> = leaked
+        .iter()
+        .map(|(_, mime)| format!("\"{}\"", mime))
+        .collect();
+    for ((ext, _), quoted) in leaked.iter().zip(quoted_values.iter()) {
+        map.entry(*ext, quoted);
         count += 1;
     }
 
