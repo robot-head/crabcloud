@@ -5,6 +5,7 @@ members = [
     "crates/crabcloud-core",
     "crates/crabcloud-db",
     "crates/crabcloud-filecache",
+    "crates/crabcloud-fs",
     "crates/crabcloud-http",
     "crates/crabcloud-i18n",
     "crates/crabcloud-ocs",
@@ -80,6 +81,7 @@ crabcloud-config = { path = "crates/crabcloud-config" }
 crabcloud-core = { path = "crates/crabcloud-core" }
 crabcloud-db = { path = "crates/crabcloud-db" }
 crabcloud-filecache = { path = "crates/crabcloud-filecache" }
+crabcloud-fs = { path = "crates/crabcloud-fs" }
 crabcloud-http = { path = "crates/crabcloud-http" }
 crabcloud-i18n = { path = "crates/crabcloud-i18n" }
 crabcloud-ocs = { path = "crates/crabcloud-ocs" }

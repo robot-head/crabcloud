@@ -1,0 +1,26 @@
+[package]
+name = "crabcloud-fs"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+base64.workspace = true
+crabcloud-config.workspace = true
+crabcloud-filecache.workspace = true
+crabcloud-storage.workspace = true
+crabcloud-users.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["fs", "io-util", "sync", "macros"] }
+tracing.workspace = true
+
+[dev-dependencies]
+crabcloud-cache.workspace = true
+crabcloud-config = { workspace = true, features = ["test-support"] }
+crabcloud-db.workspace = true
+tempfile.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "fs", "io-util", "sync", "time"] }
+
+[lints]
+workspace = true
