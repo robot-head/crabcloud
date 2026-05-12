@@ -163,6 +163,13 @@ impl AppStateBuilder {
                 )),
                 None => sql_users,
             };
+            let group_store: Arc<dyn GroupStore> = match &self.config.bootstrap_admin {
+                Some(admin) => Arc::new(crabcloud_users::BootstrapAdminGroupBackend::new(
+                    sql_groups.clone(),
+                    admin.username.clone(),
+                )),
+                None => sql_groups,
+            };
             let token_store: Arc<dyn TokenStore> = Arc::new(SqlTokenStore::new(pool.clone()));
             let token_cache = Arc::new(TokenAuthCache::new(
                 token_store,
@@ -175,7 +182,7 @@ impl AppStateBuilder {
             ));
             UsersService::new(
                 user_store,
-                sql_groups,
+                group_store,
                 sql_prefs,
                 Arc::new(BcryptVerifier::new()),
             )

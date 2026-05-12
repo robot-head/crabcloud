@@ -27,7 +27,7 @@ pub use group::{Group, GroupId};
 pub use password::{BcryptVerifier, PasswordVerifier, BCRYPT_COST};
 pub use service::UsersService;
 pub use store::auth_token::{SqlTokenStore, TokenAuthCache, TokenStore};
-pub use store::bootstrap_shim::BootstrapAdminBackend;
+pub use store::bootstrap_shim::{BootstrapAdminBackend, BootstrapAdminGroupBackend};
 pub use store::sql::{SqlGroupStore, SqlPreferenceStore, SqlUserStore};
 pub use store::{
     GroupListFilter, GroupStore, PreferenceStore, UserListFilter, UserStore, UserWithHash,

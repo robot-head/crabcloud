@@ -3,9 +3,9 @@
 //! user. First write through this backend retires the shim by INSERTing a
 //! real DB row.
 
-use super::{UserStore, UserWithHash};
+use super::{GroupListFilter, UserStore, UserWithHash};
 use crate::error::{UsersError, UsersResult};
-use crate::group::GroupId;
+use crate::group::{Group, GroupId};
 use crate::store::GroupStore;
 use crate::user::{User, UserId};
 use async_trait::async_trait;
@@ -163,6 +163,82 @@ impl UserStore for BootstrapAdminBackend {
     }
 }
 
+/// Wraps any `GroupStore` and synthesizes admin-group membership for the
+/// bootstrap virtual admin. Without this, the `AdminUser` extractor rejects
+/// the virtual admin with 403 (its `is_in_group("admin", "admin")` returns
+/// false because there's no `oc_group_user` row yet).
+///
+/// Spec §6.6: the virtual admin is invisible to admin OCS *listings*
+/// (`members_of("admin")` does NOT include it), but it acts as an admin
+/// caller (`is_in_group` + `groups_of` synthesize the membership).
+pub struct BootstrapAdminGroupBackend {
+    inner: Arc<dyn GroupStore>,
+    admin_username: String,
+}
+
+impl BootstrapAdminGroupBackend {
+    pub fn new(inner: Arc<dyn GroupStore>, admin_username: String) -> Self {
+        Self {
+            inner,
+            admin_username,
+        }
+    }
+}
+
+#[async_trait]
+impl GroupStore for BootstrapAdminGroupBackend {
+    async fn lookup(&self, gid: &GroupId) -> UsersResult<Option<Group>> {
+        self.inner.lookup(gid).await
+    }
+
+    async fn is_in_group(&self, uid: &UserId, gid: &GroupId) -> UsersResult<bool> {
+        if self.inner.is_in_group(uid, gid).await? {
+            return Ok(true);
+        }
+        Ok(uid.as_str() == self.admin_username && gid.as_str() == "admin")
+    }
+
+    async fn groups_of(&self, uid: &UserId) -> UsersResult<Vec<GroupId>> {
+        let mut groups = self.inner.groups_of(uid).await?;
+        if uid.as_str() == self.admin_username {
+            let admin_gid = GroupId::new("admin")?;
+            if !groups.iter().any(|g| g == &admin_gid) {
+                groups.push(admin_gid);
+            }
+        }
+        Ok(groups)
+    }
+
+    /// Virtual admin is invisible to listings — `members_of("admin")` does
+    /// not include it. The `require_not_last_admin` guard then protects only
+    /// against deleting the last *real* admin row, which is the desired
+    /// behavior: if the bootstrap admin still lives in config it can always
+    /// log in and re-promote, so the cluster is never locked out.
+    async fn members_of(&self, gid: &GroupId) -> UsersResult<Vec<UserId>> {
+        self.inner.members_of(gid).await
+    }
+
+    async fn add_to_group(&self, uid: &UserId, gid: &GroupId) -> UsersResult<()> {
+        self.inner.add_to_group(uid, gid).await
+    }
+
+    async fn remove_from_group(&self, uid: &UserId, gid: &GroupId) -> UsersResult<()> {
+        self.inner.remove_from_group(uid, gid).await
+    }
+
+    async fn create(&self, group: &Group) -> UsersResult<()> {
+        self.inner.create(group).await
+    }
+
+    async fn delete(&self, gid: &GroupId) -> UsersResult<()> {
+        self.inner.delete(gid).await
+    }
+
+    async fn list_groups(&self, filter: GroupListFilter<'_>) -> UsersResult<Vec<Group>> {
+        self.inner.list_groups(filter).await
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -252,5 +328,67 @@ mod tests {
         // Promote: set_password creates the oc_users row.
         shim.set_password(&uid, &new_hash).await.unwrap();
         assert!(shim.exists_in_storage(&uid).await.unwrap());
+    }
+
+    async fn make_group_shim() -> (BootstrapAdminGroupBackend, Arc<dyn GroupStore>) {
+        let dir = tempdir().unwrap();
+        let cfg = crabcloud_config::test_support::minimal_sqlite_config(dir.path().join("g.db"));
+        std::mem::forget(dir);
+        let pool = DbPool::connect(&cfg).await.unwrap();
+        let mut runner = MigrationRunner::new(&pool, &cfg.dbtableprefix);
+        runner.register(core_set());
+        runner.run().await.unwrap();
+        let inner: Arc<dyn GroupStore> = Arc::new(SqlGroupStore::new(pool));
+        let shim = BootstrapAdminGroupBackend::new(inner.clone(), "admin".into());
+        (shim, inner)
+    }
+
+    #[tokio::test]
+    async fn group_shim_synthesizes_admin_membership_for_virtual_admin() {
+        let (shim, _inner) = make_group_shim().await;
+        let admin_gid = GroupId::new("admin").unwrap();
+        let virtual_admin = UserId::new("admin").unwrap();
+        assert!(shim.is_in_group(&virtual_admin, &admin_gid).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn group_shim_excludes_non_admin_group_for_virtual_admin() {
+        let (shim, inner) = make_group_shim().await;
+        inner
+            .create(&Group {
+                gid: GroupId::new("devs").unwrap(),
+                display_name: "Devs".into(),
+            })
+            .await
+            .unwrap();
+        let devs_gid = GroupId::new("devs").unwrap();
+        let virtual_admin = UserId::new("admin").unwrap();
+        assert!(!shim.is_in_group(&virtual_admin, &devs_gid).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn group_shim_excludes_real_uid_from_synthesized_admin() {
+        let (shim, _inner) = make_group_shim().await;
+        let admin_gid = GroupId::new("admin").unwrap();
+        let other = UserId::new("alice").unwrap();
+        assert!(!shim.is_in_group(&other, &admin_gid).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn group_shim_groups_of_virtual_admin_includes_admin() {
+        let (shim, _inner) = make_group_shim().await;
+        let groups = shim
+            .groups_of(&UserId::new("admin").unwrap())
+            .await
+            .unwrap();
+        assert!(groups.iter().any(|g| g.as_str() == "admin"));
+    }
+
+    #[tokio::test]
+    async fn group_shim_members_of_admin_excludes_virtual_admin() {
+        let (shim, _inner) = make_group_shim().await;
+        let admin_gid = GroupId::new("admin").unwrap();
+        let members = shim.members_of(&admin_gid).await.unwrap();
+        assert!(!members.iter().any(|u| u.as_str() == "admin"));
     }
 }
