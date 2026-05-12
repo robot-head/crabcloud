@@ -1,5 +1,6 @@
 //! `UsersService` — the public composition handlers reach for.
 
+use crate::app_password::AppPasswordService;
 use crate::error::{UsersError, UsersResult};
 use crate::group::GroupId;
 use crate::password::PasswordVerifier;
@@ -13,6 +14,7 @@ pub struct UsersService {
     groups: Arc<dyn GroupStore>,
     prefs: Arc<dyn PreferenceStore>,
     verifier: Arc<dyn PasswordVerifier>,
+    app_passwords: Option<Arc<AppPasswordService>>,
 }
 
 impl UsersService {
@@ -27,7 +29,15 @@ impl UsersService {
             groups,
             prefs,
             verifier,
+            app_passwords: None,
         }
+    }
+
+    /// Attach an `AppPasswordService` so `set_password` cascades
+    /// `password_invalid=1` on every other token row.
+    pub fn with_app_passwords(mut self, svc: Arc<AppPasswordService>) -> Self {
+        self.app_passwords = Some(svc);
+        self
     }
 
     pub fn user_store(&self) -> &Arc<dyn UserStore> {
@@ -41,6 +51,9 @@ impl UsersService {
     }
     pub fn verifier(&self) -> &Arc<dyn PasswordVerifier> {
         &self.verifier
+    }
+    pub fn app_passwords(&self) -> Option<&Arc<AppPasswordService>> {
+        self.app_passwords.as_ref()
     }
 
     /// Verify a (login, password) pair. Always runs bcrypt — even on miss —
@@ -69,9 +82,15 @@ impl UsersService {
         self.users.lookup_by_login(login).await
     }
 
+    /// Rehash + write the new password. If an [`AppPasswordService`] is
+    /// attached, also cascades `password_invalid=1` on every token row.
     pub async fn set_password(&self, uid: &UserId, new: &str) -> UsersResult<()> {
         let hash = self.verifier.hash(new)?;
-        self.users.set_password(uid, &hash).await
+        self.users.set_password(uid, &hash).await?;
+        if let Some(ap) = &self.app_passwords {
+            ap.invalidate_all_for_user(uid).await?;
+        }
+        Ok(())
     }
 
     pub async fn is_admin(&self, uid: &UserId) -> UsersResult<bool> {
@@ -182,5 +201,69 @@ mod tests {
             .await
             .unwrap();
         assert!(svc.is_admin(&uid).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn set_password_cascades_invalidate_when_app_passwords_attached() {
+        use crate::app_password::AppPasswordService;
+        use crate::auth_token::AuthTokenType;
+        use crate::store::auth_token::{SqlTokenStore, TokenAuthCache, TokenStore};
+        use crabcloud_cache::MemoryCache;
+        use secrecy::SecretString;
+
+        let dir = tempdir().unwrap();
+        let cfg = crabcloud_config::test_support::minimal_sqlite_config(dir.path().join("svc2.db"));
+        std::mem::forget(dir);
+        let pool = DbPool::connect(&cfg).await.unwrap();
+        let mut runner = MigrationRunner::new(&pool, &cfg.dbtableprefix);
+        runner.register(core_set());
+        runner.run().await.unwrap();
+        let users_store: Arc<dyn crate::store::UserStore> =
+            Arc::new(SqlUserStore::new(pool.clone()));
+        let groups_store: Arc<dyn crate::store::GroupStore> =
+            Arc::new(SqlGroupStore::new(pool.clone()));
+        let prefs_store: Arc<dyn crate::store::PreferenceStore> =
+            Arc::new(SqlPreferenceStore::new(pool.clone()));
+        let token_store: Arc<dyn TokenStore> = Arc::new(SqlTokenStore::new(pool));
+        let token_cache = Arc::new(TokenAuthCache::new(
+            token_store,
+            Arc::new(MemoryCache::new()),
+            "inst1",
+        ));
+        let app_passwords = Arc::new(AppPasswordService::new(
+            token_cache,
+            SecretString::new("s".into()),
+        ));
+        let svc = UsersService::new(
+            users_store,
+            groups_store,
+            prefs_store,
+            Arc::new(BcryptVerifier::new()),
+        )
+        .with_app_passwords(app_passwords.clone());
+
+        let uid = UserId::new("alice").unwrap();
+        let hash = svc.verifier.hash("old").unwrap();
+        svc.users
+            .create(
+                &User {
+                    uid: uid.clone(),
+                    display_name: "A".into(),
+                    email: None,
+                    enabled: true,
+                    last_seen: 0,
+                },
+                Some(&hash),
+            )
+            .await
+            .unwrap();
+        let (_row, raw) = app_passwords
+            .mint(&uid, "alice", "DAV", AuthTokenType::AppPassword, false)
+            .await
+            .unwrap();
+        assert!(app_passwords.verify(raw.expose()).await.is_ok());
+        svc.set_password(&uid, "new").await.unwrap();
+        let err = app_passwords.verify(raw.expose()).await.unwrap_err();
+        assert!(matches!(err, crate::UsersError::TokenNotFound));
     }
 }
