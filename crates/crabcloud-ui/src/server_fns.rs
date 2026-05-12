@@ -287,6 +287,170 @@ pub async fn login_v2_poll(req: LoginV2PollRequest) -> Result<LoginV2PollRespons
     })
 }
 
+/// Summary of an `oc_authtoken` row shown in the security settings UI.
+/// `kind` is the [`crabcloud_users::AuthTokenType`] discriminator
+/// (`0` = Session, `1` = AppPassword). `current` is `true` for the row
+/// backing the requesting session cookie.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuthTokenSummary {
+    pub id: i64,
+    pub name: String,
+    pub kind: i32,
+    pub last_activity: u64,
+    pub current: bool,
+}
+
+/// Response from [`create_app_password`]. The plaintext `raw_token` is the
+/// only chance the caller has to capture the secret — it is not retrievable
+/// afterwards.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreatedAppPassword {
+    pub id: i64,
+    pub name: String,
+    pub raw_token: String,
+}
+
+/// `POST /settings/security/list` — return every `oc_authtoken` row owned
+/// by the requesting user. Session-only (cookie auth) to keep this surface
+/// off the Bearer / Basic paths used by sync clients.
+#[server(endpoint = "settings/security/list", prefix = "")]
+pub async fn list_app_passwords() -> Result<Vec<AuthTokenSummary>, ServerFnError> {
+    use dioxus::fullstack::FullstackContext;
+    let fs =
+        FullstackContext::current().ok_or_else(|| ServerFnError::new("not running on server"))?;
+    let state = fs
+        .extension::<crabcloud_core::AppState>()
+        .ok_or_else(|| ServerFnError::new("AppState missing"))?;
+    let ctx = fs
+        .extension::<crabcloud_http::AuthContext>()
+        .ok_or_else(|| ServerFnError::new("unauthorized"))?;
+    if ctx.method != crabcloud_http::AuthMethod::Session {
+        return Err(ServerFnError::new("session-only"));
+    }
+    let ap = state
+        .users
+        .app_passwords()
+        .ok_or_else(|| ServerFnError::new("app_passwords missing"))?
+        .clone();
+    let rows = ap
+        .list(&ctx.user_id)
+        .await
+        .map_err(|e| ServerFnError::new(format!("list: {e}")))?;
+    Ok(rows
+        .into_iter()
+        .map(|r| AuthTokenSummary {
+            current: r.id == ctx.token_id,
+            id: r.id,
+            name: r.name,
+            kind: r.kind.as_i32(),
+            last_activity: r.last_activity,
+        })
+        .collect())
+}
+
+/// `POST /settings/security/create` — mint a fresh `AppPassword`-kind
+/// token for the requesting user, returning the plaintext exactly once.
+/// Session-only.
+#[server(endpoint = "settings/security/create", prefix = "")]
+pub async fn create_app_password(name: String) -> Result<CreatedAppPassword, ServerFnError> {
+    use crabcloud_users::AuthTokenType;
+    use dioxus::fullstack::FullstackContext;
+    let fs =
+        FullstackContext::current().ok_or_else(|| ServerFnError::new("not running on server"))?;
+    let state = fs
+        .extension::<crabcloud_core::AppState>()
+        .ok_or_else(|| ServerFnError::new("AppState missing"))?;
+    let ctx = fs
+        .extension::<crabcloud_http::AuthContext>()
+        .ok_or_else(|| ServerFnError::new("unauthorized"))?;
+    if ctx.method != crabcloud_http::AuthMethod::Session {
+        return Err(ServerFnError::new("session-only"));
+    }
+    let ap = state
+        .users
+        .app_passwords()
+        .ok_or_else(|| ServerFnError::new("app_passwords missing"))?
+        .clone();
+    let (row, raw) = ap
+        .mint(
+            &ctx.user_id,
+            &ctx.login_name,
+            &name,
+            AuthTokenType::AppPassword,
+            false,
+        )
+        .await
+        .map_err(|e| ServerFnError::new(format!("mint: {e}")))?;
+    Ok(CreatedAppPassword {
+        id: row.id,
+        name: row.name,
+        raw_token: raw.expose().to_string(),
+    })
+}
+
+/// `POST /settings/security/revoke` — revoke a specific token row by id.
+/// Session-only and refuses to revoke rows owned by another user.
+#[server(endpoint = "settings/security/revoke", prefix = "")]
+pub async fn revoke_app_password(id: i64) -> Result<(), ServerFnError> {
+    use dioxus::fullstack::FullstackContext;
+    let fs =
+        FullstackContext::current().ok_or_else(|| ServerFnError::new("not running on server"))?;
+    let state = fs
+        .extension::<crabcloud_core::AppState>()
+        .ok_or_else(|| ServerFnError::new("AppState missing"))?;
+    let ctx = fs
+        .extension::<crabcloud_http::AuthContext>()
+        .ok_or_else(|| ServerFnError::new("unauthorized"))?;
+    if ctx.method != crabcloud_http::AuthMethod::Session {
+        return Err(ServerFnError::new("session-only"));
+    }
+    let ap = state
+        .users
+        .app_passwords()
+        .ok_or_else(|| ServerFnError::new("app_passwords missing"))?
+        .clone();
+    // Verify the row belongs to ctx.user_id before revoking. Silently no-op
+    // on missing row (revoke is idempotent — already-deleted is success).
+    if let Some(row) = ap
+        .lookup_by_id(id)
+        .await
+        .map_err(|e| ServerFnError::new(format!("lookup: {e}")))?
+    {
+        if row.uid != ctx.user_id {
+            return Err(ServerFnError::new("not your token"));
+        }
+    }
+    ap.revoke(id)
+        .await
+        .map_err(|e| ServerFnError::new(format!("revoke: {e}")))
+}
+
+/// `POST /settings/security/destroy-others` — revoke every token row owned
+/// by the requesting user except the one backing this session. Session-only.
+#[server(endpoint = "settings/security/destroy-others", prefix = "")]
+pub async fn destroy_other_sessions() -> Result<(), ServerFnError> {
+    use dioxus::fullstack::FullstackContext;
+    let fs =
+        FullstackContext::current().ok_or_else(|| ServerFnError::new("not running on server"))?;
+    let state = fs
+        .extension::<crabcloud_core::AppState>()
+        .ok_or_else(|| ServerFnError::new("AppState missing"))?;
+    let ctx = fs
+        .extension::<crabcloud_http::AuthContext>()
+        .ok_or_else(|| ServerFnError::new("unauthorized"))?;
+    if ctx.method != crabcloud_http::AuthMethod::Session {
+        return Err(ServerFnError::new("session-only"));
+    }
+    let ap = state
+        .users
+        .app_passwords()
+        .ok_or_else(|| ServerFnError::new("app_passwords missing"))?
+        .clone();
+    ap.revoke_other_sessions(&ctx.user_id, ctx.token_id)
+        .await
+        .map_err(|e| ServerFnError::new(format!("revoke_others: {e}")))
+}
+
 /// `POST /index.php/login/v2/authorize` — invoked by the
 /// `/index.php/login/v2/flow/<id>` page after the user clicks Authorize.
 /// Must be authenticated via `AuthMethod::Session` (cookie). Mints a fresh
