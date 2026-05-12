@@ -8,6 +8,7 @@
 // own test target is built. Silence it for test builds only.
 #![cfg_attr(test, allow(unused_crate_dependencies))]
 
+mod app_password;
 mod auth_token;
 pub mod cli;
 mod email;
@@ -18,6 +19,7 @@ mod service;
 mod store;
 mod user;
 
+pub use app_password::AppPasswordService;
 pub use auth_token::{hash_token, AuthToken, AuthTokenType, RawToken};
 pub use email::Email;
 pub use error::{UsersError, UsersResult};
