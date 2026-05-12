@@ -684,6 +684,46 @@ mod tests {
         format!("{COOKIE_NAME}={cookie_value}")
     }
 
+    /// Build a state where the *only* admin is the bootstrap virtual admin —
+    /// no real `oc_users` row, no `oc_group_user` row. The AdminUser extractor
+    /// must still accept this caller per spec §6.6.
+    async fn make_state_with_bootstrap_admin(db_path: std::path::PathBuf) -> (AppState, String) {
+        let hash = BcryptVerifier::new().hash("hunter2").unwrap();
+        let mut cfg = minimal_sqlite_config(db_path);
+        cfg.bootstrap_admin = Some(crabcloud_config::BootstrapAdminConfig {
+            username: "admin".into(),
+            password_hash: hash,
+        });
+        let state = AppStateBuilder::new(cfg).build().await.unwrap();
+        let cookie = seed_login(&state, "admin").await;
+        (state, cookie)
+    }
+
+    #[tokio::test]
+    async fn bootstrap_virtual_admin_can_call_admin_ocs_create_user() {
+        let dir = tempdir().unwrap();
+        let (state, cookie) = make_state_with_bootstrap_admin(dir.path().join("u.db")).await;
+        let app = build_router(state.clone(), axum::Router::new());
+
+        let req = Request::builder()
+            .method("POST")
+            .uri("/ocs/v2.php/cloud/users?format=json")
+            .header("ocs-apirequest", "true")
+            .header("content-type", "application/x-www-form-urlencoded")
+            .header("cookie", cookie)
+            .body(Body::from("userid=alice&password=alicepw"))
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert!(state
+            .users
+            .user_store()
+            .lookup(&UserId::new("alice").unwrap())
+            .await
+            .unwrap()
+            .is_some());
+    }
+
     // --- list_users ---------------------------------------------------------
 
     #[tokio::test]
