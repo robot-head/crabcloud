@@ -33,7 +33,7 @@ cookie = { version = "0.18", features = ["percent-encode"] }
 figment = { version = "0.10", features = ["toml", "env"] }
 futures = "0.3"
 hex = "0.4"
-hmac = "0.13"
+hmac = "0.12"
 hyper = { version = "1.5", features = ["http1", "server"] }
 rand = "0.10"
 secrecy = { version = "0.10", features = ["serde"] }
