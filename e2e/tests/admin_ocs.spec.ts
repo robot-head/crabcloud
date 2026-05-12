@@ -3,6 +3,31 @@ import { test, expect } from "@playwright/test";
 const BASE_URL = process.env.CRABCLOUD_E2E_URL ?? "http://127.0.0.1:18765";
 
 test.describe("Admin OCS endpoints", () => {
+    // Best-effort cleanup so a partial-failure run doesn't poison the next CI run
+    // with 409 conflicts on user/group create.
+    test.afterAll(async ({ request }) => {
+        try {
+            const login = await request.post("/index.php/login", {
+                data: { username: "admin", password: "hunter2" },
+                headers: { "content-type": "application/json" },
+                maxRedirects: 0,
+            });
+            const setCookie = login.headers()["set-cookie"];
+            if (!setCookie) return;
+            const m = /oc_sessionPassphrase=([^;\n]+)/.exec(setCookie);
+            if (!m) return;
+            const cookie = `oc_sessionPassphrase=${m[1]}`;
+            await request.delete("/ocs/v2.php/cloud/users/bob?format=json", {
+                headers: { "ocs-apirequest": "true", cookie },
+            });
+            await request.delete("/ocs/v2.php/cloud/groups/qa?format=json", {
+                headers: { "ocs-apirequest": "true", cookie },
+            });
+        } catch {
+            // best-effort
+        }
+    });
+
     test("admin can create -> get -> edit -> disable -> enable -> delete a user", async ({ request }) => {
         // 1. Login as bootstrap admin.
         const login = await request.post("/index.php/login", {
@@ -12,7 +37,10 @@ test.describe("Admin OCS endpoints", () => {
         });
         expect(login.status()).toBe(200);
         const cookieHeader = login.headers()["set-cookie"];
-        const sessionValue = /oc_sessionPassphrase=([^;]+)/.exec(cookieHeader!)![1];
+        expect(cookieHeader).toBeTruthy();
+        const adminMatch = /oc_sessionPassphrase=([^;\n]+)/.exec(cookieHeader!);
+        expect(adminMatch).not.toBeNull();
+        const sessionValue = adminMatch![1];
         const cookie = `oc_sessionPassphrase=${sessionValue}`;
 
         // 2. Create bob.
@@ -56,7 +84,10 @@ test.describe("Admin OCS endpoints", () => {
         });
         expect(bobLogin.status()).toBe(200);
         const bobCookie = bobLogin.headers()["set-cookie"];
-        const bobSession = /oc_sessionPassphrase=([^;]+)/.exec(bobCookie!)![1];
+        expect(bobCookie).toBeTruthy();
+        const bobMatch = /oc_sessionPassphrase=([^;\n]+)/.exec(bobCookie!);
+        expect(bobMatch).not.toBeNull();
+        const bobSession = bobMatch![1];
 
         // Get bob's app password via the bridge endpoint.
         const gap = await request.get("/ocs/v2.php/core/getapppassword?format=json", {
@@ -108,7 +139,11 @@ test.describe("Admin OCS endpoints", () => {
             headers: { "content-type": "application/json" },
             maxRedirects: 0,
         });
-        const cookie = `oc_sessionPassphrase=${/oc_sessionPassphrase=([^;]+)/.exec(login.headers()["set-cookie"]!)![1]}`;
+        const groupCookieHeader = login.headers()["set-cookie"];
+        expect(groupCookieHeader).toBeTruthy();
+        const groupMatch = /oc_sessionPassphrase=([^;\n]+)/.exec(groupCookieHeader!);
+        expect(groupMatch).not.toBeNull();
+        const cookie = `oc_sessionPassphrase=${groupMatch![1]}`;
 
         const create = await request.post("/ocs/v2.php/cloud/groups", {
             form: { groupid: "qa", displayname: "QA Team" },
