@@ -60,8 +60,25 @@ impl FileCache {
         }
     }
 
-    pub(crate) fn pool(&self) -> &DbPool {
+    /// Access to the shared pool. `pub` so downstream crates can construct
+    /// auxiliary stores (`PropertyStore`, `LockStore`) that share this
+    /// connection pool without re-opening the DB.
+    pub fn pool(&self) -> &DbPool {
         &self.pool
+    }
+
+    /// Pass-through to [`PropertyStore::get_many`] for one named property
+    /// across many paths. Used by PROPFIND to fetch `{oc:}favorite` (or
+    /// any per-resource custom prop) for an entire directory listing in
+    /// a single round-trip.
+    pub async fn get_property_many(
+        &self,
+        userid: &crabcloud_users::UserId,
+        propertypaths: &[String],
+        propertyname: &str,
+    ) -> FileCacheResult<Vec<(String, Option<String>)>> {
+        let ps = PropertyStore::new(self.pool.clone());
+        ps.get_many(userid, propertypaths, propertyname).await
     }
 
     /// Cached stat. On miss, calls `storage.stat(path)` under a per-path
