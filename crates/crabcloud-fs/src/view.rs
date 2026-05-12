@@ -142,7 +142,35 @@ impl View {
         Ok(())
     }
 
-    // rename / copy land in Batch C.
+    /// Within-mount rename. Errors `FsError::CrossMount` if `from` and
+    /// `to` resolve to different mounts (4c only ships one mount per
+    /// user; this can't fire in practice but the wire shape is set).
+    pub async fn rename(&self, from: &UserPath, to: &UserPath) -> FsResult<()> {
+        let (from_mount, from_path) = self.resolve(from)?;
+        let (to_mount, to_path) = self.resolve(to)?;
+        if from_mount.path_prefix != to_mount.path_prefix {
+            return Err(FsError::CrossMount);
+        }
+        from_mount
+            .storage
+            .rename(&from_path, &to_path, &*self.storage_sink)
+            .await?;
+        Ok(())
+    }
+
+    /// Within-mount copy. Same cross-mount restriction.
+    pub async fn copy(&self, from: &UserPath, to: &UserPath) -> FsResult<()> {
+        let (from_mount, from_path) = self.resolve(from)?;
+        let (to_mount, to_path) = self.resolve(to)?;
+        if from_mount.path_prefix != to_mount.path_prefix {
+            return Err(FsError::CrossMount);
+        }
+        from_mount
+            .storage
+            .copy(&from_path, &to_path, &*self.storage_sink)
+            .await?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
