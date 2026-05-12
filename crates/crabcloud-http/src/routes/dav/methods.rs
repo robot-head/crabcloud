@@ -87,11 +87,12 @@ async fn dispatch_inner(
         Method::PUT => put(state, &uid, &user_path, &headers, body).await,
         m if m.as_str() == "MKCOL" => mkcol(state, &uid, &user_path).await,
         Method::DELETE => delete(state, &uid, &user_path).await,
-        // MOVE/COPY land in Batch C.
-        m if m.as_str() == "MOVE" || m.as_str() == "COPY" => Err(DavError::BadRequest(format!(
-            "{} not yet implemented",
-            m.as_str()
-        ))),
+        m if m.as_str() == "MOVE" => {
+            crate::routes::dav::moves::move_(state, &uid, &user_path, &headers).await
+        }
+        m if m.as_str() == "COPY" => {
+            crate::routes::dav::moves::copy(state, &uid, &user_path, &headers).await
+        }
         // PROPFIND/PROPPATCH/LOCK/UNLOCK land in batches D/E/F.
         m if matches!(m.as_str(), "PROPFIND" | "PROPPATCH" | "LOCK" | "UNLOCK") => Err(
             DavError::BadRequest(format!("{} not yet implemented", m.as_str())),

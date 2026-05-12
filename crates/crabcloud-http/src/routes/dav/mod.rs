@@ -11,6 +11,7 @@ pub mod error;
 pub mod extractor;
 pub mod headers;
 pub mod methods;
+pub mod moves;
 
 use axum::routing::{any, options, MethodRouter};
 use axum::Router;
