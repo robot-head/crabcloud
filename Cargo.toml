@@ -39,7 +39,7 @@ hmac = "0.13"
 hyper = { version = "1.5", features = ["http1", "server"] }
 infer = { version = "0.19", default-features = false }
 phf = { version = "0.13", features = ["macros"] }
-phf_codegen = "0.11"
+phf_codegen = "0.13"
 rand = "0.10"
 secrecy = { version = "0.10", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
