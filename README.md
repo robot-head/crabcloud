@@ -57,6 +57,7 @@ cargo run -p crabcloud-server -- user-add admin --admin
 - `crates/crabcloud-cache` — `Cache` trait + `MemoryCache` + `TypedCache<T>`.
 - `crates/crabcloud-db` — `DbPool` enum, `MigrationRunner`, core schema.
 - `crates/crabcloud-filecache` — DB-backed file cache + scanner consuming Storage events.
+- `crates/crabcloud-fs` — per-user filesystem facade (View + Uploads + mount resolution).
 - `crates/crabcloud-i18n` — gettext `.po` loader, `Locale`, `I18n`.
 - `crates/crabcloud-ocs` — OCS envelope (JSON/XML), capabilities aggregator.
 - `crates/crabcloud-core` — `AppState`, `Error`, `AppConfigService`, `BootstrapHook`.
