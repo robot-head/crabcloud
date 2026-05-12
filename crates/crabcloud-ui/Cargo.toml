@@ -22,10 +22,14 @@ default = []
 server = [
     "dioxus/server",
     "dep:axum",
+    "dep:crabcloud-cache",
     "dep:crabcloud-core",
     "dep:crabcloud-http",
     "dep:crabcloud-i18n",
     "dep:crabcloud-users",
+    "dep:hex",
+    "dep:rand",
+    "dep:serde_json",
     "dep:tracing",
 ]
 web = ["dioxus/web"]
@@ -38,10 +42,14 @@ serde.workspace = true
 # context bridge. Gated behind the `server` feature so the WASM build never
 # sees them.
 axum = { workspace = true, optional = true }
+crabcloud-cache = { workspace = true, optional = true }
 crabcloud-core = { workspace = true, optional = true }
 crabcloud-http = { workspace = true, optional = true }
 crabcloud-i18n = { workspace = true, optional = true }
 crabcloud-users = { workspace = true, optional = true }
+hex = { workspace = true, optional = true }
+rand = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
 tracing = { workspace = true, optional = true }
 
 [dev-dependencies]

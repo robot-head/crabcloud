@@ -808,11 +808,14 @@ name = "crabcloud-ui"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "crabcloud-cache",
  "crabcloud-core",
  "crabcloud-http",
  "crabcloud-i18n",
  "crabcloud-users",
  "dioxus",
+ "hex",
+ "rand 0.8.6",
  "serde",
  "serde_json",
  "tracing",
@@ -832,6 +835,8 @@ dependencies = [
  "crabcloud-core",
  "crabcloud-db",
  "crabcloud-http",
+ "crabcloud-ui",
+ "dioxus",
  "email_address",
  "hex",
  "rand 0.8.6",

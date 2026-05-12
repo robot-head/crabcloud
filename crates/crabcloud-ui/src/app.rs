@@ -5,7 +5,7 @@
 //! so legacy client code that reads the CSRF token from the DOM keeps working.
 
 use crate::context::RequestContext;
-use crate::pages::{home::Home, login::Login, not_found::NotFound};
+use crate::pages::{home::Home, login::Login, login_v2_flow::LoginV2Flow, not_found::NotFound};
 use dioxus::prelude::*;
 
 /// Routes the SSR side honors. The browser router has the same shape so
@@ -20,6 +20,11 @@ pub enum Route {
     /// Login form.
     #[route("/login")]
     LoginRoute {},
+
+    /// Nextcloud-client `login/v2` flow page — the URL the desktop/mobile
+    /// client opens in the user's browser after `POST /index.php/login/v2`.
+    #[route("/index.php/login/v2/flow/:flow_id")]
+    LoginV2FlowRoute { flow_id: String },
 
     /// Catch-all 404 page. SSR uses this to detect unknown paths and emit
     /// an HTTP 404 status.
@@ -40,6 +45,12 @@ pub fn HomeRoute() -> Element {
 pub fn LoginRoute() -> Element {
     let ctx = use_context::<RequestContext>();
     rsx! { Login { ctx } }
+}
+
+#[component]
+pub fn LoginV2FlowRoute(flow_id: String) -> Element {
+    let ctx = use_context::<RequestContext>();
+    rsx! { LoginV2Flow { ctx: ctx.clone(), flow_id: flow_id.clone() } }
 }
 
 #[component]
