@@ -1,10 +1,11 @@
 //! OCS sub-router under `/ocs/v2.php`.
 
+pub mod admin_users;
 pub mod app_password;
 pub mod capabilities;
 pub mod user;
 
-use axum::routing::{delete, get};
+use axum::routing::{delete, get, put};
 use axum::Router;
 use crabcloud_core::AppState;
 
@@ -22,5 +23,29 @@ pub fn router() -> Router<AppState> {
         .route(
             "/v2.php/core/apppassword",
             delete(app_password::delete_app_password),
+        )
+        .route(
+            "/v2.php/cloud/users",
+            get(admin_users::list_users).post(admin_users::create_user),
+        )
+        .route(
+            "/v2.php/cloud/users/{uid}",
+            get(admin_users::get_user)
+                .put(admin_users::edit_user)
+                .delete(admin_users::delete_user),
+        )
+        .route(
+            "/v2.php/cloud/users/{uid}/enable",
+            put(admin_users::enable_user),
+        )
+        .route(
+            "/v2.php/cloud/users/{uid}/disable",
+            put(admin_users::disable_user),
+        )
+        .route(
+            "/v2.php/cloud/users/{uid}/groups",
+            get(admin_users::list_user_groups)
+                .post(admin_users::add_user_to_group)
+                .delete(admin_users::remove_user_from_group),
         )
 }
