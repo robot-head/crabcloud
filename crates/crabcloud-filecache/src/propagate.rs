@@ -575,8 +575,9 @@ async fn apply_copied(
     match cache.pool() {
         DbPool::Sqlite(p) => {
             let mut tx = p.begin().await.map_err(FileCacheError::Db)?;
-            let src: Option<(i64, i64, i64, i64)> = sqlx::query_as(
-                "SELECT fileid, mimetype, mimepart, size FROM oc_filecache \
+            let src: Option<(i64, i64, i64, i64, i64, i64, i64)> = sqlx::query_as(
+                "SELECT fileid, mimetype, mimepart, size, mtime, storage_mtime, permissions \
+                 FROM oc_filecache \
                  WHERE storage = ? AND path_hash = ?",
             )
             .bind(storage_pk)
@@ -584,7 +585,16 @@ async fn apply_copied(
             .fetch_optional(&mut *tx)
             .await
             .map_err(FileCacheError::Db)?;
-            let Some((_src_id, mimetype_pk, mimepart_pk, src_size)) = src else {
+            let Some((
+                _src_id,
+                mimetype_pk,
+                mimepart_pk,
+                src_size,
+                _src_mtime,
+                src_storage_mtime,
+                src_permissions,
+            )) = src
+            else {
                 return Err(FileCacheError::NotFound);
             };
             sqlx::query(
@@ -601,9 +611,9 @@ async fn apply_copied(
             .bind(mimepart_pk)
             .bind(src_size)
             .bind(now)
-            .bind(now)
+            .bind(src_storage_mtime)
             .bind(&new_etag)
-            .bind(0i64)
+            .bind(src_permissions)
             .execute(&mut *tx)
             .await
             .map_err(FileCacheError::Db)?;
@@ -612,8 +622,9 @@ async fn apply_copied(
         }
         DbPool::MySql(p) => {
             let mut tx = p.begin().await.map_err(FileCacheError::Db)?;
-            let src: Option<(u64, u32, u32, i64)> = sqlx::query_as(
-                "SELECT fileid, mimetype, mimepart, size FROM oc_filecache \
+            let src: Option<(u64, u32, u32, i64, u32, u32, u32)> = sqlx::query_as(
+                "SELECT fileid, mimetype, mimepart, size, mtime, storage_mtime, permissions \
+                 FROM oc_filecache \
                  WHERE storage = ? AND path_hash = ?",
             )
             .bind(storage_pk as u32)
@@ -621,7 +632,16 @@ async fn apply_copied(
             .fetch_optional(&mut *tx)
             .await
             .map_err(FileCacheError::Db)?;
-            let Some((_src_id, mimetype_pk, mimepart_pk, src_size)) = src else {
+            let Some((
+                _src_id,
+                mimetype_pk,
+                mimepart_pk,
+                src_size,
+                _src_mtime,
+                src_storage_mtime,
+                src_permissions,
+            )) = src
+            else {
                 return Err(FileCacheError::NotFound);
             };
             sqlx::query(
@@ -638,9 +658,9 @@ async fn apply_copied(
             .bind(mimepart_pk)
             .bind(src_size)
             .bind(now as u32)
-            .bind(now as u32)
+            .bind(src_storage_mtime)
             .bind(&new_etag)
-            .bind(0u32)
+            .bind(src_permissions)
             .execute(&mut *tx)
             .await
             .map_err(FileCacheError::Db)?;
@@ -649,8 +669,9 @@ async fn apply_copied(
         }
         DbPool::Postgres(p) => {
             let mut tx = p.begin().await.map_err(FileCacheError::Db)?;
-            let src: Option<(i64, i32, i32, i64)> = sqlx::query_as(
-                "SELECT fileid, mimetype, mimepart, size FROM oc_filecache \
+            let src: Option<(i64, i32, i32, i64, i32, i32, i32)> = sqlx::query_as(
+                "SELECT fileid, mimetype, mimepart, size, mtime, storage_mtime, permissions \
+                 FROM oc_filecache \
                  WHERE storage = $1 AND path_hash = $2",
             )
             .bind(storage_pk as i32)
@@ -658,7 +679,16 @@ async fn apply_copied(
             .fetch_optional(&mut *tx)
             .await
             .map_err(FileCacheError::Db)?;
-            let Some((_src_id, mimetype_pk, mimepart_pk, src_size)) = src else {
+            let Some((
+                _src_id,
+                mimetype_pk,
+                mimepart_pk,
+                src_size,
+                _src_mtime,
+                src_storage_mtime,
+                src_permissions,
+            )) = src
+            else {
                 return Err(FileCacheError::NotFound);
             };
             sqlx::query(
@@ -675,9 +705,9 @@ async fn apply_copied(
             .bind(mimepart_pk)
             .bind(src_size)
             .bind(now as i32)
-            .bind(now as i32)
+            .bind(src_storage_mtime)
             .bind(&new_etag)
-            .bind(0i32)
+            .bind(src_permissions)
             .execute(&mut *tx)
             .await
             .map_err(FileCacheError::Db)?;

@@ -500,6 +500,54 @@ async fn apply_copied_inserts_dest_with_fresh_etag() {
 }
 
 #[tokio::test]
+async fn apply_copied_preserves_source_permissions() {
+    use crabcloud_storage::Permissions;
+    let h = harness().await;
+    let cache = FileCache::new(h.pool.clone());
+
+    cache
+        .apply(&StorageEvent::DirCreated {
+            storage_id: SID.into(),
+            path: StoragePath::root(),
+            metadata: make_dir_metadata(""),
+        })
+        .await
+        .unwrap();
+
+    // Build source metadata with non-default permissions (read+update only).
+    let mut src_md = make_metadata("src.txt", 12, "text/plain");
+    src_md.permissions = Permissions::new(Permissions::READ | Permissions::UPDATE);
+    cache
+        .apply(&StorageEvent::Written {
+            storage_id: SID.into(),
+            path: StoragePath::new("src.txt").unwrap(),
+            metadata: src_md,
+        })
+        .await
+        .unwrap();
+
+    cache
+        .apply(&StorageEvent::Copied {
+            storage_id: SID.into(),
+            from: StoragePath::new("src.txt").unwrap(),
+            to: StoragePath::new("dst.txt").unwrap(),
+        })
+        .await
+        .unwrap();
+
+    let dst = cache
+        .lookup(SID, &StoragePath::new("dst.txt").unwrap())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        dst.permissions.bits(),
+        Permissions::READ | Permissions::UPDATE,
+        "copy must inherit source permissions"
+    );
+}
+
+#[tokio::test]
 async fn apply_missing_ancestor_errors() {
     let h = harness().await;
     let cache = FileCache::new(h.pool.clone());
