@@ -794,6 +794,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "crabcloud-fs"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64",
+ "crabcloud-cache",
+ "crabcloud-config",
+ "crabcloud-db",
+ "crabcloud-filecache",
+ "crabcloud-storage",
+ "crabcloud-users",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "crabcloud-http"
 version = "0.1.0"
 dependencies = [
