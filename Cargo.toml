@@ -38,7 +38,7 @@ hex = "0.4"
 hmac = "0.13"
 hyper = { version = "1.5", features = ["http1", "server"] }
 infer = { version = "0.16", default-features = false }
-phf = { version = "0.11", features = ["macros"] }
+phf = { version = "0.13", features = ["macros"] }
 phf_codegen = "0.11"
 rand = "0.10"
 secrecy = { version = "0.10", features = ["serde"] }
