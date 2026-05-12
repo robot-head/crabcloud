@@ -40,8 +40,11 @@ enum PropOp {
 
 /// Parse the PROPPATCH request body. Walks the XML stream tracking the
 /// in-scope `xmlns:*` declarations so prefixed element names can be lifted
-/// to Clark notation (`{namespace}local`). The parser is intentionally lax
-/// about ordering and whitespace.
+/// to Clark notation (`{namespace}local`). Structural element matching
+/// (`set` / `remove` / `prop` / `propertyupdate`) is performed against the
+/// resolved Clark name so that clients using arbitrary prefix names (e.g.
+/// `<a:set xmlns:a="DAV:">`) are handled correctly. The parser is
+/// intentionally lax about ordering and whitespace.
 fn parse_body(body: &[u8]) -> DavResult<Vec<PropOp>> {
     let mut reader = Reader::from_reader(body);
     reader.config_mut().trim_text(true);
@@ -60,14 +63,14 @@ fn parse_body(body: &[u8]) -> DavResult<Vec<PropOp>> {
                     .map_err(|_| DavError::BadRequest("non-utf8 prop name".into()))?
                     .to_string();
                 capture_xmlns_attrs(&e, &mut current_ns_prefix)?;
-                match raw.as_str() {
-                    "d:set" | "set" | "D:set" => mode = Some("set"),
-                    "d:remove" | "remove" | "D:remove" => mode = Some("remove"),
-                    "d:prop" | "prop" | "D:prop" | "d:propertyupdate" | "propertyupdate"
-                    | "D:propertyupdate" => {}
-                    other => {
+                let clark = resolved_clark(&raw, &current_ns_prefix);
+                match clark.as_str() {
+                    "{DAV:}set" => mode = Some("set"),
+                    "{DAV:}remove" => mode = Some("remove"),
+                    "{DAV:}prop" | "{DAV:}propertyupdate" => {}
+                    _ => {
                         if mode.is_some() && current_name.is_none() {
-                            current_name = Some(name_to_clark(other, &current_ns_prefix));
+                            current_name = Some(clark);
                             current_value = Some(String::new());
                         }
                     }
@@ -82,16 +85,17 @@ fn parse_body(body: &[u8]) -> DavResult<Vec<PropOp>> {
                     .map_err(|_| DavError::BadRequest("non-utf8 prop name".into()))?
                     .to_string();
                 capture_xmlns_attrs(&e, &mut current_ns_prefix)?;
-                match raw.as_str() {
-                    "d:set" | "set" | "D:set" | "d:remove" | "remove" | "D:remove" | "d:prop"
-                    | "prop" | "D:prop" | "d:propertyupdate" | "propertyupdate"
-                    | "D:propertyupdate" => {}
-                    other => {
+                let clark = resolved_clark(&raw, &current_ns_prefix);
+                match clark.as_str() {
+                    "{DAV:}set" | "{DAV:}remove" | "{DAV:}prop" | "{DAV:}propertyupdate" => {}
+                    _ => {
                         if let Some(m) = mode {
-                            let name = name_to_clark(other, &current_ns_prefix);
                             match m {
-                                "set" => ops.push(PropOp::Set { name, value: None }),
-                                "remove" => ops.push(PropOp::Remove { name }),
+                                "set" => ops.push(PropOp::Set {
+                                    name: clark,
+                                    value: None,
+                                }),
+                                "remove" => ops.push(PropOp::Remove { name: clark }),
                                 _ => {}
                             }
                         }
@@ -110,11 +114,11 @@ fn parse_body(body: &[u8]) -> DavResult<Vec<PropOp>> {
                 let raw = std::str::from_utf8(name_bytes.as_ref())
                     .map_err(|_| DavError::BadRequest("non-utf8 prop name".into()))?
                     .to_string();
-                match raw.as_str() {
-                    "d:set" | "d:remove" | "set" | "remove" | "D:set" | "D:remove" => mode = None,
-                    "d:prop" | "prop" | "D:prop" | "d:propertyupdate" | "propertyupdate"
-                    | "D:propertyupdate" => {}
-                    _other => {
+                let clark = resolved_clark(&raw, &current_ns_prefix);
+                match clark.as_str() {
+                    "{DAV:}set" | "{DAV:}remove" => mode = None,
+                    "{DAV:}prop" | "{DAV:}propertyupdate" => {}
+                    _ => {
                         if let Some(name) = current_name.take() {
                             let value = current_value.take();
                             let value = value.filter(|s| !s.is_empty());
@@ -133,6 +137,15 @@ fn parse_body(body: &[u8]) -> DavResult<Vec<PropOp>> {
         }
     }
     Ok(ops)
+}
+
+/// Resolve a (possibly prefixed) element name to Clark notation
+/// (`{namespace}local`) using the in-scope prefix map. If the prefix is
+/// unbound the local part is returned bare — see `name_to_clark` for the
+/// rationale behind this lenient fallback. Used at both `Event::Start` and
+/// `Event::End` sites so structural-element matching is consistent.
+fn resolved_clark(name: &str, prefixes: &std::collections::HashMap<String, String>) -> String {
+    name_to_clark(name, prefixes)
 }
 
 fn capture_xmlns_attrs(
@@ -173,6 +186,12 @@ fn name_to_clark(name: &str, prefixes: &std::collections::HashMap<String, String
     name.to_string()
 }
 
+/// Handle a `PROPPATCH` request (RFC 4918 §9.2). Parses the XML body for
+/// `<d:set>` / `<d:remove>` operations, applies non-protected props via
+/// [`PropertyStore`], and returns a `207 Multi-Status` response with a
+/// per-prop status block. Protected (server-computed) props produce
+/// `403 Forbidden` in their own propstat; the overall HTTP status is
+/// always `207` so the client can see each prop's outcome individually.
 pub async fn handle(
     state: AppState,
     uid: &UserId,
@@ -339,5 +358,46 @@ mod tests {
             clark_to_prefixed_tag("{http://nextcloud.org/ns}note"),
             "nc:note"
         );
+    }
+
+    #[test]
+    fn parse_with_uppercase_d_prefix_works() {
+        let xml = r#"<?xml version="1.0"?>
+<D:propertyupdate xmlns:D="DAV:" xmlns:oc="http://owncloud.org/ns">
+  <D:set><D:prop><oc:favorite>1</oc:favorite></D:prop></D:set>
+</D:propertyupdate>"#;
+        let ops = parse_body(xml.as_bytes()).unwrap();
+        assert_eq!(ops.len(), 1);
+        match &ops[0] {
+            PropOp::Set { name, value } => {
+                assert_eq!(name, "{http://owncloud.org/ns}favorite");
+                assert_eq!(value.as_deref(), Some("1"));
+            }
+            _ => panic!("expected Set"),
+        }
+    }
+
+    #[test]
+    fn parse_with_custom_prefix_works() {
+        let xml = r#"<?xml version="1.0"?>
+<a:propertyupdate xmlns:a="DAV:" xmlns:oc="http://owncloud.org/ns">
+  <a:set><a:prop><oc:favorite>1</oc:favorite></a:prop></a:set>
+</a:propertyupdate>"#;
+        let ops = parse_body(xml.as_bytes()).unwrap();
+        assert_eq!(ops.len(), 1);
+        match &ops[0] {
+            PropOp::Set { name, .. } => assert_eq!(name, "{http://owncloud.org/ns}favorite"),
+            _ => panic!("expected Set"),
+        }
+    }
+
+    #[test]
+    fn parse_malformed_xml_returns_bad_request() {
+        let xml = b"not <valid> XML <";
+        let r = parse_body(xml);
+        assert!(matches!(
+            r,
+            Err(crate::routes::dav::error::DavError::BadRequest(_))
+        ));
     }
 }
