@@ -8,7 +8,7 @@ use anyhow::Result;
 use clap::Parser;
 use tracing::info;
 
-use crate::cli::{Cli, Cmd};
+use crate::cli::{Cli, Cmd, FilesCmd};
 
 fn prompt_password(prompt: &str) -> anyhow::Result<String> {
     let pw = rpassword::prompt_password(prompt)?;
@@ -230,6 +230,19 @@ async fn main() -> Result<()> {
                 .clone();
             crabcloud_users::cli::app_password_revoke(&ap, id).await?;
             info!(id, "app password revoked");
+            state.pool.close().await;
+            Ok(())
+        }
+        Cmd::Files(FilesCmd::Scan { storage_id }) => {
+            let config = crabcloud_config::load(&cli.config, &[])?;
+            let state = crabcloud_core::AppStateBuilder::new(config).build().await?;
+            let storage = state
+                .scanner
+                .storage_for(&storage_id)
+                .ok_or_else(|| anyhow::anyhow!("unknown storage_id: {storage_id}"))?;
+            let count = state.scanner.full_scan(&storage).await?;
+            info!(count, storage_id = %storage_id, "files:scan complete");
+            println!("scanned {count} entries for storage '{storage_id}'");
             state.pool.close().await;
             Ok(())
         }

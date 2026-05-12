@@ -49,6 +49,20 @@ pub enum Cmd {
     AppPasswordList { uid: String },
     /// Revoke an app password by row id.
     AppPasswordRevoke { id: i64 },
+    /// File-cache scanner commands.
+    #[command(subcommand)]
+    Files(FilesCmd),
+}
+
+/// Subcommands under `crabcloud-server files …`.
+#[derive(Subcommand, Debug, Clone)]
+pub enum FilesCmd {
+    /// Walk a registered storage from root, reconciling cache state.
+    Scan {
+        /// `Storage::id()` of a registered storage. 4b ships no storage
+        /// registrations by default; mounts arrive in 4c.
+        storage_id: String,
+    },
 }
 
 impl Cli {
@@ -144,6 +158,17 @@ mod tests {
         match cli.selected() {
             Cmd::AppPasswordList { uid } => assert_eq!(uid, "alice"),
             _ => panic!("expected AppPasswordList"),
+        }
+    }
+
+    #[test]
+    fn files_scan_subcommand_parses() {
+        let cli = Cli::parse_from(["crabcloud-server", "files", "scan", "local::/srv/data"]);
+        match cli.selected() {
+            Cmd::Files(FilesCmd::Scan { storage_id }) => {
+                assert_eq!(storage_id, "local::/srv/data");
+            }
+            _ => panic!("expected Files(Scan)"),
         }
     }
 

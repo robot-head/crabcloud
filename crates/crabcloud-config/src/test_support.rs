@@ -5,7 +5,7 @@
 //! integration and unit tests. Callers mutate specific fields to exercise
 //! particular code paths (e.g., setting `bootstrap_admin`).
 
-use crate::types::{BootstrapAdminConfig, CacheConfig, DbType, FileConfig};
+use crate::types::{BootstrapAdminConfig, CacheConfig, DbType, FileConfig, FilecacheConfig};
 use secrecy::SecretString;
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -44,6 +44,7 @@ pub fn minimal_sqlite_config(db_path: PathBuf) -> FileConfig {
         default_language: "en".into(),
         bind_address: "127.0.0.1:0".parse::<SocketAddr>().unwrap(),
         cache: CacheConfig::default(),
+        filecache: FilecacheConfig::default(),
         bootstrap_admin: None,
     }
 }
