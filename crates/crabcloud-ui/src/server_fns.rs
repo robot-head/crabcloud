@@ -409,16 +409,16 @@ pub async fn revoke_app_password(id: i64) -> Result<(), ServerFnError> {
         .app_passwords()
         .ok_or_else(|| ServerFnError::new("app_passwords missing"))?
         .clone();
-    // Verify the row belongs to ctx.user_id before revoking. Silently no-op
-    // on missing row (revoke is idempotent — already-deleted is success).
-    if let Some(row) = ap
+    // Authorize: the row must exist AND belong to the calling user.
+    // Return the same error for "unknown" and "not yours" to avoid a
+    // probe-the-id-space enumeration oracle.
+    let row = ap
         .lookup_by_id(id)
         .await
         .map_err(|e| ServerFnError::new(format!("lookup: {e}")))?
-    {
-        if row.uid != ctx.user_id {
-            return Err(ServerFnError::new("not your token"));
-        }
+        .ok_or_else(|| ServerFnError::new("not your token"))?;
+    if row.uid != ctx.user_id {
+        return Err(ServerFnError::new("not your token"));
     }
     ap.revoke(id)
         .await
