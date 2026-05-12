@@ -27,6 +27,12 @@ pub async fn move_(
     let to = UserPath::new(format!("/{}", decoded))
         .map_err(|e| DavError::BadRequest(format!("invalid path: {e}")))?;
     let overwrite = parse_overwrite(headers)?;
+    // Lock-aware: a MOVE has to clear locks on both the source (it gets
+    // removed) and the destination (gets written). Either being locked
+    // without a matching token is a 423.
+    let locks = crabcloud_filecache::LockStore::new(state.filecache.pool().clone());
+    crate::routes::dav::lock::lock_check(&locks, uid, from, headers).await?;
+    crate::routes::dav::lock::lock_check(&locks, uid, &to, headers).await?;
     let view = state.view_for(uid).await?;
 
     let dest_existed = view.stat(&to).await.is_ok();
@@ -70,6 +76,10 @@ pub async fn copy(
     let to = UserPath::new(format!("/{}", decoded))
         .map_err(|e| DavError::BadRequest(format!("invalid path: {e}")))?;
     let overwrite = parse_overwrite(headers)?;
+    // COPY writes to the destination but leaves the source intact; only
+    // the destination needs lock-clearance.
+    let locks = crabcloud_filecache::LockStore::new(state.filecache.pool().clone());
+    crate::routes::dav::lock::lock_check(&locks, uid, &to, headers).await?;
     let view = state.view_for(uid).await?;
 
     let dest_existed = view.stat(&to).await.is_ok();

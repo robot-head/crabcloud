@@ -148,6 +148,81 @@ pub fn parse_if_none_match_wildcard(headers: &HeaderMap) -> bool {
         .unwrap_or(false)
 }
 
+/// Parse the `If:` header. SP5 supports only the `(<urn:uuid:...>)` form
+/// (Nextcloud's clients use this). Returns the list of submitted tokens.
+///
+/// The full RFC 4918 §10.4 grammar (tagged-list, etag conditions, `Not`
+/// operator) is out of scope for SP5 — the lock-aware mutation path only
+/// needs to compare submitted tokens against the stored lock token.
+pub fn parse_if_tokens(headers: &HeaderMap) -> Vec<String> {
+    let raw = match headers.get("if").and_then(|v| v.to_str().ok()) {
+        Some(s) => s,
+        None => return Vec::new(),
+    };
+    // Walk every `<...>` bracketed token. Tagged lists like
+    // `<https://example.com/foo> (<urn:uuid:abc>)` still resolve correctly
+    // because the only tokens we collect that look like lock tokens are
+    // `urn:uuid:*`; the caller compares by exact-equality so spurious
+    // bracketed URLs simply never match a stored lock token.
+    let mut tokens = Vec::new();
+    let mut chars = raw.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '<' {
+            let mut t = String::new();
+            for cc in chars.by_ref() {
+                if cc == '>' {
+                    break;
+                }
+                t.push(cc);
+            }
+            if !t.is_empty() {
+                tokens.push(t);
+            }
+        }
+    }
+    tokens
+}
+
+/// Parse the `Lock-Token:` request header (single value). Strips the
+/// surrounding `<` and `>` (per RFC 4918 §10.5 the header is a Coded-URL).
+pub fn parse_lock_token(headers: &HeaderMap) -> Option<String> {
+    let raw = headers.get("lock-token").and_then(|v| v.to_str().ok())?;
+    let trimmed = raw.trim();
+    let inner = trimmed.trim_start_matches('<').trim_end_matches('>');
+    if inner.is_empty() {
+        None
+    } else {
+        Some(inner.to_string())
+    }
+}
+
+/// Parse `Timeout: Second-<N>` or `Timeout: Infinite`. Returns the
+/// clamped TTL in seconds (cap at 1800; default 1800). Accepts multiple
+/// comma-separated values per RFC 4918 §10.7 and uses the first valid one.
+pub fn parse_timeout(headers: &HeaderMap) -> i64 {
+    const DEFAULT_TTL: i64 = 1800;
+    const MAX_TTL: i64 = 1800;
+    let raw = match headers.get("timeout").and_then(|v| v.to_str().ok()) {
+        Some(s) => s,
+        None => return DEFAULT_TTL,
+    };
+    for part in raw.split(',') {
+        let p = part.trim();
+        if p.eq_ignore_ascii_case("infinite") {
+            return MAX_TTL;
+        }
+        if let Some(n) = p
+            .strip_prefix("Second-")
+            .or_else(|| p.strip_prefix("second-"))
+        {
+            if let Ok(v) = n.parse::<i64>() {
+                return v.clamp(0, MAX_TTL);
+            }
+        }
+    }
+    DEFAULT_TTL
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -279,5 +354,64 @@ mod tests {
     fn if_none_match_star() {
         assert!(parse_if_none_match_wildcard(&hm(&[("if-none-match", "*")])));
         assert!(!parse_if_none_match_wildcard(&hm(&[])));
+    }
+
+    #[test]
+    fn if_tokens_simple() {
+        let h = hm(&[("if", "(<urn:uuid:abc-123>)")]);
+        let tokens = parse_if_tokens(&h);
+        assert_eq!(tokens, vec!["urn:uuid:abc-123".to_string()]);
+    }
+
+    #[test]
+    fn if_tokens_multiple() {
+        let h = hm(&[("if", "(<urn:uuid:one>) (<urn:uuid:two>)")]);
+        let tokens = parse_if_tokens(&h);
+        assert_eq!(
+            tokens,
+            vec!["urn:uuid:one".to_string(), "urn:uuid:two".to_string()]
+        );
+    }
+
+    #[test]
+    fn if_tokens_absent() {
+        assert!(parse_if_tokens(&hm(&[])).is_empty());
+    }
+
+    #[test]
+    fn lock_token_parses_brackets() {
+        let h = hm(&[("lock-token", "<urn:uuid:xyz>")]);
+        assert_eq!(parse_lock_token(&h), Some("urn:uuid:xyz".to_string()));
+    }
+
+    #[test]
+    fn lock_token_absent() {
+        assert!(parse_lock_token(&hm(&[])).is_none());
+    }
+
+    #[test]
+    fn timeout_second_form() {
+        assert_eq!(parse_timeout(&hm(&[("timeout", "Second-60")])), 60);
+    }
+
+    #[test]
+    fn timeout_caps_at_1800() {
+        assert_eq!(parse_timeout(&hm(&[("timeout", "Second-9999")])), 1800);
+    }
+
+    #[test]
+    fn timeout_infinite_is_capped() {
+        assert_eq!(parse_timeout(&hm(&[("timeout", "Infinite")])), 1800);
+    }
+
+    #[test]
+    fn timeout_default_when_absent() {
+        assert_eq!(parse_timeout(&hm(&[])), 1800);
+    }
+
+    #[test]
+    fn timeout_multi_value_picks_first_valid() {
+        // First entry unparseable; second is valid.
+        assert_eq!(parse_timeout(&hm(&[("timeout", "garbage, Second-30")])), 30);
     }
 }

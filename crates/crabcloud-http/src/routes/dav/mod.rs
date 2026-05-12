@@ -10,6 +10,7 @@
 pub mod error;
 pub mod extractor;
 pub mod headers;
+pub mod lock;
 pub mod methods;
 pub mod moves;
 pub mod propfind;

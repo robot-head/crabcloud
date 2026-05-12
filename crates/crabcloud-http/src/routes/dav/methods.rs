@@ -85,8 +85,8 @@ async fn dispatch_inner(
             get_or_head(state, &uid, &user_path, &headers, method == Method::HEAD).await
         }
         Method::PUT => put(state, &uid, &user_path, &headers, body).await,
-        m if m.as_str() == "MKCOL" => mkcol(state, &uid, &user_path).await,
-        Method::DELETE => delete(state, &uid, &user_path).await,
+        m if m.as_str() == "MKCOL" => mkcol(state, &uid, &user_path, &headers).await,
+        Method::DELETE => delete(state, &uid, &user_path, &headers).await,
         m if m.as_str() == "MOVE" => {
             crate::routes::dav::moves::move_(state, &uid, &user_path, &headers).await
         }
@@ -97,13 +97,14 @@ async fn dispatch_inner(
             crate::routes::dav::propfind::handle(state, &uid, &user_path, &headers).await
         }
         m if m.as_str() == "PROPPATCH" => {
-            crate::routes::dav::proppatch::handle(state, &uid, &user_path, body).await
+            crate::routes::dav::proppatch::handle(state, &uid, &user_path, &headers, body).await
         }
-        // LOCK/UNLOCK land in batch F.
-        m if matches!(m.as_str(), "LOCK" | "UNLOCK") => Err(DavError::BadRequest(format!(
-            "{} not yet implemented",
-            m.as_str()
-        ))),
+        m if m.as_str() == "LOCK" => {
+            crate::routes::dav::lock::acquire(state, &uid, &user_path, &headers, body).await
+        }
+        m if m.as_str() == "UNLOCK" => {
+            crate::routes::dav::lock::release(state, &uid, &user_path, &headers).await
+        }
         _ => Ok((
             StatusCode::METHOD_NOT_ALLOWED,
             [(header::ALLOW, HeaderValue::from_static(ALLOW_HEADER))],
@@ -174,6 +175,8 @@ async fn put(
     headers: &HeaderMap,
     body: Body,
 ) -> DavResult<Response> {
+    let locks = crabcloud_filecache::LockStore::new(state.filecache.pool().clone());
+    crate::routes::dav::lock::lock_check(&locks, uid, user_path, headers).await?;
     let view = state.view_for(uid).await?;
 
     // Conditional checks: resolve target IF needed.
@@ -218,7 +221,10 @@ async fn mkcol(
     state: AppState,
     uid: &crabcloud_users::UserId,
     user_path: &crabcloud_fs::UserPath,
+    headers: &HeaderMap,
 ) -> DavResult<Response> {
+    let locks = crabcloud_filecache::LockStore::new(state.filecache.pool().clone());
+    crate::routes::dav::lock::lock_check(&locks, uid, user_path, headers).await?;
     let view = state.view_for(uid).await?;
     view.mkdir(user_path).await?;
     Ok((StatusCode::CREATED, "").into_response())
@@ -228,7 +234,10 @@ async fn delete(
     state: AppState,
     uid: &crabcloud_users::UserId,
     user_path: &crabcloud_fs::UserPath,
+    headers: &HeaderMap,
 ) -> DavResult<Response> {
+    let locks = crabcloud_filecache::LockStore::new(state.filecache.pool().clone());
+    crate::routes::dav::lock::lock_check(&locks, uid, user_path, headers).await?;
     let view = state.view_for(uid).await?;
     view.delete(user_path).await?;
     Ok((StatusCode::NO_CONTENT, "").into_response())
