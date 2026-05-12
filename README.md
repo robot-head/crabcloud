@@ -61,7 +61,7 @@ cargo run -p crabcloud-server -- user-add admin --admin
 - `crates/crabcloud-i18n` — gettext `.po` loader, `Locale`, `I18n`.
 - `crates/crabcloud-ocs` — OCS envelope (JSON/XML), capabilities aggregator.
 - `crates/crabcloud-core` — `AppState`, `Error`, `AppConfigService`, `BootstrapHook`.
-- `crates/crabcloud-http` — axum router, middleware, session, CSRF, auth extractors, API handlers (including the Nextcloud-compatible admin OCS surface at `/ocs/v2.php/cloud/{users,groups}`).
+- `crates/crabcloud-http` — axum router, middleware, session, CSRF, auth extractors, API handlers (including the Nextcloud-compatible admin OCS surface at `/ocs/v2.php/cloud/{users,groups}` and the WebDAV files API at `/dav/files/{user}/...` plus the legacy `/remote.php/dav/files/{user}/...` alias, with chunked uploads under `/dav/uploads/{user}/{upload_id}/...`).
 - `crates/crabcloud-storage` — `Storage` async trait + `MemoryStorage` and `LocalStorage` backends, `StoragePath` newtype, `EventSink` for cache/scanner consumers.
 - `crates/crabcloud-users` — user/group/preference stores, password verifier, `UsersService` façade, bootstrap-admin shim, `AppPasswordService` + `TokenStore` (auth tokens + Bearer/Basic).
 - `crates/crabcloud-ui` — Dioxus 0.6 SSR + WASM hydration UI.

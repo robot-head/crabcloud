@@ -9,6 +9,7 @@ use hex as _;
 use infer as _;
 use phf as _;
 use rand as _;
+use serde as _;
 use sha2 as _;
 use tempfile as _;
 use thiserror as _;

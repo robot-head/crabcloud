@@ -15,6 +15,7 @@ crabcloud-i18n.workspace = true
 crabcloud-ocs.workspace = true
 crabcloud-storage.workspace = true
 crabcloud-users.workspace = true
+dashmap.workspace = true
 sqlx.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["sync"] }
