@@ -12,10 +12,15 @@ cookie.workspace = true
 futures.workspace = true
 hex.workspace = true
 hmac.workspace = true
+httpdate.workspace = true
+quick-xml.workspace = true
 rand.workspace = true
 crabcloud-cache.workspace = true
 crabcloud-core.workspace = true
+crabcloud-fs.workspace = true
+crabcloud-filecache.workspace = true
 crabcloud-ocs.workspace = true
+crabcloud-storage.workspace = true
 crabcloud-users.workspace = true
 secrecy.workspace = true
 serde.workspace = true
@@ -24,9 +29,12 @@ sha2.workspace = true
 subtle.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["sync"] }
+tokio-util = { workspace = true, features = ["io"] }
 tower.workspace = true
 tower-http.workspace = true
 tracing.workspace = true
+urlencoding.workspace = true
+uuid = { workspace = true, features = ["v4"] }
 
 [dev-dependencies]
 crabcloud-config = { workspace = true, features = ["test-support"] }
