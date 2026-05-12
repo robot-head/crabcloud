@@ -1,6 +1,8 @@
 //! Helpers for the server-bin's user/group management subcommands.
 //! Pure async functions consuming `UsersService`.
 
+use crate::app_password::AppPasswordService;
+use crate::auth_token::AuthTokenType;
 use crate::email::Email;
 use crate::error::UsersResult;
 use crate::group::GroupId;
@@ -71,6 +73,41 @@ pub async fn group_remove_member(svc: &UsersService, gid: &str, uid: &str) -> Us
         .await
 }
 
+/// Mint a fresh `AppPassword`-kind token for `uid`. Returns the row id +
+/// raw plaintext token; the caller must surface the plaintext exactly
+/// once (it is not retrievable after this returns).
+pub async fn app_password_add(
+    ap: &AppPasswordService,
+    uid: &str,
+    name: &str,
+) -> UsersResult<(i64, String)> {
+    let user_id = UserId::new(uid)?;
+    let (row, raw) = ap
+        .mint(&user_id, uid, name, AuthTokenType::AppPassword, false)
+        .await?;
+    Ok((row.id, raw.expose().to_string()))
+}
+
+/// List every `oc_authtoken` row owned by `uid` as
+/// `(id, name, kind, last_activity)` tuples.
+pub async fn app_password_list(
+    ap: &AppPasswordService,
+    uid: &str,
+) -> UsersResult<Vec<(i64, String, AuthTokenType, u64)>> {
+    let user_id = UserId::new(uid)?;
+    Ok(ap
+        .list(&user_id)
+        .await?
+        .into_iter()
+        .map(|r| (r.id, r.name, r.kind, r.last_activity))
+        .collect())
+}
+
+/// Revoke a token row by id. Idempotent: deleting an absent row succeeds.
+pub async fn app_password_revoke(ap: &AppPasswordService, id: i64) -> UsersResult<()> {
+    ap.revoke(id).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -117,6 +154,39 @@ mod tests {
         let svc = fresh_svc().await;
         user_add(&svc, "bob", "pw", None, None, true).await.unwrap();
         assert!(svc.is_admin(&UserId::new("bob").unwrap()).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn app_password_add_then_list_then_revoke() {
+        use crate::app_password::AppPasswordService;
+        use crate::store::auth_token::{SqlTokenStore, TokenAuthCache, TokenStore};
+        use crabcloud_cache::MemoryCache;
+        use secrecy::SecretString;
+
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = crabcloud_config::test_support::minimal_sqlite_config(dir.path().join("c2.db"));
+        std::mem::forget(dir);
+        let pool = crabcloud_db::DbPool::connect(&cfg).await.unwrap();
+        let mut runner = crabcloud_db::MigrationRunner::new(&pool, &cfg.dbtableprefix);
+        runner.register(crabcloud_db::core_set());
+        runner.run().await.unwrap();
+        let token_store: Arc<dyn TokenStore> = Arc::new(SqlTokenStore::new(pool));
+        let cache = Arc::new(TokenAuthCache::new(
+            token_store,
+            Arc::new(MemoryCache::new()),
+            "inst",
+        ));
+        let ap = AppPasswordService::new(cache, SecretString::new("s".into()));
+
+        let (id, raw) = super::app_password_add(&ap, "alice", "DAV").await.unwrap();
+        assert!(id > 0);
+        assert!(raw.len() > 50);
+        let listed = super::app_password_list(&ap, "alice").await.unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].0, id);
+        super::app_password_revoke(&ap, id).await.unwrap();
+        let empty = super::app_password_list(&ap, "alice").await.unwrap();
+        assert!(empty.is_empty());
     }
 
     #[tokio::test]

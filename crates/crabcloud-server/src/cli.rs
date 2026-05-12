@@ -43,6 +43,12 @@ pub enum Cmd {
     GroupAddMember { gid: String, uid: String },
     /// Remove a user from a group.
     GroupRemoveMember { gid: String, uid: String },
+    /// Create a new app password for a user. Prints the plaintext exactly once.
+    AppPasswordAdd { uid: String, name: String },
+    /// List a user's tokens (id, kind, last_activity, name).
+    AppPasswordList { uid: String },
+    /// Revoke an app password by row id.
+    AppPasswordRevoke { id: i64 },
 }
 
 impl Cli {
@@ -108,6 +114,36 @@ mod tests {
                 assert!(display_name.is_none());
             }
             _ => panic!("expected UserAdd"),
+        }
+    }
+
+    #[test]
+    fn app_password_add_parses() {
+        let cli = Cli::parse_from(["crabcloud-server", "app-password-add", "alice", "DAV"]);
+        match cli.selected() {
+            Cmd::AppPasswordAdd { uid, name } => {
+                assert_eq!(uid, "alice");
+                assert_eq!(name, "DAV");
+            }
+            _ => panic!("expected AppPasswordAdd"),
+        }
+    }
+
+    #[test]
+    fn app_password_revoke_parses() {
+        let cli = Cli::parse_from(["crabcloud-server", "app-password-revoke", "42"]);
+        match cli.selected() {
+            Cmd::AppPasswordRevoke { id } => assert_eq!(id, 42),
+            _ => panic!("expected AppPasswordRevoke"),
+        }
+    }
+
+    #[test]
+    fn app_password_list_parses() {
+        let cli = Cli::parse_from(["crabcloud-server", "app-password-list", "alice"]);
+        match cli.selected() {
+            Cmd::AppPasswordList { uid } => assert_eq!(uid, "alice"),
+            _ => panic!("expected AppPasswordList"),
         }
     }
 

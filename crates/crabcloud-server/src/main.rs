@@ -186,5 +186,52 @@ async fn main() -> Result<()> {
             state.pool.close().await;
             Ok(())
         }
+        Cmd::AppPasswordAdd { uid, name } => {
+            let config = crabcloud_config::load(&cli.config, &[])?;
+            let state = crabcloud_core::AppStateBuilder::new(config).build().await?;
+            let ap = state
+                .users
+                .app_passwords()
+                .ok_or_else(|| anyhow::anyhow!("app_passwords not wired"))?
+                .clone();
+            let (id, raw) = crabcloud_users::cli::app_password_add(&ap, &uid, &name).await?;
+            println!("id={id}");
+            println!("token={raw}");
+            info!(uid, name, id, "app password created");
+            state.pool.close().await;
+            Ok(())
+        }
+        Cmd::AppPasswordList { uid } => {
+            let config = crabcloud_config::load(&cli.config, &[])?;
+            let state = crabcloud_core::AppStateBuilder::new(config).build().await?;
+            let ap = state
+                .users
+                .app_passwords()
+                .ok_or_else(|| anyhow::anyhow!("app_passwords not wired"))?
+                .clone();
+            for (id, name, kind, last) in crabcloud_users::cli::app_password_list(&ap, &uid).await?
+            {
+                let kind_str = match kind {
+                    crabcloud_users::AuthTokenType::Session => "session",
+                    crabcloud_users::AuthTokenType::AppPassword => "app",
+                };
+                println!("{id}\t{kind_str}\t{last}\t{name}");
+            }
+            state.pool.close().await;
+            Ok(())
+        }
+        Cmd::AppPasswordRevoke { id } => {
+            let config = crabcloud_config::load(&cli.config, &[])?;
+            let state = crabcloud_core::AppStateBuilder::new(config).build().await?;
+            let ap = state
+                .users
+                .app_passwords()
+                .ok_or_else(|| anyhow::anyhow!("app_passwords not wired"))?
+                .clone();
+            crabcloud_users::cli::app_password_revoke(&ap, id).await?;
+            info!(id, "app password revoked");
+            state.pool.close().await;
+            Ok(())
+        }
     }
 }
