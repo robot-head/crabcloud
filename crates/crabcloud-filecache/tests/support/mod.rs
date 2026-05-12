@@ -6,6 +6,8 @@
 use crabcloud_config::test_support::minimal_sqlite_config;
 use crabcloud_db::{core_set, DbPool, MigrationRunner};
 use crabcloud_storage::{ETag, FileKind, FileMetadata, Mimetype, Permissions, StoragePath};
+use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
+use std::str::FromStr;
 use std::time::{Duration, UNIX_EPOCH};
 use tempfile::TempDir;
 
@@ -43,6 +45,34 @@ pub async fn harness() -> Harness {
     let cfg = minimal_sqlite_config(dir.path().join("h.db"));
     let pool = DbPool::connect(&cfg).await.unwrap();
     let mut runner = MigrationRunner::new(&pool, &cfg.dbtableprefix);
+    runner.register(core_set());
+    runner.run().await.unwrap();
+    Harness {
+        pool,
+        _tempdir: dir,
+    }
+}
+
+/// Like `harness()`, but builds the SQLite pool with WAL journaling +
+/// a generous `busy_timeout`. Tests that run many concurrent writers
+/// against the same pool (the populate parallel test) hit
+/// `SQLITE_BUSY` under the default settings — these pragmas let the
+/// pool wait briefly instead of erroring out.
+pub async fn harness_concurrent() -> Harness {
+    let dir = tempfile::tempdir().unwrap();
+    let db_path = dir.path().join("h.db");
+    let opts = SqliteConnectOptions::from_str(&format!("sqlite://{}", db_path.display()))
+        .unwrap()
+        .create_if_missing(true)
+        .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal)
+        .busy_timeout(Duration::from_secs(10));
+    let sqlite_pool = SqlitePoolOptions::new()
+        .max_connections(8)
+        .connect_with(opts)
+        .await
+        .unwrap();
+    let pool = DbPool::Sqlite(sqlite_pool);
+    let mut runner = MigrationRunner::new(&pool, "oc_");
     runner.register(core_set());
     runner.run().await.unwrap();
     Harness {
