@@ -59,6 +59,19 @@ pub enum StorageEvent {
     },
 }
 
+impl StorageEvent {
+    /// Returns the `storage_id` of the event.
+    pub fn storage_id(&self) -> &str {
+        match self {
+            StorageEvent::Written { storage_id, .. }
+            | StorageEvent::DirCreated { storage_id, .. }
+            | StorageEvent::Deleted { storage_id, .. }
+            | StorageEvent::Moved { storage_id, .. }
+            | StorageEvent::Copied { storage_id, .. } => storage_id,
+        }
+    }
+}
+
 /// Receiver for [`StorageEvent`]s. Emissions are fire-and-forget — a failing
 /// emit must NOT roll back the storage operation. Failures are logged.
 #[async_trait]
@@ -73,6 +86,31 @@ pub struct NoopEventSink;
 #[async_trait]
 impl EventSink for NoopEventSink {
     async fn emit(&self, _event: StorageEvent) {}
+}
+
+/// Broadcast-channel-backed `EventSink`. Wraps `tokio::sync::broadcast`.
+/// `emit` is non-blocking and best-effort (a send with zero receivers is
+/// dropped silently). Consumers subscribe via [`ChannelEventSink::subscribe`].
+pub struct ChannelEventSink {
+    tx: tokio::sync::broadcast::Sender<StorageEvent>,
+}
+
+impl ChannelEventSink {
+    pub fn new(capacity: usize) -> Self {
+        let (tx, _rx) = tokio::sync::broadcast::channel(capacity);
+        Self { tx }
+    }
+
+    pub fn subscribe(&self) -> tokio::sync::broadcast::Receiver<StorageEvent> {
+        self.tx.subscribe()
+    }
+}
+
+#[async_trait]
+impl EventSink for ChannelEventSink {
+    async fn emit(&self, event: StorageEvent) {
+        let _ = self.tx.send(event);
+    }
 }
 
 /// The storage trait. All mutating methods take `&dyn EventSink` so callers
@@ -176,5 +214,105 @@ mod tests {
             path: StoragePath::root(),
         })
         .await;
+    }
+}
+
+#[cfg(test)]
+mod storage_event_accessor_tests {
+    use super::*;
+    use crate::meta::{ETag, FileKind, FileMetadata, Mimetype, Permissions};
+    use std::time::SystemTime;
+
+    fn dir_meta() -> FileMetadata {
+        FileMetadata {
+            path: StoragePath::root(),
+            kind: FileKind::Directory,
+            size: 0,
+            mtime: SystemTime::UNIX_EPOCH,
+            etag: ETag::new(),
+            mimetype: Mimetype::octet_stream(),
+            permissions: Permissions::full(),
+        }
+    }
+
+    #[test]
+    fn storage_id_returns_field_for_each_variant() {
+        let ev = StorageEvent::Written {
+            storage_id: "a".into(),
+            path: StoragePath::root(),
+            metadata: dir_meta(),
+        };
+        assert_eq!(ev.storage_id(), "a");
+
+        let ev = StorageEvent::DirCreated {
+            storage_id: "b".into(),
+            path: StoragePath::root(),
+            metadata: dir_meta(),
+        };
+        assert_eq!(ev.storage_id(), "b");
+
+        let ev = StorageEvent::Deleted {
+            storage_id: "c".into(),
+            path: StoragePath::root(),
+        };
+        assert_eq!(ev.storage_id(), "c");
+
+        let ev = StorageEvent::Moved {
+            storage_id: "d".into(),
+            from: StoragePath::root(),
+            to: StoragePath::root(),
+        };
+        assert_eq!(ev.storage_id(), "d");
+
+        let ev = StorageEvent::Copied {
+            storage_id: "e".into(),
+            from: StoragePath::root(),
+            to: StoragePath::root(),
+        };
+        assert_eq!(ev.storage_id(), "e");
+    }
+}
+
+#[cfg(test)]
+mod channel_sink_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn emit_with_subscriber_delivers() {
+        let sink = ChannelEventSink::new(4);
+        let mut rx = sink.subscribe();
+        sink.emit(StorageEvent::Deleted {
+            storage_id: "x".into(),
+            path: StoragePath::root(),
+        })
+        .await;
+        let got = rx.recv().await.unwrap();
+        assert!(matches!(got, StorageEvent::Deleted { .. }));
+    }
+
+    #[tokio::test]
+    async fn emit_without_subscriber_does_not_panic() {
+        let sink = ChannelEventSink::new(4);
+        sink.emit(StorageEvent::Deleted {
+            storage_id: "x".into(),
+            path: StoragePath::root(),
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    async fn multiple_subscribers_each_receive() {
+        let sink = ChannelEventSink::new(4);
+        let mut rx1 = sink.subscribe();
+        let mut rx2 = sink.subscribe();
+        sink.emit(StorageEvent::Deleted {
+            storage_id: "y".into(),
+            path: StoragePath::root(),
+        })
+        .await;
+        let e1 = rx1.recv().await.unwrap();
+        let e2 = rx2.recv().await.unwrap();
+        assert_eq!(e1.storage_id(), "y");
+        assert_eq!(e2.storage_id(), "y");
     }
 }

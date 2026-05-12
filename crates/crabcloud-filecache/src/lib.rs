@@ -11,10 +11,12 @@ pub mod error;
 pub mod mimetypes;
 pub mod populate;
 pub mod propagate;
+pub mod scanner;
 pub mod schema;
 pub mod storages;
 
 pub use error::{FileCacheError, FileCacheResult};
+pub use scanner::Scanner;
 pub use schema::{path_hash, type_half, FilecacheRow, FilecacheRowRaw, DIRECTORY_MIMETYPE};
 
 use crabcloud_db::DbPool;
