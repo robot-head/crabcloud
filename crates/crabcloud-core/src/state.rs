@@ -7,6 +7,7 @@ use crabcloud_cache::{Cache, MemoryCache};
 use crabcloud_config::FileConfig;
 use crabcloud_db::{core_set, DbPool, MigrationRunner};
 use crabcloud_filecache::{FileCache, Scanner};
+use crabcloud_fs::{HomeMountResolver, LocalStorageFactory, MountResolver, Uploads, View};
 use crabcloud_i18n::I18n;
 use crabcloud_ocs::CapabilityProvider;
 use crabcloud_storage::ChannelEventSink;
@@ -42,6 +43,10 @@ pub struct AppState {
     /// `AppStateBuilder::build` iff `config.filecache.enabled` is true;
     /// `register_storage` / `full_scan` work regardless.
     pub scanner: Arc<Scanner>,
+    /// Resolves per-user mounts. 4c default: `HomeMountResolver` over
+    /// `LocalStorageFactory` (which uses `config.datadirectory`). Later
+    /// sub-projects (sharing, external storage) layer additional resolvers.
+    pub mount_resolver: Arc<dyn MountResolver>,
 }
 
 impl std::fmt::Debug for AppState {
@@ -58,6 +63,32 @@ impl AppState {
     /// `/ocs/.../capabilities` requests will include its contribution.
     pub async fn register_capability_provider(&self, p: Arc<dyn CapabilityProvider>) {
         self.capability_providers.lock().await.push(p);
+    }
+
+    /// Construct a per-request `View` for `uid`. Resolves the user's
+    /// mounts via `mount_resolver`.
+    pub async fn view_for(&self, uid: &crabcloud_users::UserId) -> crabcloud_fs::FsResult<View> {
+        let mounts = self.mount_resolver.mounts_for(uid).await?;
+        Ok(View::new(
+            uid.clone(),
+            mounts,
+            self.filecache.clone(),
+            self.storage_sink.clone(),
+        ))
+    }
+
+    /// Construct a per-request `Uploads` façade for `uid`.
+    pub async fn uploads_for(
+        &self,
+        uid: &crabcloud_users::UserId,
+    ) -> crabcloud_fs::FsResult<Uploads> {
+        let mounts = self.mount_resolver.mounts_for(uid).await?;
+        Ok(Uploads::new(
+            uid.clone(),
+            mounts,
+            self.storage_sink.clone(),
+            self.filecache.clone(),
+        ))
     }
 }
 
@@ -214,6 +245,10 @@ impl AppStateBuilder {
             std::mem::drop(scanner.clone().spawn());
         }
 
+        // Mount resolver: 4c ships home-only via LocalStorageFactory.
+        let factory = Arc::new(LocalStorageFactory::new(self.config.datadirectory.clone()));
+        let mount_resolver: Arc<dyn MountResolver> = Arc::new(HomeMountResolver::new(factory));
+
         let state = AppState {
             config: self.config.clone(),
             pool,
@@ -225,6 +260,7 @@ impl AppStateBuilder {
             storage_sink,
             filecache,
             scanner,
+            mount_resolver,
         };
 
         self.registry.run(&state).await?;
