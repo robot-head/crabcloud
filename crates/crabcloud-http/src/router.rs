@@ -60,18 +60,39 @@ pub fn build_router(state: AppState, app_router: Router) -> Router {
         .allow_credentials(true)
         .allow_origin(AllowOrigin::list(cors_origins));
 
-    app_router
+    // WebDAV sub-router. WebDAV uses OPTIONS as a capability probe
+    // (`DAV: 1, 2, 3` advertisement); tower-http's CorsLayer short-circuits
+    // every OPTIONS request as a CORS preflight before it reaches the inner
+    // service, so DAV cannot share the CORS layer with the OCS surface.
+    // DAV doesn't need CSRF either (it's authenticated per-request via
+    // Bearer/Basic/cookie; there's no form posting that needs token gating).
+    // The outer AuthLayer, SecurityHeaders, ProxyHeaders, body limit, panic
+    // catcher, and TraceLayer still wrap DAV because they're applied below.
+    let dav_router = Router::new()
         .nest(
-            "/ocs",
-            crate::routes::ocs::router().with_state(state.clone()),
+            "/remote.php/dav",
+            crate::routes::dav::dav_router().with_state(state.clone()),
         )
+        .nest(
+            "/dav",
+            crate::routes::dav::dav_router().with_state(state.clone()),
+        );
+
+    // OCS + app (Dioxus SSR + server functions) sub-router. Wrapped in CORS
+    // and CSRF below.
+    let ocs_app = app_router.nest(
+        "/ocs",
+        crate::routes::ocs::router().with_state(state.clone()),
+    );
+
+    Router::new()
+        .merge(dav_router)
+        .merge(ocs_app.layer(CsrfLayer::new()).layer(cors_layer))
         // Install AppState as a request extension so `FullstackContext::extension`
         // can pull it from inside `#[server]` function bodies.
         .layer(axum::Extension(state.clone()))
-        .layer(CsrfLayer::new())
         .layer(SessionLayer::new(session_store, secret, secure_cookies))
         .layer(crate::middleware::auth::AuthLayer::new(state))
-        .layer(cors_layer)
         .layer(SecurityHeadersLayer::new())
         .layer(TrustedDomainLayer::new(trusted_domains))
         .layer(ProxyHeadersLayer::new(trusted_proxies))

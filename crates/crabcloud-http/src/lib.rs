@@ -10,6 +10,13 @@
 // lint here.
 use cookie as _;
 
+// `quick-xml` and `uuid` are declared up front for SP5 / WebDAV. Their first
+// real call sites land in Batches D (PROPFIND/PROPPATCH XML) and F
+// (LOCK/UNLOCK lock-token UUIDs). Anchor them here so the workspace-wide
+// `unused_crate_dependencies` lint stays quiet during Batches B/C.
+use quick_xml as _;
+use uuid as _;
+
 mod auth_context;
 mod csrf;
 mod error;
