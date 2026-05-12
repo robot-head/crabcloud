@@ -91,7 +91,7 @@ async fn migrate_sqlite() {
     let mut runner = MigrationRunner::new(&pool, &cfg.dbtableprefix);
     runner.register(core_set());
     let applied = runner.run().await.unwrap();
-    assert_eq!(applied, 3);
+    assert_eq!(applied, 4);
 
     assert_appconfig_table_usable(&pool).await;
     pool.close().await;
@@ -106,8 +106,13 @@ async fn migrate_mysql() {
     let pool = DbPool::connect(&cfg).await.unwrap();
 
     // Tests may share a database; drop our migration tracking + appconfig first.
+    // `oc_filecache` must come before `oc_mimetypes` / `oc_storages` because of FKs
+    // (`filecache.mimetype → mimetypes.id`, `filecache.storage → storages.numeric_id`).
     if let DbPool::MySql(p) = &pool {
         for table in [
+            "oc_filecache",
+            "oc_mimetypes",
+            "oc_storages",
             "oc_authtoken",
             "oc_preferences",
             "oc_group_user",
@@ -125,7 +130,7 @@ async fn migrate_mysql() {
     let mut runner = MigrationRunner::new(&pool, &cfg.dbtableprefix);
     runner.register(core_set());
     let applied = runner.run().await.unwrap();
-    assert_eq!(applied, 3);
+    assert_eq!(applied, 4);
 
     assert_appconfig_table_usable(&pool).await;
     pool.close().await;
@@ -139,8 +144,13 @@ async fn migrate_postgres() {
     let cfg = postgres_config_from_url(&url);
     let pool = DbPool::connect(&cfg).await.unwrap();
 
+    // `oc_filecache` must come before `oc_mimetypes` / `oc_storages` because of FKs
+    // (`filecache.mimetype → mimetypes.id`, `filecache.storage → storages.numeric_id`).
     if let DbPool::Postgres(p) = &pool {
         for table in [
+            "oc_filecache",
+            "oc_mimetypes",
+            "oc_storages",
             "oc_authtoken",
             "oc_preferences",
             "oc_group_user",
@@ -158,7 +168,7 @@ async fn migrate_postgres() {
     let mut runner = MigrationRunner::new(&pool, &cfg.dbtableprefix);
     runner.register(core_set());
     let applied = runner.run().await.unwrap();
-    assert_eq!(applied, 3);
+    assert_eq!(applied, 4);
 
     assert_appconfig_table_usable(&pool).await;
     pool.close().await;

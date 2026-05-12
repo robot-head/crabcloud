@@ -773,6 +773,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "crabcloud-filecache"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "crabcloud-cache",
+ "crabcloud-config",
+ "crabcloud-db",
+ "crabcloud-storage",
+ "dashmap",
+ "hex",
+ "md-5 0.11.0",
+ "sqlx",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "crabcloud-http"
 version = "0.1.0"
 dependencies = [
@@ -2848,6 +2867,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "md-5"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "69b6441f590336821bb897fb28fc622898ccceb1d6cea3fde5ea86b090c4de98"
+dependencies = [
+ "cfg-if",
+ "digest 0.11.3",
+]
+
+[[package]]
 name = "memchr"
 version = "2.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4126,7 +4155,7 @@ dependencies = [
  "hmac 0.12.1",
  "itoa",
  "log",
- "md-5",
+ "md-5 0.10.6",
  "memchr",
  "once_cell",
  "percent-encoding",
@@ -4166,7 +4195,7 @@ dependencies = [
  "home",
  "itoa",
  "log",
- "md-5",
+ "md-5 0.10.6",
  "memchr",
  "once_cell",
  "rand 0.8.6",
