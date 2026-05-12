@@ -167,7 +167,11 @@ pub struct MultipartHandle {
 
 /// Caller-replay token for one part of a multipart upload. The `etag` field
 /// is backend-defined (S3 returns part ETag; local-fs returns sha256 hex).
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// `Serialize` / `Deserialize` are derived so the chunked-upload commit
+/// route can accept the part list as a JSON-encoded `X-Crabcloud-Part-Tags`
+/// header.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct PartTag {
     pub part_number: u32,
     pub etag: String,

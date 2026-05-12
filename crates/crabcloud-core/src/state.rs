@@ -11,6 +11,7 @@ use crabcloud_fs::{HomeMountResolver, LocalStorageFactory, MountResolver, Upload
 use crabcloud_i18n::I18n;
 use crabcloud_ocs::CapabilityProvider;
 use crabcloud_storage::ChannelEventSink;
+use dashmap::DashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -47,6 +48,13 @@ pub struct AppState {
     /// `LocalStorageFactory` (which uses `config.datadirectory`). Later
     /// sub-projects (sharing, external storage) layer additional resolvers.
     pub mount_resolver: Arc<dyn MountResolver>,
+    /// In-process map from the client-chosen URL-segment `upload_id` (the
+    /// `{upload_id}` path component in `/dav/uploads/{user}/{upload_id}/...`)
+    /// to the server-encoded `upload_id` returned by `Uploads::begin`. Holds
+    /// for the duration of a chunked upload (MKCOL → PUT × N → MOVE/DELETE);
+    /// dropped on commit or abort. Process-local; chunked uploads do not
+    /// survive a restart (matches Nextcloud's behavior).
+    pub upload_id_map: Arc<DashMap<String, String>>,
 }
 
 impl std::fmt::Debug for AppState {
@@ -249,6 +257,8 @@ impl AppStateBuilder {
         let factory = Arc::new(LocalStorageFactory::new(self.config.datadirectory.clone()));
         let mount_resolver: Arc<dyn MountResolver> = Arc::new(HomeMountResolver::new(factory));
 
+        let upload_id_map = Arc::new(DashMap::new());
+
         let state = AppState {
             config: self.config.clone(),
             pool,
@@ -261,6 +271,7 @@ impl AppStateBuilder {
             filecache,
             scanner,
             mount_resolver,
+            upload_id_map,
         };
 
         self.registry.run(&state).await?;
