@@ -355,7 +355,7 @@ pub async fn login_v2_authorize(flow_id: String) -> Result<(), ServerFnError> {
 
     let poll_key = format!("{inst}:login_v2:poll:{poll_id}");
     let payload = serde_json::json!({
-        "loginName": ctx.user_id.as_str(),
+        "loginName": ctx.login_name.as_str(),
         "appPassword": raw_token.expose(),
     });
     let bytes = serde_json::to_vec(&payload).unwrap();
