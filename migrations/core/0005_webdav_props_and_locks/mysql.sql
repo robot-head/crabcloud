@@ -5,8 +5,8 @@ CREATE TABLE oc_properties (
     propertyname   VARCHAR(255)    NOT NULL,
     propertyvalue  LONGTEXT        NULL,
     PRIMARY KEY (id),
-    KEY        oc_properties_pathonly (userid, propertypath),
-    UNIQUE KEY oc_properties_pathname (userid, propertypath, propertyname(191))
+    KEY        oc_properties_pathonly (userid, propertypath(191)),
+    UNIQUE KEY oc_properties_pathname (userid, propertypath(191), propertyname(191))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 CREATE TABLE oc_filelocks (
