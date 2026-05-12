@@ -22,6 +22,10 @@ pub enum UsersError {
     ReadOnly,
     #[error("password rejected: {0}")]
     PasswordTooWeak(&'static str),
+    #[error("token not found")]
+    TokenNotFound,
+    #[error("token already revoked")]
+    TokenAlreadyRevoked,
     #[error(transparent)]
     Db(#[from] crabcloud_db::DbError),
     #[error(transparent)]
