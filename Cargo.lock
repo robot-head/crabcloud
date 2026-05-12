@@ -851,7 +851,7 @@ dependencies = [
  "async-trait",
  "bytes",
  "hex",
- "infer 0.16.0",
+ "infer",
  "phf",
  "phf_codegen",
  "rand 0.10.1",
@@ -1134,7 +1134,7 @@ checksum = "69387edbbc60c7cb93ad96d8cc7a22b49a76e21643380b89b1c49a78d347ff60"
 dependencies = [
  "dioxus-cli-config",
  "http",
- "infer 0.19.0",
+ "infer",
  "jni",
  "js-sys",
  "ndk",
@@ -2504,12 +2504,6 @@ dependencies = [
  "serde",
  "serde_core",
 ]
-
-[[package]]
-name = "infer"
-version = "0.16.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bc150e5ce2330295b8616ce0e3f53250e53af31759a9dbedad1621ba29151847"
 
 [[package]]
 name = "infer"
