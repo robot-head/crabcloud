@@ -10,5 +10,5 @@ mod store;
 
 pub use cookie::{decode_cookie, encode_cookie, CookieError};
 pub use data::{Session, SessionId};
-pub use layer::{SessionHandle, SessionLayer, COOKIE_NAME};
+pub use layer::{PendingCookie, SessionHandle, SessionLayer, COOKIE_NAME};
 pub use store::{SessionStore, SESSION_IDLE_TTL};

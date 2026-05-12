@@ -69,8 +69,8 @@ pub fn build_router(state: AppState, app_router: Router) -> Router {
         // can pull it from inside `#[server]` function bodies.
         .layer(axum::Extension(state.clone()))
         .layer(CsrfLayer::new())
-        .layer(crate::middleware::auth::AuthLayer::new(state))
         .layer(SessionLayer::new(session_store, secret, secure_cookies))
+        .layer(crate::middleware::auth::AuthLayer::new(state))
         .layer(cors_layer)
         .layer(SecurityHeadersLayer::new())
         .layer(TrustedDomainLayer::new(trusted_domains))

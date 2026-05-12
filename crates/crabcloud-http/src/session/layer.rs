@@ -1,17 +1,17 @@
-//! `SessionLayer` — Tower middleware that loads the session from the cookie
-//! into a request extension, then writes it back on response.
-//!
-//! Cookie name: `oc_sessionPassphrase` (Nextcloud-compatible).
+//! `SessionLayer` — thin middleware that owns cookie sign/verify and the
+//! per-session ephemeral state (CSRF token, two_factor_passed). Auth itself
+//! is handled upstream by `AuthLayer`; this layer reads the AuthContext to
+//! decide whether to load / write ephemeral state.
 
-use crate::session::cookie::{decode_cookie, encode_cookie};
-use crate::session::data::{Session, SessionId};
+use crate::auth_context::{AuthContext, AuthMethod};
+use crate::session::cookie::encode_cookie;
+use crate::session::data::Session;
 use crate::session::store::SessionStore;
-use axum::http::header::{COOKIE, SET_COOKIE};
+use axum::http::header::SET_COOKIE;
 use axum::http::{HeaderValue, Request};
 use axum::response::Response;
 use futures::future::BoxFuture;
-use secrecy::ExposeSecret;
-use secrecy::SecretString;
+use secrecy::{ExposeSecret, SecretString};
 use std::sync::Arc;
 use std::task::{Context, Poll};
 use tokio::sync::Mutex;
@@ -20,15 +20,33 @@ use tower::{Layer, Service};
 /// Name of the session cookie (Nextcloud-compatible).
 pub const COOKIE_NAME: &str = "oc_sessionPassphrase";
 
-/// Wrapper inserted into request extensions so handlers can mutate the session.
+/// Pending-cookie action: a handler can stash a [`PendingCookie::Set`] to mint
+/// a fresh cookie post-response, or [`PendingCookie::Destroy`] to clear it.
+#[derive(Debug, Clone)]
+pub enum PendingCookie {
+    /// Mint a fresh cookie carrying `raw_token` as the opaque payload.
+    Set {
+        /// Plaintext token to embed (HMAC-signed by the layer).
+        raw_token: String,
+        /// `Max-Age` cookie attribute, in seconds.
+        max_age_secs: u64,
+    },
+    /// Emit a Set-Cookie that clears the cookie on the client.
+    Destroy,
+}
+
+/// Wrapper inserted into request extensions so handlers can mutate the
+/// ephemeral session blob and request cookie writes.
 #[derive(Clone)]
 pub struct SessionHandle {
-    /// Session id (matches the cookie value).
-    pub id: SessionId,
-    /// Mutable session payload guarded by an async mutex.
+    /// The authoritative `oc_authtoken` row id, when the request was
+    /// authenticated via session cookie. `None` for anonymous / header-auth
+    /// requests.
+    pub token_id: Option<i64>,
+    /// Mutable session blob guarded by an async mutex.
     pub inner: Arc<Mutex<Session>>,
-    /// Set to true when the handler wants the session destroyed on response.
-    pub destroy: Arc<Mutex<bool>>,
+    /// Pending cookie mutation to apply on response.
+    pub pending_cookie: Arc<Mutex<Option<PendingCookie>>>,
 }
 
 impl SessionHandle {
@@ -48,16 +66,16 @@ impl SessionHandle {
         let mut s = self.inner.lock().await;
         f(&mut s);
     }
-    /// Mark the session for destruction. The layer will purge the cache entry
-    /// and emit a clearing `Set-Cookie` on response.
-    pub async fn destroy(&self) {
-        *self.destroy.lock().await = true;
+    /// Stash a pending cookie mutation. The layer will apply it on response.
+    pub async fn set_pending_cookie(&self, p: PendingCookie) {
+        *self.pending_cookie.lock().await = Some(p);
     }
 }
 
-/// `tower::Layer` that loads the session referenced by the request cookie,
-/// makes it available via [`SessionHandle`] extension, and writes back any
-/// changes on response.
+/// `tower::Layer` that loads the ephemeral session blob keyed by the
+/// AuthContext's `token_id`, makes it available via [`SessionHandle`]
+/// extension, and writes back any changes (and pending cookie mutations)
+/// on response.
 #[derive(Clone)]
 pub struct SessionLayer {
     store: SessionStore,
@@ -98,23 +116,8 @@ pub struct SessionMiddleware<S> {
     secure: bool,
 }
 
-fn extract_cookie(req: &Request<impl Send>, name: &str) -> Option<String> {
-    let raw = req.headers().get(COOKIE)?.to_str().ok()?;
-    for piece in raw.split(';').map(str::trim) {
-        if let Some((k, v)) = piece.split_once('=') {
-            if k == name {
-                return Some(v.to_string());
-            }
-        }
-    }
-    None
-}
-
 fn make_set_cookie(value: &str, secure: bool, max_age: u64) -> HeaderValue {
-    let mut s = format!(
-        "{}={}; Path=/; HttpOnly; SameSite=Lax; Max-Age={}",
-        COOKIE_NAME, value, max_age
-    );
+    let mut s = format!("{COOKIE_NAME}={value}; Path=/; HttpOnly; SameSite=Lax; Max-Age={max_age}");
     if secure {
         s.push_str("; Secure");
     }
@@ -122,10 +125,7 @@ fn make_set_cookie(value: &str, secure: bool, max_age: u64) -> HeaderValue {
 }
 
 fn make_destroy_cookie(secure: bool) -> HeaderValue {
-    let mut s = format!(
-        "{}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0",
-        COOKIE_NAME
-    );
+    let mut s = format!("{COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0");
     if secure {
         s.push_str("; Secure");
     }
@@ -153,64 +153,57 @@ where
         let mut inner = self.inner.clone();
 
         Box::pin(async move {
-            // 1. Resolve session ID from cookie, or mint a new one.
-            let (id, mut session) = match extract_cookie(&req, COOKIE_NAME) {
-                Some(raw) => match decode_cookie(&raw, secret.expose_secret().as_bytes()) {
-                    Ok(id_hex) => {
-                        let id = SessionId(id_hex);
-                        let loaded = store.load(&id).await.ok().flatten();
-                        match loaded {
-                            Some(s) => (id, s),
-                            None => (SessionId::new_random(), Session::new()),
-                        }
-                    }
-                    Err(_) => (SessionId::new_random(), Session::new()),
-                },
-                None => (SessionId::new_random(), Session::new()),
+            // Token id from AuthLayer's context. Cookie-auth has one; non-
+            // Session auth (Bearer/Basic) also has one but we don't load
+            // ephemeral state for those (they're stateless headers).
+            let token_id_opt = req
+                .extensions()
+                .get::<AuthContext>()
+                .filter(|c| c.method == AuthMethod::Session)
+                .map(|c| c.token_id);
+
+            // Load the session blob for this token (or start fresh).
+            let session = match token_id_opt {
+                Some(id) => store
+                    .load_for_token(id)
+                    .await
+                    .ok()
+                    .flatten()
+                    .unwrap_or_default(),
+                None => Session::new(),
             };
 
-            // 2. Slide TTL (touch last_activity).
-            session.last_activity = now_secs();
-
-            // 3. Insert handle into request extensions.
             let handle = SessionHandle {
-                id: id.clone(),
+                token_id: token_id_opt,
                 inner: Arc::new(Mutex::new(session)),
-                destroy: Arc::new(Mutex::new(false)),
+                pending_cookie: Arc::new(Mutex::new(None)),
             };
             req.extensions_mut().insert(handle.clone());
 
-            // 4. Run inner service.
             let mut resp = inner.call(req).await?;
 
-            // 5. Save or destroy session as the handler indicated.
-            let destroy = *handle.destroy.lock().await;
-            if destroy {
-                let _ = store.destroy(&handle.id).await;
-                resp.headers_mut()
-                    .append(SET_COOKIE, make_destroy_cookie(secure));
-            } else {
+            // Persist blob mutations.
+            if let Some(id) = token_id_opt {
                 let final_session = handle.inner.lock().await.clone();
-                if let Some(uid) = &final_session.user_id {
-                    if let Err(e) = store.record_for_user(uid, &handle.id).await {
-                        ::tracing::warn!(
-                            error = ?e,
-                            uid = %uid,
-                            "failed to record session in user index; destroy_all_for may miss this session"
-                        );
+                let _ = store.save_for_token(id, &final_session).await;
+            }
+
+            // Apply pending cookie mutation.
+            if let Some(pending) = handle.pending_cookie.lock().await.clone() {
+                match pending {
+                    PendingCookie::Set {
+                        raw_token,
+                        max_age_secs,
+                    } => {
+                        let value = encode_cookie(&raw_token, secret.expose_secret().as_bytes());
+                        resp.headers_mut()
+                            .append(SET_COOKIE, make_set_cookie(&value, secure, max_age_secs));
+                    }
+                    PendingCookie::Destroy => {
+                        resp.headers_mut()
+                            .append(SET_COOKIE, make_destroy_cookie(secure));
                     }
                 }
-                let _ = store.save(&handle.id, &final_session).await;
-                let cookie_value =
-                    encode_cookie(handle.id.as_str(), secret.expose_secret().as_bytes());
-                resp.headers_mut().append(
-                    SET_COOKIE,
-                    make_set_cookie(
-                        &cookie_value,
-                        secure,
-                        super::store::SESSION_IDLE_TTL.as_secs(),
-                    ),
-                );
             }
 
             Ok(resp)
@@ -218,86 +211,64 @@ where
     }
 }
 
-fn now_secs() -> u64 {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::session::store::SessionStore;
     use axum::body::Body;
-    use axum::http::Request;
+    use axum::http::{Request, StatusCode};
     use axum::routing::get;
     use axum::Router;
     use crabcloud_cache::MemoryCache;
     use tower::ServiceExt;
 
-    async fn login_handler(
-        axum::Extension(handle): axum::Extension<SessionHandle>,
+    async fn no_op_handler(
+        axum::Extension(_handle): axum::Extension<SessionHandle>,
     ) -> &'static str {
-        handle.mutate(|s| s.user_id = Some("alice".into())).await;
         "ok"
     }
 
-    async fn whoami(axum::Extension(handle): axum::Extension<SessionHandle>) -> String {
-        handle.read().await.user_id.unwrap_or_default()
+    async fn set_cookie_handler(
+        axum::Extension(handle): axum::Extension<SessionHandle>,
+    ) -> &'static str {
+        handle
+            .set_pending_cookie(PendingCookie::Set {
+                raw_token: "the-raw-token".into(),
+                max_age_secs: 1800,
+            })
+            .await;
+        "ok"
     }
 
-    fn app() -> (Router, Arc<dyn crabcloud_cache::Cache>) {
+    fn app() -> Router {
         let cache: Arc<dyn crabcloud_cache::Cache> = Arc::new(MemoryCache::new());
-        let store = SessionStore::new(cache.clone(), "inst1");
+        let store = SessionStore::new(cache, "inst1");
         let layer = SessionLayer::new(store, SecretString::new("secret".into()), false);
-        let app = Router::new()
-            .route("/login", get(login_handler))
-            .route("/whoami", get(whoami))
-            .layer(layer);
-        (app, cache)
+        Router::new()
+            .route("/noop", get(no_op_handler))
+            .route("/login", get(set_cookie_handler))
+            .layer(layer)
     }
 
     #[tokio::test]
-    async fn login_sets_session_cookie() {
-        let (app, _) = app();
+    async fn no_pending_cookie_means_no_set_cookie_header() {
+        let req = Request::builder().uri("/noop").body(Body::empty()).unwrap();
+        let resp = app().oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert!(resp.headers().get(SET_COOKIE).is_none());
+    }
+
+    #[tokio::test]
+    async fn pending_cookie_set_emits_set_cookie() {
         let req = Request::builder()
             .uri("/login")
             .body(Body::empty())
             .unwrap();
-        let resp = app.oneshot(req).await.unwrap();
+        let resp = app().oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
         let setc = resp.headers().get(SET_COOKIE).unwrap().to_str().unwrap();
-        assert!(setc.starts_with("oc_sessionPassphrase="));
+        assert!(setc.starts_with(&format!("{COOKIE_NAME}=")));
         assert!(setc.contains("HttpOnly"));
         assert!(setc.contains("SameSite=Lax"));
-    }
-
-    #[tokio::test]
-    async fn round_trip_session_via_cookie() {
-        let (app, _) = app();
-        // 1st request: login.
-        let req1 = Request::builder()
-            .uri("/login")
-            .body(Body::empty())
-            .unwrap();
-        let resp1 = app.clone().oneshot(req1).await.unwrap();
-        let setc = resp1
-            .headers()
-            .get(SET_COOKIE)
-            .unwrap()
-            .to_str()
-            .unwrap()
-            .to_string();
-        let cookie = setc.split(';').next().unwrap().to_string();
-        // 2nd request: whoami with the cookie.
-        let req2 = Request::builder()
-            .uri("/whoami")
-            .header("cookie", cookie)
-            .body(Body::empty())
-            .unwrap();
-        let resp2 = app.oneshot(req2).await.unwrap();
-        let body = axum::body::to_bytes(resp2.into_body(), 1024).await.unwrap();
-        assert_eq!(String::from_utf8_lossy(&body), "alice");
     }
 }
