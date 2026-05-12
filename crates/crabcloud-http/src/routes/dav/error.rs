@@ -43,7 +43,7 @@ impl IntoResponse for DavError {
             DavError::Forbidden => (StatusCode::FORBIDDEN, "").into_response(),
             DavError::Conflict => (StatusCode::CONFLICT, "").into_response(),
             DavError::PreconditionFailed => (StatusCode::PRECONDITION_FAILED, "").into_response(),
-            DavError::Locked => (StatusCode::from_u16(423).unwrap(), "").into_response(),
+            DavError::Locked => (StatusCode::LOCKED, "").into_response(),
             DavError::RangeNotSatisfiable { file_size } => (
                 StatusCode::RANGE_NOT_SATISFIABLE,
                 [(header::CONTENT_RANGE, format!("bytes */{file_size}"))],
@@ -65,11 +65,9 @@ impl IntoResponse for DavError {
                 (StatusCode::NOT_FOUND, "").into_response()
             }
             DavError::Storage(StorageError::AlreadyExists) => {
-                (StatusCode::from_u16(405).unwrap(), "").into_response()
+                (StatusCode::METHOD_NOT_ALLOWED, "").into_response()
             }
-            DavError::Storage(StorageError::NotEmpty) => {
-                (StatusCode::from_u16(409).unwrap(), "").into_response()
-            }
+            DavError::Storage(StorageError::NotEmpty) => (StatusCode::CONFLICT, "").into_response(),
             DavError::Storage(StorageError::PermissionDenied) => {
                 (StatusCode::FORBIDDEN, "").into_response()
             }
@@ -94,9 +92,7 @@ impl IntoResponse for DavError {
                 .into_response(),
             DavError::Fs(FsError::NotFound) => (StatusCode::NOT_FOUND, "").into_response(),
             DavError::Fs(FsError::InvalidPath(m)) => (StatusCode::BAD_REQUEST, m).into_response(),
-            DavError::Fs(FsError::CrossMount) => {
-                (StatusCode::from_u16(502).unwrap(), "").into_response()
-            }
+            DavError::Fs(FsError::CrossMount) => (StatusCode::BAD_GATEWAY, "").into_response(),
             DavError::Fs(FsError::Storage(StorageError::NotFound)) => {
                 (StatusCode::NOT_FOUND, "").into_response()
             }

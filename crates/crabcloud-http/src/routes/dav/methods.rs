@@ -197,15 +197,10 @@ async fn put(
         StatusCode::CREATED
     };
     let etag = format!("\"{}\"", meta.etag.as_str());
+    let last_modified = httpdate::fmt_http_date(meta.mtime);
     Ok((
         status,
-        [
-            (header::ETAG, HeaderValue::from_str(&etag).unwrap()),
-            (
-                header::LAST_MODIFIED,
-                HeaderValue::from_str(&httpdate::fmt_http_date(meta.mtime)).unwrap(),
-            ),
-        ],
+        [(header::ETAG, etag), (header::LAST_MODIFIED, last_modified)],
         "",
     )
         .into_response())
