@@ -26,6 +26,13 @@ pub const CORE_MIGRATIONS: &[Migration] = &[
         mysql: include_str!("../../../migrations/core/0002_users/mysql.sql"),
         postgres: include_str!("../../../migrations/core/0002_users/postgres.sql"),
     },
+    Migration {
+        version: 3,
+        name: "auth_tokens",
+        sqlite: include_str!("../../../migrations/core/0003_auth_tokens/sqlite.sql"),
+        mysql: include_str!("../../../migrations/core/0003_auth_tokens/mysql.sql"),
+        postgres: include_str!("../../../migrations/core/0003_auth_tokens/postgres.sql"),
+    },
 ];
 
 /// Returns the `core` migration set ready to be registered with a
@@ -53,7 +60,7 @@ mod tests {
         let mut runner = MigrationRunner::new(&pool, &cfg.dbtableprefix);
         runner.register(core_set());
         let applied = runner.run().await.unwrap();
-        assert_eq!(applied, 2);
+        assert_eq!(applied, 3);
 
         // Verify oc_appconfig exists and accepts a row.
         match &pool {
@@ -116,6 +123,36 @@ mod tests {
                     .await
                     .unwrap();
             assert_eq!(display.as_deref(), Some("Alice"));
+        } else {
+            unreachable!()
+        }
+        pool.close().await;
+    }
+
+    #[tokio::test]
+    async fn auth_tokens_migration_creates_table() {
+        let dir = tempdir().unwrap();
+        let cfg = minimal_sqlite_config(dir.path().join("authtoken.db"));
+        let pool = DbPool::connect(&cfg).await.unwrap();
+
+        let mut runner = MigrationRunner::new(&pool, &cfg.dbtableprefix);
+        runner.register(core_set());
+        runner.run().await.unwrap();
+
+        if let DbPool::Sqlite(p) = &pool {
+            sqlx::query(
+                "INSERT INTO oc_authtoken \
+                 (uid, login_name, name, token, type, remember, last_activity, last_check, version, password_invalid, remote_wipe) \
+                 VALUES ('alice', 'alice', 'DAV client', 'hash123', 1, 0, 0, 0, 2, 0, 0)",
+            )
+            .execute(p)
+            .await
+            .unwrap();
+            let id: i64 = sqlx::query_scalar("SELECT id FROM oc_authtoken WHERE token = 'hash123'")
+                .fetch_one(p)
+                .await
+                .unwrap();
+            assert!(id > 0);
         } else {
             unreachable!()
         }

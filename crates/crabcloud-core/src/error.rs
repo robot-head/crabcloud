@@ -114,6 +114,8 @@ fn users_status(e: &crabcloud_users::UsersError) -> u16 {
         InvalidUid(_) | InvalidEmail(_) | InvalidDisplayName(_) | PasswordTooWeak(_) => 400,
         UidAlreadyExists | EmailAlreadyTaken => 409,
         ReadOnly => 403,
+        TokenNotFound => 401,
+        TokenAlreadyRevoked => 410,
         Db(_) | Cache(_) | Internal(_) => 500,
     }
 }
@@ -183,6 +185,11 @@ mod tests {
         assert_eq!(
             Error::Users(UsersError::InvalidUid("x".into())).http_status(),
             400
+        );
+        assert_eq!(Error::Users(UsersError::TokenNotFound).http_status(), 401);
+        assert_eq!(
+            Error::Users(UsersError::TokenAlreadyRevoked).http_status(),
+            410
         );
     }
 }
