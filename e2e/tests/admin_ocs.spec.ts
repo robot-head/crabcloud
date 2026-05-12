@@ -77,9 +77,17 @@ test.describe("Admin OCS endpoints", () => {
         expect(gotAgainBody.ocs.data["display-name"]).toBe("Bob B.");
 
         // 6. Login as bob to mint a Bearer token.
+        // Override the Cookie header explicitly: Playwright's request fixture
+        // auto-attaches the admin session cookie stored from step 1, which
+        // would put bob's POST behind the session's CSRF gate and 403. Bob's
+        // login is a fresh session-establishment request and must travel
+        // without inherited cookies.
         const bobLogin = await request.post("/index.php/login", {
             data: { username: "bob", password: "bobpw" },
-            headers: { "content-type": "application/json" },
+            headers: {
+                "content-type": "application/json",
+                cookie: "",
+            },
             maxRedirects: 0,
         });
         expect(bobLogin.status()).toBe(200);
