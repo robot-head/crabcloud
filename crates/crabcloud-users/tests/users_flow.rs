@@ -94,6 +94,89 @@ async fn login_v2_start_returns_urls() {
 }
 
 #[tokio::test]
+async fn login_v2_full_cycle() {
+    let (app, _cookie) = build_app().await;
+
+    // 1. Start.
+    let start_req = Request::builder()
+        .method("POST")
+        .uri("/index.php/login/v2")
+        .body(Body::empty())
+        .unwrap();
+    let start_resp = app.clone().oneshot(start_req).await.unwrap();
+    assert_eq!(start_resp.status(), StatusCode::OK);
+    let start_body = to_bytes(start_resp.into_body(), 16 * 1024).await.unwrap();
+    let start: serde_json::Value = serde_json::from_slice(&start_body).unwrap();
+    let poll_token = start["poll"]["token"].as_str().unwrap().to_string();
+    let login_url = start["login"].as_str().unwrap().to_string();
+    let flow_id = login_url.rsplit('/').next().unwrap().to_string();
+
+    // 2. Pre-authorize poll → non-200.
+    let poll_req = Request::builder()
+        .method("POST")
+        .uri("/index.php/login/v2/poll")
+        .header("content-type", "application/json")
+        .body(Body::from(format!(
+            "{{\"req\":{{\"token\":\"{poll_token}\"}}}}"
+        )))
+        .unwrap();
+    let pre = app.clone().oneshot(poll_req).await.unwrap();
+    assert_ne!(pre.status(), StatusCode::OK);
+
+    // 3. Login via /index.php/login to get a cookie.
+    let login_req = Request::builder()
+        .method("POST")
+        .uri("/index.php/login")
+        .header("content-type", "application/json")
+        .body(Body::from(
+            "{\"username\":\"alice\",\"password\":\"hunter2\"}",
+        ))
+        .unwrap();
+    let login_resp = app.clone().oneshot(login_req).await.unwrap();
+    let cookie = login_resp
+        .headers()
+        .get("set-cookie")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .split(';')
+        .next()
+        .unwrap()
+        .to_string();
+
+    // 4. Authorize as cookie-authed user. `ocs-apirequest: true` bypasses
+    // the CSRF check (matching Nextcloud convention) — real browser callers
+    // include the `requesttoken` meta value instead, which would require
+    // reading it back out of the SessionStore for tests.
+    let auth_req = Request::builder()
+        .method("POST")
+        .uri("/index.php/login/v2/authorize")
+        .header("content-type", "application/json")
+        .header("cookie", &cookie)
+        .header("ocs-apirequest", "true")
+        .body(Body::from(format!("{{\"flow_id\":\"{flow_id}\"}}")))
+        .unwrap();
+    let auth_resp = app.clone().oneshot(auth_req).await.unwrap();
+    assert_eq!(auth_resp.status(), StatusCode::OK);
+
+    // 5. Poll → 200 with the app password.
+    let poll_req2 = Request::builder()
+        .method("POST")
+        .uri("/index.php/login/v2/poll")
+        .header("content-type", "application/json")
+        .body(Body::from(format!(
+            "{{\"req\":{{\"token\":\"{poll_token}\"}}}}"
+        )))
+        .unwrap();
+    let poll2 = app.oneshot(poll_req2).await.unwrap();
+    assert_eq!(poll2.status(), StatusCode::OK);
+    let body = to_bytes(poll2.into_body(), 16 * 1024).await.unwrap();
+    let p: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(p["loginName"], "alice");
+    assert!(p["appPassword"].as_str().unwrap().len() > 50);
+}
+
+#[tokio::test]
 async fn get_self_returns_payload() {
     let (app, cookie) = build_app().await;
     let req = Request::builder()

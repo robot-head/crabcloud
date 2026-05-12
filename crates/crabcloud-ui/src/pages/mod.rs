@@ -2,4 +2,5 @@
 
 pub mod home;
 pub mod login;
+pub mod login_v2_flow;
 pub mod not_found;
