@@ -93,6 +93,16 @@ pub async fn put_self(
     Form(form): Form<PutForm>,
 ) -> Result<Response, OcsError> {
     let uid = UserId::new(&authed.user_id).map_err(|e| users_err(e, fmt.0))?;
+
+    // Pre-flight: password rotation is Session-only. Reject Bearer/Basic
+    // here BEFORE verifying currentpassword so a stolen Bearer token can't
+    // probe whether a guess matches the user's primary password (the 403
+    // would otherwise differ from the 401 that a wrong `currentpassword`
+    // produces, leaking the comparison result).
+    if form.key == "password" && ctx.method != AuthMethod::Session {
+        return Err(OcsError::new(CoreError::Forbidden, OcsVersion::V2, fmt.0));
+    }
+
     state
         .users
         .verify(uid.as_str(), &form.currentpassword)
@@ -101,9 +111,7 @@ pub async fn put_self(
 
     match form.key.as_str() {
         "password" => {
-            if ctx.method != AuthMethod::Session {
-                return Err(OcsError::new(CoreError::Forbidden, OcsVersion::V2, fmt.0));
-            }
+            // Gate already enforced above; ctx.method == Session is guaranteed here.
             // `set_password` cascades `invalidate_all_for_user` which marks
             // every row for `uid` (including the caller's) as
             // `password_invalid=true`. To keep the caller logged in we mint
@@ -447,6 +455,41 @@ mod tests {
             .header("authorization", format!("Bearer {}", raw.expose()))
             .body(Body::from(
                 "key=password&value=newpass&currentpassword=hunter2",
+            ))
+            .unwrap();
+        let resp = app.oneshot(put_req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn put_self_password_change_via_bearer_is_403_even_with_wrong_currentpassword() {
+        // Regression: the 403 vs 401 distinction would leak password equality
+        // through a Bearer-authenticated probe. Both cases must return 403.
+        use crabcloud_users::AuthTokenType;
+        let dir = tempdir().unwrap();
+        let state = make_state(dir.path().join("user.db")).await;
+        seed_user(&state, "alice", "hunter2").await;
+        let ap = state.users.app_passwords().unwrap().clone();
+        let (_row, raw) = ap
+            .mint(
+                &UserId::new("alice").unwrap(),
+                "alice",
+                "DAV",
+                AuthTokenType::AppPassword,
+                false,
+            )
+            .await
+            .unwrap();
+        let app = build_router(state, axum::Router::new());
+
+        let put_req = Request::builder()
+            .method("PUT")
+            .uri("/ocs/v2.php/cloud/user?format=json")
+            .header("ocs-apirequest", "true")
+            .header("content-type", "application/x-www-form-urlencoded")
+            .header("authorization", format!("Bearer {}", raw.expose()))
+            .body(Body::from(
+                "key=password&value=newpass&currentpassword=WRONG",
             ))
             .unwrap();
         let resp = app.oneshot(put_req).await.unwrap();
