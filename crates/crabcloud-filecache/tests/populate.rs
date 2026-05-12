@@ -186,18 +186,25 @@ async fn stat_cache_miss_concurrent_populates_once() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 8)]
 async fn stat_cache_miss_distinct_paths_run_in_parallel() {
-    // We use 16 concurrent populates rather than 50 to keep this test
-    // robust under the workspace's `cargo test --workspace` parallel
-    // execution: SQLite serializes writers, and 50 simultaneous
-    // transactions vs. a multi-test-binary workload regularly exhaust
-    // `busy_timeout`. 16 distinct paths is still well over the populate
-    // lock's serialization unit (1 path) and proves parallelism: if the
-    // lock map serialized distinct paths, the backend would be hit far
-    // fewer than 16 times.
+    // We can use a higher N here because `harness_concurrent` pins the
+    // pool to `max_connections = 1` (see its docs for why), so sqlx
+    // serializes write transactions naturally and there's no SQLITE_BUSY
+    // race. The property under test is "the per-path lock doesn't
+    // serialize distinct paths" — each task acquires its own lock,
+    // backend-stats, then queues for the connection to commit.
     const N: usize = 16;
     let h = harness_concurrent().await;
     let cache = Arc::new(FileCache::new(h.pool.clone()));
     let inner: Arc<dyn Storage> = Arc::new(MemoryStorage::new("populate3"));
+    // Seed the root directory + one warmup file. The warmup serves two
+    // purposes: (a) it interns oc_storages + oc_mimetypes rows so the 16
+    // parallel populates below don't race on those upserts, and (b) it
+    // populates the root oc_filecache row so each parallel populate only
+    // contends on its own leaf INSERT + a UPDATE of the shared root row
+    // (rather than ALSO racing to insert root). Without this pre-warm,
+    // Linux CI runners under workspace-test load hit SQLITE_BUSY past the
+    // 10s busy_timeout.
+    seed_one_file(&inner, "_warmup.txt", b"w").await;
     for i in 0..N {
         seed_one_file(&inner, &format!("f-{i:03}.txt"), b"x").await;
     }
@@ -207,6 +214,15 @@ async fn stat_cache_miss_distinct_paths_run_in_parallel() {
         inner: inner.clone(),
         stat_count: count.clone(),
     });
+
+    // Warmup stat (NOT counted against backend-stats budget; the warmup is
+    // through `inner` directly above). This populates intern caches + root
+    // row before the parallel race begins.
+    cache
+        .stat(&counting, &StoragePath::new("_warmup.txt").unwrap())
+        .await
+        .unwrap();
+    let warmup_count = count.load(Ordering::SeqCst);
 
     let mut tasks = Vec::new();
     for i in 0..N {
@@ -223,16 +239,17 @@ async fn stat_cache_miss_distinct_paths_run_in_parallel() {
 
     // N leaf stats — distinct paths must each hit the backend (the
     // populate lock is per-path, so distinct paths never serialize).
-    // Upper bound allows for an occasional root re-stat (currently the
-    // populate path doesn't re-stat root, so in practice n == N).
+    // Add the warmup count to the budget so the bounds describe just the
+    // parallel phase.
     let n = count.load(Ordering::SeqCst);
+    let parallel = n.saturating_sub(warmup_count);
     assert!(
-        n as usize >= N,
-        "expected at least {N} distinct backend stats, got {n}"
+        parallel as usize >= N,
+        "expected at least {N} distinct backend stats in the parallel phase, got {parallel} (warmup={warmup_count}, total={n})"
     );
     assert!(
-        n as usize <= N + 4,
-        "expected at most ~{N} + a few root re-stats, got {n}"
+        parallel as usize <= N + 4,
+        "expected at most ~{N} + a few root re-stats in the parallel phase, got {parallel}"
     );
 }
 
