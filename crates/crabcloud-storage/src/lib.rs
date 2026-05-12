@@ -143,15 +143,17 @@ pub trait Storage: Send + Sync {
     async fn abort_multipart(&self, handle: MultipartHandle) -> StorageResult<()>;
 }
 
-// `tempfile` is a dev-dep used by later batches' integration tests; reference
-// it here so `-W unused-crate-dependencies` stays quiet for now.
-#[cfg(test)]
-use tempfile as _;
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::sync::Arc;
+
+    // `tempfile` is a dev-dep used by integration tests under `tests/`, and
+    // `tracing` is only invoked from xattr_io's Unix-only debug paths. Both
+    // appear unused to the `lib test` target on Windows; anchor them here to
+    // keep `unused_crate_dependencies` quiet.
+    use tempfile as _;
+    use tracing as _;
 
     #[test]
     fn storage_trait_is_object_safe() {
