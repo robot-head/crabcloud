@@ -10,6 +10,7 @@ use tokio::io::AsyncReadExt;
 use async_trait as _;
 use base64 as _;
 use crabcloud_cache as _;
+use crabcloud_core as _;
 use thiserror as _;
 use tracing as _;
 

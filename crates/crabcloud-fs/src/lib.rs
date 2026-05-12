@@ -28,15 +28,11 @@ pub use resolver::HomeMountResolver;
 pub use uploads::{UploadHandle, Uploads};
 pub use view::View;
 
-// Anchor workspace deps whose real call sites land in Batches B–D. Each
-// anchor goes away as the corresponding feature is wired up.
-use crabcloud_config as _; // used in Batch E (datadirectory resolution + AppState)
-use tracing as _; // used in Batches B-D for warn!/info!
-
-// Anchor dev-deps used by integration tests in later batches. Their lib-test
-// usage is gated to silence `unused-crate-dependencies` until the
-// `tests/` directory adds real call sites in Batches B+.
+// Anchor crates whose real call sites are intentionally test-only or
+// reserved for follow-up. `tracing` will be picked up by future warn!/info!
+// calls inside Uploads when error logging gets added.
 #[cfg(test)]
-use crabcloud_cache as _; // used in Batch B integration tests
+use crabcloud_config as _;
 #[cfg(test)]
-use crabcloud_db as _; // used in Batch B integration tests
+use crabcloud_core as _;
+use tracing as _;
