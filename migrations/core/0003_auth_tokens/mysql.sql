@@ -1,0 +1,23 @@
+CREATE TABLE oc_authtoken (
+    id                BIGINT       NOT NULL AUTO_INCREMENT,
+    uid               VARCHAR(64)  NOT NULL,
+    login_name        VARCHAR(64)  NOT NULL,
+    password          LONGTEXT,
+    name              VARCHAR(128) NOT NULL,
+    token             VARCHAR(200) NOT NULL,
+    type              SMALLINT     NOT NULL DEFAULT 0,
+    remember          TINYINT      NOT NULL DEFAULT 0,
+    last_activity     BIGINT       NOT NULL DEFAULT 0,
+    last_check        BIGINT       NOT NULL DEFAULT 0,
+    public_key        LONGTEXT,
+    private_key       LONGTEXT,
+    version           SMALLINT     NOT NULL DEFAULT 2,
+    scope             LONGTEXT,
+    expires           BIGINT,
+    password_invalid  TINYINT      NOT NULL DEFAULT 0,
+    remote_wipe       TINYINT      NOT NULL DEFAULT 0,
+    PRIMARY KEY (id),
+    UNIQUE KEY oc_authtoken_token_idx (token),
+    KEY oc_authtoken_uid_type_idx (uid, type),
+    KEY oc_authtoken_activity_idx (last_activity)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

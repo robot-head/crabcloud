@@ -91,7 +91,7 @@ async fn migrate_sqlite() {
     let mut runner = MigrationRunner::new(&pool, &cfg.dbtableprefix);
     runner.register(core_set());
     let applied = runner.run().await.unwrap();
-    assert_eq!(applied, 2);
+    assert_eq!(applied, 3);
 
     assert_appconfig_table_usable(&pool).await;
     pool.close().await;
@@ -108,6 +108,7 @@ async fn migrate_mysql() {
     // Tests may share a database; drop our migration tracking + appconfig first.
     if let DbPool::MySql(p) = &pool {
         for table in [
+            "oc_authtoken",
             "oc_preferences",
             "oc_group_user",
             "oc_groups",
@@ -124,7 +125,7 @@ async fn migrate_mysql() {
     let mut runner = MigrationRunner::new(&pool, &cfg.dbtableprefix);
     runner.register(core_set());
     let applied = runner.run().await.unwrap();
-    assert_eq!(applied, 2);
+    assert_eq!(applied, 3);
 
     assert_appconfig_table_usable(&pool).await;
     pool.close().await;
@@ -140,6 +141,7 @@ async fn migrate_postgres() {
 
     if let DbPool::Postgres(p) = &pool {
         for table in [
+            "oc_authtoken",
             "oc_preferences",
             "oc_group_user",
             "oc_groups",
@@ -156,7 +158,7 @@ async fn migrate_postgres() {
     let mut runner = MigrationRunner::new(&pool, &cfg.dbtableprefix);
     runner.register(core_set());
     let applied = runner.run().await.unwrap();
-    assert_eq!(applied, 2);
+    assert_eq!(applied, 3);
 
     assert_appconfig_table_usable(&pool).await;
     pool.close().await;
