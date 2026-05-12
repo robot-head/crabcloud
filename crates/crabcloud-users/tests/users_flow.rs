@@ -60,7 +60,37 @@ async fn build_app() -> (axum::Router, String) {
     let cookie_value = encode_cookie(raw.expose(), state.config.secret.expose_secret().as_bytes());
     let cookie = format!("{COOKIE_NAME}={cookie_value}");
 
-    (build_router(state, axum::Router::new()), cookie)
+    // Mount Dioxus `#[server]` functions only (no SSR / no static assets):
+    // tests don't need rendered HTML or a built `public/` dir, but they do
+    // need `/index.php/login`, `/index.php/login/v2`, etc. to resolve.
+    use dioxus::server::{DioxusRouterExt, FullstackState};
+    let app_router = axum::Router::new()
+        .register_server_functions()
+        .with_state(FullstackState::headless());
+    // Silence the `crabcloud-ui` dev-dep unused-crate-dependencies warning —
+    // the dep is pulled in so `cargo test` triggers compilation of the
+    // `#[server]` declarations that register themselves via inventory.
+    let _ = crabcloud_ui::App;
+    (build_router(state, app_router), cookie)
+}
+
+#[tokio::test]
+async fn login_v2_start_returns_urls() {
+    let (app, _cookie) = build_app().await;
+    let req = Request::builder()
+        .method("POST")
+        .uri("/index.php/login/v2")
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = to_bytes(resp.into_body(), 16 * 1024).await.unwrap();
+    let parsed: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert!(parsed["poll"]["token"].as_str().unwrap().len() > 16);
+    assert!(parsed["login"]
+        .as_str()
+        .unwrap()
+        .contains("/login/v2/flow/"));
 }
 
 #[tokio::test]

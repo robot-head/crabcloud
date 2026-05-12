@@ -8,6 +8,12 @@
 
 #![cfg_attr(test, allow(unused_crate_dependencies))]
 
+// `crabcloud-cache` is reached for indirectly through `Arc<dyn Cache>` method
+// calls inside `#[server]` function bodies, which doesn't require the trait
+// to be in scope. Keep the dep listed and silence the lint.
+#[cfg(feature = "server")]
+use crabcloud_cache as _;
+
 mod app;
 mod context;
 pub mod pages;
