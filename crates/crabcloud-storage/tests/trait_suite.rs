@@ -386,3 +386,13 @@ async fn event_sink_emits_one_per_mutation<S: Storage>(factory: &impl Fn() -> S)
 fn make_body(bytes: &'static [u8]) -> std::pin::Pin<Box<dyn tokio::io::AsyncRead + Send>> {
     Box::pin(tokio::io::BufReader::new(bytes))
 }
+
+// --- backends ---
+
+#[tokio::test]
+async fn memory_backend_passes_trait_suite() {
+    run_storage_suite("memory", || {
+        crabcloud_storage::memory::MemoryStorage::new("test")
+    })
+    .await;
+}
