@@ -13,6 +13,11 @@ use sha2 as _;
 use tempfile as _;
 use thiserror as _;
 use tracing as _;
+// xattr is unix-only ([target.'cfg(unix)'.dependencies]); anchor it under the
+// same cfg so Linux CI doesn't flag it as unused in this test binary while
+// Windows-local builds don't see it at all.
+#[cfg(unix)]
+use xattr as _;
 
 use crabcloud_storage::memory::MemoryStorage;
 use crabcloud_storage::{NoopEventSink, Storage, StoragePath};
