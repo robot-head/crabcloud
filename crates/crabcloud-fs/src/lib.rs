@@ -25,12 +25,11 @@ pub use mount::{Mount, MountResolver, StorageFactory};
 pub use path::UserPath;
 pub use resolver::local::LocalStorageFactory;
 pub use resolver::HomeMountResolver;
-pub use uploads::Uploads;
+pub use uploads::{UploadHandle, Uploads};
 pub use view::View;
 
 // Anchor workspace deps whose real call sites land in Batches B–D. Each
 // anchor goes away as the corresponding feature is wired up.
-use base64 as _; // used in Batch D (upload_id encode/decode)
 use crabcloud_config as _; // used in Batch E (datadirectory resolution + AppState)
 use tracing as _; // used in Batches B-D for warn!/info!
 
