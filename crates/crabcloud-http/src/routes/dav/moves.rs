@@ -37,6 +37,13 @@ pub async fn move_(
         view.delete(&to).await?;
     }
     view.rename(from, &to).await?;
+    // Keep custom-prop rows synchronized with the file tree. PropertyStore
+    // owns its own per-userid key space, so the rewrite is scoped to the
+    // moved subtree.
+    let store = crabcloud_filecache::PropertyStore::new(state.filecache.pool().clone());
+    let from_sp = from.as_str().trim_start_matches('/');
+    let to_sp = to.as_str().trim_start_matches('/');
+    store.rename_path(uid, from_sp, to_sp).await?;
     Ok((
         if dest_existed {
             StatusCode::NO_CONTENT
@@ -73,6 +80,11 @@ pub async fn copy(
         view.delete(&to).await?;
     }
     view.copy(from, &to).await?;
+    // Duplicate the source's property subtree under the new location.
+    let store = crabcloud_filecache::PropertyStore::new(state.filecache.pool().clone());
+    let from_sp = from.as_str().trim_start_matches('/');
+    let to_sp = to.as_str().trim_start_matches('/');
+    store.copy_path(uid, from_sp, to_sp).await?;
     Ok((
         if dest_existed {
             StatusCode::NO_CONTENT

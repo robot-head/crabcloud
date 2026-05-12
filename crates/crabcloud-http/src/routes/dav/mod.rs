@@ -13,6 +13,7 @@ pub mod headers;
 pub mod methods;
 pub mod moves;
 pub mod propfind;
+pub mod proppatch;
 pub mod xml;
 
 use axum::routing::{any, options, MethodRouter};
