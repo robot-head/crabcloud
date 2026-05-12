@@ -10,6 +10,7 @@ crabcloud-cache.workspace = true
 crabcloud-config = { workspace = true, features = ["test-support"] }
 crabcloud-db.workspace = true
 crabcloud-storage.workspace = true
+crabcloud-users.workspace = true
 dashmap.workspace = true
 hex.workspace = true
 md-5.workspace = true

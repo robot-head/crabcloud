@@ -20,6 +20,7 @@ use tokio::io::AsyncRead;
 // test as missing dependencies that the library + the `tests/support` module
 // pull in transitively.
 use crabcloud_cache as _;
+use crabcloud_users as _;
 use dashmap as _;
 use hex as _;
 use md5 as _;
