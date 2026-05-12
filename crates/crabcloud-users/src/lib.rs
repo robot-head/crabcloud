@@ -29,5 +29,7 @@ pub use service::UsersService;
 pub use store::auth_token::{SqlTokenStore, TokenAuthCache, TokenStore};
 pub use store::bootstrap_shim::BootstrapAdminBackend;
 pub use store::sql::{SqlGroupStore, SqlPreferenceStore, SqlUserStore};
-pub use store::{GroupStore, PreferenceStore, UserStore, UserWithHash};
+pub use store::{
+    GroupListFilter, GroupStore, PreferenceStore, UserListFilter, UserStore, UserWithHash,
+};
 pub use user::{User, UserId};

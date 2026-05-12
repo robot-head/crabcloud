@@ -150,6 +150,17 @@ impl UserStore for BootstrapAdminBackend {
         }
         Ok(())
     }
+
+    async fn list_users(&self, filter: crate::store::UserListFilter<'_>) -> UsersResult<Vec<User>> {
+        // The shim never returns the virtual admin in lists — it's only
+        // visible to lookup_for_auth (login by the bootstrap admin name).
+        self.inner.list_users(filter).await
+    }
+
+    async fn exists_in_storage(&self, uid: &UserId) -> UsersResult<bool> {
+        // Skip the shim's synthesized fall-through; ask the inner store.
+        self.inner.exists_in_storage(uid).await
+    }
 }
 
 #[cfg(test)]
@@ -215,5 +226,31 @@ mod tests {
             .is_in_group(&uid, &GroupId::new("admin").unwrap())
             .await
             .unwrap());
+    }
+
+    #[tokio::test]
+    async fn exists_in_storage_false_for_virtual_admin() {
+        let (shim, _groups, _inner) = make().await;
+        // The virtual admin (config-only) has no oc_users row.
+        assert!(!shim
+            .exists_in_storage(&UserId::new("admin").unwrap())
+            .await
+            .unwrap());
+        // Sanity: lookup synthesizes it.
+        assert!(shim
+            .lookup(&UserId::new("admin").unwrap())
+            .await
+            .unwrap()
+            .is_some());
+    }
+
+    #[tokio::test]
+    async fn exists_in_storage_true_for_promoted_admin() {
+        let (shim, _groups, _inner) = make().await;
+        let uid = UserId::new("admin").unwrap();
+        let new_hash = BcryptVerifier::new().hash("newpass").unwrap();
+        // Promote: set_password creates the oc_users row.
+        shim.set_password(&uid, &new_hash).await.unwrap();
+        assert!(shim.exists_in_storage(&uid).await.unwrap());
     }
 }
