@@ -1,9 +1,8 @@
-//! `AuthenticatedUser` and `OptionalUser` axum extractors. Phase 3 resolves
-//! the user purely from the session cookie — Bearer/Basic/app-password auth
-//! lands later.
+//! Auth extractors. Source the authenticated user from the request's
+//! `AuthContext` extension (installed by [`crate::middleware::auth::AuthLayer`]).
 
+use crate::auth_context::{AuthContext, AuthMethod};
 use crate::error::ApiError;
-use crate::session::SessionHandle;
 use axum::extract::FromRequestParts;
 use axum::http::request::Parts;
 use axum::http::StatusCode;
@@ -11,8 +10,9 @@ use axum::response::{IntoResponse, Response};
 use crabcloud_core::{AppState, Error as CoreError};
 use std::convert::Infallible;
 
-/// Extractor that resolves the authenticated user from the session cookie.
-/// Returns [`UnauthorizedRejection`] (401) when no valid session is present.
+/// Extractor that resolves the authenticated user from the request's
+/// `AuthContext` extension. Returns [`UnauthorizedRejection`] (401) when the
+/// `AuthLayer` did not install one.
 #[derive(Debug, Clone)]
 pub struct AuthenticatedUser {
     /// Identifier of the authenticated user.
@@ -20,8 +20,6 @@ pub struct AuthenticatedUser {
     /// Method used to authenticate the request.
     pub auth_method: AuthMethod,
 }
-
-pub use crate::auth_context::AuthMethod;
 
 /// Rejection produced when `AuthenticatedUser` fails to resolve; renders as HTTP 401.
 pub struct UnauthorizedRejection;
@@ -39,16 +37,13 @@ where
     type Rejection = UnauthorizedRejection;
 
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
-        let handle = parts
+        let ctx = parts
             .extensions
-            .get::<SessionHandle>()
-            .cloned()
+            .get::<AuthContext>()
             .ok_or(UnauthorizedRejection)?;
-        let session = handle.read().await;
-        let user_id = session.user_id.ok_or(UnauthorizedRejection)?;
         Ok(AuthenticatedUser {
-            user_id,
-            auth_method: AuthMethod::Session,
+            user_id: ctx.user_id.as_str().to_string(),
+            auth_method: ctx.method,
         })
     }
 }
@@ -65,17 +60,14 @@ where
     type Rejection = Infallible;
 
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
-        let handle = parts.extensions.get::<SessionHandle>().cloned();
-        if let Some(h) = handle {
-            let session = h.read().await;
-            if let Some(uid) = session.user_id {
-                return Ok(OptionalUser(Some(AuthenticatedUser {
-                    user_id: uid,
-                    auth_method: AuthMethod::Session,
-                })));
-            }
-        }
-        Ok(OptionalUser(None))
+        let inner = parts
+            .extensions
+            .get::<AuthContext>()
+            .map(|ctx| AuthenticatedUser {
+                user_id: ctx.user_id.as_str().to_string(),
+                auth_method: ctx.method,
+            });
+        Ok(OptionalUser(inner))
     }
 }
 
@@ -113,13 +105,11 @@ impl FromRequestParts<AppState> for AdminUser {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::session::{Session, SessionHandle, SessionId};
+    use crate::auth_context::AuthContext;
     use axum::body::Body;
     use axum::http::Request;
     use axum::routing::get;
     use axum::Router;
-    use std::sync::Arc;
-    use tokio::sync::Mutex;
     use tower::ServiceExt;
 
     async fn auth_only(user: AuthenticatedUser) -> String {
@@ -129,13 +119,13 @@ mod tests {
         opt.0.map(|u| u.user_id).unwrap_or_else(|| "guest".into())
     }
 
-    fn handle_with(user: Option<&str>) -> SessionHandle {
-        let mut s = Session::new();
-        s.user_id = user.map(String::from);
-        SessionHandle {
-            id: SessionId("00".into()),
-            inner: Arc::new(Mutex::new(s)),
-            destroy: Arc::new(Mutex::new(false)),
+    fn ctx_for(user: &str, method: AuthMethod) -> AuthContext {
+        AuthContext {
+            user_id: crabcloud_users::UserId::new(user).unwrap(),
+            method,
+            token_id: 1,
+            login_name: user.into(),
+            remember: false,
         }
     }
 
@@ -146,28 +136,17 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn authenticated_user_rejects_when_no_session() {
+    async fn authenticated_user_rejects_when_no_context() {
         let req = Request::builder().uri("/auth").body(Body::empty()).unwrap();
         let resp = app().oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
     }
 
     #[tokio::test]
-    async fn authenticated_user_rejects_when_session_has_no_user() {
+    async fn authenticated_user_resolves_when_context_present() {
         let req = Request::builder()
             .uri("/auth")
-            .extension(handle_with(None))
-            .body(Body::empty())
-            .unwrap();
-        let resp = app().oneshot(req).await.unwrap();
-        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
-    }
-
-    #[tokio::test]
-    async fn authenticated_user_resolves_when_session_has_user() {
-        let req = Request::builder()
-            .uri("/auth")
-            .extension(handle_with(Some("alice")))
+            .extension(ctx_for("alice", AuthMethod::Session))
             .body(Body::empty())
             .unwrap();
         let resp = app().oneshot(req).await.unwrap();
@@ -180,17 +159,9 @@ mod tests {
     async fn optional_user_is_none_for_anon() {
         let req = Request::builder().uri("/opt").body(Body::empty()).unwrap();
         let resp = app().oneshot(req).await.unwrap();
-        assert_eq!(resp.status(), StatusCode::OK);
         let body = axum::body::to_bytes(resp.into_body(), 1024).await.unwrap();
         assert_eq!(String::from_utf8_lossy(&body), "guest");
     }
-
-    // --- AdminUser tests ---
-    //
-    // These tests need a real `AppState` so the extractor can resolve
-    // `state.users.is_admin`. They build a minimal sqlite-backed state, seed
-    // an oc_users row, optionally add it to the `admin` group, then drive a
-    // tiny router with a `/admin` route.
 
     use crabcloud_config::test_support::minimal_sqlite_config;
     use crabcloud_core::{AppState, AppStateBuilder};
@@ -207,7 +178,6 @@ mod tests {
     async fn make_state_with_user(uid: &str, is_admin: bool) -> AppState {
         let dir = tempdir().unwrap();
         let cfg = minimal_sqlite_config(dir.path().join("admin.db"));
-        // Leak the tempdir so the sqlite file outlives this fn.
         std::mem::forget(dir);
         let state = AppStateBuilder::new(cfg).build().await.unwrap();
         let hash = BcryptVerifier::new().hash("hunter2").unwrap();
@@ -227,10 +197,7 @@ mod tests {
             .await
             .unwrap();
         if is_admin {
-            // Use the underlying SqlGroupStore directly so we don't depend on
-            // GroupStore being exposed via UsersService.
-            let pool = state.pool.clone();
-            let groups = SqlGroupStore::new(pool);
+            let groups = SqlGroupStore::new(state.pool.clone());
             groups
                 .add_to_group(&UserId::new(uid).unwrap(), &GroupId::new("admin").unwrap())
                 .await
@@ -240,9 +207,6 @@ mod tests {
     }
 
     fn admin_app(state: AppState) -> Router {
-        // We bypass SessionLayer here — the unit test inserts the
-        // SessionHandle extension directly. The router is statefulish
-        // (typed `State<AppState>`), so we attach state via `with_state`.
         Router::new()
             .route("/admin", get(admin_only))
             .with_state(state)
@@ -264,7 +228,7 @@ mod tests {
         let state = make_state_with_user("alice", false).await;
         let req = Request::builder()
             .uri("/admin")
-            .extension(handle_with(Some("alice")))
+            .extension(ctx_for("alice", AuthMethod::Session))
             .body(Body::empty())
             .unwrap();
         let resp = admin_app(state).oneshot(req).await.unwrap();
@@ -276,7 +240,7 @@ mod tests {
         let state = make_state_with_user("root", true).await;
         let req = Request::builder()
             .uri("/admin")
-            .extension(handle_with(Some("root")))
+            .extension(ctx_for("root", AuthMethod::Session))
             .body(Body::empty())
             .unwrap();
         let resp = admin_app(state).oneshot(req).await.unwrap();
