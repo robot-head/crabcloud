@@ -16,6 +16,12 @@ use tower::ServiceExt;
 async fn make_state_with_user(db: std::path::PathBuf, data: std::path::PathBuf) -> AppState {
     let mut cfg = minimal_sqlite_config(db);
     cfg.datadirectory = data;
+    // Disable the filecache scanner: under `cargo test --workspace` on Linux
+    // CI the scanner's async event-apply races our handler's follow-up
+    // `view.stat` calls, occasionally serving a stale "not yet populated"
+    // miss back through `View::stat` -> 201 instead of 204 on overwrite PUT.
+    // Same workaround Batches C–F apply in their test helpers.
+    cfg.filecache.enabled = false;
     let state = AppStateBuilder::new(cfg).build().await.unwrap();
     let hash = BcryptVerifier::new().hash("hunter2").unwrap();
     state
