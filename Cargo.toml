@@ -8,6 +8,7 @@ members = [
     "crates/crabcloud-i18n",
     "crates/crabcloud-ocs",
     "crates/crabcloud-server",
+    "crates/crabcloud-storage",
     "crates/crabcloud-ui",
     "crates/crabcloud-users",
     "xtask",
@@ -28,6 +29,7 @@ async-trait = "0.1"
 axum = { version = "0.8", default-features = false, features = ["http1", "json", "tokio", "tower-log", "matched-path", "original-uri", "query", "form"] }
 base64 = "0.22"
 bcrypt = "0.19"
+bytes = "1"
 clap = { version = "4.5", features = ["derive", "env"] }
 cookie = { version = "0.18", features = ["percent-encode"] }
 figment = { version = "0.10", features = ["toml", "env"] }
@@ -35,6 +37,9 @@ futures = "0.3"
 hex = "0.4"
 hmac = "0.13"
 hyper = { version = "1.5", features = ["http1", "server"] }
+infer = { version = "0.16", default-features = false }
+phf = { version = "0.11", features = ["macros"] }
+phf_codegen = "0.11"
 rand = "0.10"
 secrecy = { version = "0.10", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
@@ -60,6 +65,7 @@ tower = { version = "0.5", features = ["util"] }
 tower-http = { version = "0.6", features = ["trace", "limit", "cors", "catch-panic"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+xattr = "1"
 
 polib = "0.3"
 accept-language = "3.1"
@@ -73,6 +79,7 @@ crabcloud-db = { path = "crates/crabcloud-db" }
 crabcloud-http = { path = "crates/crabcloud-http" }
 crabcloud-i18n = { path = "crates/crabcloud-i18n" }
 crabcloud-ocs = { path = "crates/crabcloud-ocs" }
+crabcloud-storage = { path = "crates/crabcloud-storage" }
 crabcloud-ui = { path = "crates/crabcloud-ui" }
 crabcloud-users = { path = "crates/crabcloud-users" }
 email_address = "0.2"
