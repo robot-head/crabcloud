@@ -177,6 +177,167 @@ async fn login_v2_full_cycle() {
 }
 
 #[tokio::test]
+async fn getapppassword_via_cookie_mints_bridge_token() {
+    let (app, _cookie) = build_app().await;
+
+    // Login via /index.php/login to get a freshly-minted Session cookie
+    // (so AuthContext.method is Session and the OCS endpoint admits us).
+    let login_req = Request::builder()
+        .method("POST")
+        .uri("/index.php/login")
+        .header("content-type", "application/json")
+        .body(Body::from(
+            "{\"username\":\"alice\",\"password\":\"hunter2\"}",
+        ))
+        .unwrap();
+    let login_resp = app.clone().oneshot(login_req).await.unwrap();
+    let cookie = login_resp
+        .headers()
+        .get("set-cookie")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .split(';')
+        .next()
+        .unwrap()
+        .to_string();
+
+    let req = Request::builder()
+        .uri("/ocs/v2.php/core/getapppassword?format=json")
+        .header("ocs-apirequest", "true")
+        .header("cookie", &cookie)
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = to_bytes(resp.into_body(), 16 * 1024).await.unwrap();
+    let p: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert!(p["ocs"]["data"]["apppassword"].as_str().unwrap().len() > 50);
+}
+
+#[tokio::test]
+async fn delete_app_password_revokes_current_token() {
+    let (app, _cookie) = build_app().await;
+
+    // Login → cookie.
+    let login_req = Request::builder()
+        .method("POST")
+        .uri("/index.php/login")
+        .header("content-type", "application/json")
+        .body(Body::from(
+            "{\"username\":\"alice\",\"password\":\"hunter2\"}",
+        ))
+        .unwrap();
+    let login_resp = app.clone().oneshot(login_req).await.unwrap();
+    let cookie = login_resp
+        .headers()
+        .get("set-cookie")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .split(';')
+        .next()
+        .unwrap()
+        .to_string();
+
+    // Mint bridge token via getapppassword.
+    let gap = Request::builder()
+        .uri("/ocs/v2.php/core/getapppassword?format=json")
+        .header("ocs-apirequest", "true")
+        .header("cookie", &cookie)
+        .body(Body::empty())
+        .unwrap();
+    let gap_resp = app.clone().oneshot(gap).await.unwrap();
+    let gap_body = to_bytes(gap_resp.into_body(), 16 * 1024).await.unwrap();
+    let raw_token = serde_json::from_slice::<serde_json::Value>(&gap_body).unwrap()["ocs"]["data"]
+        ["apppassword"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // Token works via Bearer.
+    let me = Request::builder()
+        .uri("/ocs/v2.php/cloud/user?format=json")
+        .header("ocs-apirequest", "true")
+        .header("authorization", format!("Bearer {raw_token}"))
+        .body(Body::empty())
+        .unwrap();
+    let me_resp = app.clone().oneshot(me).await.unwrap();
+    assert_eq!(me_resp.status(), StatusCode::OK);
+
+    // Self-revoke via DELETE apppassword (using the token itself).
+    let del = Request::builder()
+        .method("DELETE")
+        .uri("/ocs/v2.php/core/apppassword?format=json")
+        .header("ocs-apirequest", "true")
+        .header("authorization", format!("Bearer {raw_token}"))
+        .body(Body::empty())
+        .unwrap();
+    let del_resp = app.clone().oneshot(del).await.unwrap();
+    assert_eq!(del_resp.status(), StatusCode::OK);
+
+    // Reuse → 401.
+    let again = Request::builder()
+        .uri("/ocs/v2.php/cloud/user?format=json")
+        .header("ocs-apirequest", "true")
+        .header("authorization", format!("Bearer {raw_token}"))
+        .body(Body::empty())
+        .unwrap();
+    let again_resp = app.oneshot(again).await.unwrap();
+    assert_eq!(again_resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn getapppassword_via_bearer_is_forbidden() {
+    // Bypass /login: build an AppState directly and mint an AppPassword Bearer.
+    let dir = tempdir().unwrap();
+    let cfg = crabcloud_config::test_support::minimal_sqlite_config(dir.path().join("ap.db"));
+    let state = AppStateBuilder::new(cfg)
+        .with_core_capabilities()
+        .build()
+        .await
+        .unwrap();
+    let hash = BcryptVerifier::new().hash("hunter2").unwrap();
+    state
+        .users
+        .user_store()
+        .create(
+            &User {
+                uid: UserId::new("alice").unwrap(),
+                display_name: "Alice".into(),
+                email: None,
+                enabled: true,
+                last_seen: 0,
+            },
+            Some(&hash),
+        )
+        .await
+        .unwrap();
+    let ap = state.users.app_passwords().unwrap().clone();
+    let (_row, raw) = ap
+        .mint(
+            &UserId::new("alice").unwrap(),
+            "alice",
+            "DAV",
+            AuthTokenType::AppPassword,
+            false,
+        )
+        .await
+        .unwrap();
+    let app = build_router(state, axum::Router::new());
+
+    let req = Request::builder()
+        .uri("/ocs/v2.php/core/getapppassword?format=json")
+        .header("ocs-apirequest", "true")
+        .header("authorization", format!("Bearer {}", raw.expose()))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    let _ = dir;
+}
+
+#[tokio::test]
 async fn get_self_returns_payload() {
     let (app, cookie) = build_app().await;
     let req = Request::builder()
