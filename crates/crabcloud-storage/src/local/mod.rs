@@ -15,6 +15,8 @@ use crate::path::StoragePath;
 use crate::{EventSink, Storage, StorageEvent};
 use async_trait::async_trait;
 use atomic::{atomic_rename, sibling_temp, stream_to_temp, TempFileGuard};
+use rand::RngExt;
+use sha2::{Digest, Sha256};
 use std::io::SeekFrom;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
@@ -319,33 +321,171 @@ impl Storage for LocalStorage {
 
     async fn begin_multipart(
         &self,
-        _target: &StoragePath,
+        target: &StoragePath,
         _sink: &dyn EventSink,
     ) -> StorageResult<MultipartHandle> {
-        // Implemented in batch E.
-        Err(StorageError::Other("multipart not yet implemented".into()))
+        let real_target = self.resolve(target)?;
+        let parent = real_target.parent().ok_or_else(|| {
+            StorageError::InvalidPath(format!("no parent for {}", target.as_str()))
+        })?;
+        if !fs::try_exists(parent).await.map_err(map_io)? {
+            return Err(StorageError::NotFound);
+        }
+        let mut id_bytes = [0u8; 16];
+        rand::rng().fill(&mut id_bytes);
+        let upload_id = format!("local-mp-{}", hex::encode(id_bytes));
+        let temp_dir = parent.join(format!(".upload-{}", upload_id));
+        fs::create_dir(&temp_dir).await.map_err(map_io)?;
+        Ok(MultipartHandle {
+            upload_id,
+            target: target.clone(),
+        })
     }
 
     async fn put_part(
         &self,
-        _handle: &MultipartHandle,
-        _part_number: u32,
-        _body: Pin<Box<dyn AsyncRead + Send>>,
+        handle: &MultipartHandle,
+        part_number: u32,
+        body: Pin<Box<dyn AsyncRead + Send>>,
     ) -> StorageResult<PartTag> {
-        Err(StorageError::Other("multipart not yet implemented".into()))
+        let real_target = self.resolve(&handle.target)?;
+        let parent = real_target.parent().ok_or_else(|| {
+            StorageError::InvalidPath(format!("no parent for {}", handle.target.as_str()))
+        })?;
+        let temp_dir = parent.join(format!(".upload-{}", handle.upload_id));
+        if !fs::try_exists(&temp_dir).await.map_err(map_io)? {
+            return Err(StorageError::Multipart(format!(
+                "unknown upload id: {}",
+                handle.upload_id
+            )));
+        }
+        let part_path = temp_dir.join(format!("part-{:08}", part_number));
+        // Stream body to disk while hashing.
+        use tokio::io::{AsyncWriteExt, BufWriter};
+        let f = fs::File::create(&part_path).await.map_err(map_io)?;
+        let mut writer = BufWriter::new(f);
+        let mut body = body;
+        let mut hasher = Sha256::new();
+        let mut buf = vec![0u8; 64 * 1024];
+        loop {
+            let n = body.read(&mut buf).await.map_err(map_io)?;
+            if n == 0 {
+                break;
+            }
+            hasher.update(&buf[..n]);
+            writer.write_all(&buf[..n]).await.map_err(map_io)?;
+        }
+        writer.flush().await.map_err(map_io)?;
+        let etag = hex::encode(hasher.finalize());
+        Ok(PartTag { part_number, etag })
     }
 
     async fn commit_multipart(
         &self,
-        _handle: MultipartHandle,
-        _parts: Vec<PartTag>,
-        _sink: &dyn EventSink,
+        handle: MultipartHandle,
+        parts: Vec<PartTag>,
+        sink: &dyn EventSink,
     ) -> StorageResult<FileMetadata> {
-        Err(StorageError::Other("multipart not yet implemented".into()))
+        if parts.is_empty() {
+            return Err(StorageError::Multipart("no parts".into()));
+        }
+        // Validate contiguous, starts at 1.
+        let mut sorted: Vec<&PartTag> = parts.iter().collect();
+        sorted.sort_by_key(|p| p.part_number);
+        for (i, p) in sorted.iter().enumerate() {
+            if (p.part_number as usize) != i + 1 {
+                return Err(StorageError::Multipart(format!(
+                    "expected contiguous parts starting at 1; got {} at index {i}",
+                    p.part_number
+                )));
+            }
+        }
+        // Reject duplicates.
+        for w in sorted.windows(2) {
+            if w[0].part_number == w[1].part_number {
+                return Err(StorageError::Multipart(format!(
+                    "duplicate part {}",
+                    w[0].part_number
+                )));
+            }
+        }
+
+        let real_target = self.resolve(&handle.target)?;
+        let parent = real_target.parent().ok_or_else(|| {
+            StorageError::InvalidPath(format!("no parent for {}", handle.target.as_str()))
+        })?;
+        let temp_dir = parent.join(format!(".upload-{}", handle.upload_id));
+        if !fs::try_exists(&temp_dir).await.map_err(map_io)? {
+            return Err(StorageError::Multipart(format!(
+                "unknown upload id: {}",
+                handle.upload_id
+            )));
+        }
+
+        // Verify each part's sha256 matches its supplied tag.
+        for tag in &sorted {
+            let part_path = temp_dir.join(format!("part-{:08}", tag.part_number));
+            let bytes = fs::read(&part_path).await.map_err(map_io)?;
+            let mut hasher = Sha256::new();
+            hasher.update(&bytes);
+            let actual = hex::encode(hasher.finalize());
+            if actual != tag.etag {
+                return Err(StorageError::Multipart(format!(
+                    "part {} integrity check failed",
+                    tag.part_number
+                )));
+            }
+        }
+
+        // Concatenate into a sibling temp file under the target's directory.
+        let final_temp = sibling_temp(&real_target)?;
+        let guard = TempFileGuard::new(final_temp.clone());
+        use tokio::io::{AsyncWriteExt, BufWriter};
+        let f = fs::File::create(guard.path()).await.map_err(map_io)?;
+        let mut writer = BufWriter::new(f);
+        let mut head: Vec<u8> = Vec::new();
+        for tag in &sorted {
+            let part_path = temp_dir.join(format!("part-{:08}", tag.part_number));
+            let bytes = fs::read(&part_path).await.map_err(map_io)?;
+            if head.len() < 4096 {
+                let want = 4096 - head.len();
+                head.extend_from_slice(&bytes[..bytes.len().min(want)]);
+            }
+            writer.write_all(&bytes).await.map_err(map_io)?;
+        }
+        writer.flush().await.map_err(map_io)?;
+        let handle_for_sync = writer.into_inner();
+        handle_for_sync.sync_all().await.map_err(map_io)?;
+
+        let etag = ETag::new();
+        xattr_io::write_etag(guard.path(), &etag)?;
+        let mimetype = mimetype::detect(handle.target.as_str(), &head);
+        xattr_io::write_mimetype(guard.path(), &mimetype)?;
+
+        atomic_rename(guard.path(), &real_target).await?;
+        guard.forget();
+
+        // Tear down the upload directory.
+        let _ = fs::remove_dir_all(&temp_dir).await;
+
+        let meta = self.metadata_of(&real_target, &handle.target).await?;
+        sink.emit(StorageEvent::Written {
+            storage_id: self.id.clone(),
+            path: handle.target.clone(),
+            metadata: meta.clone(),
+        })
+        .await;
+        Ok(meta)
     }
 
-    async fn abort_multipart(&self, _handle: MultipartHandle) -> StorageResult<()> {
-        Err(StorageError::Other("multipart not yet implemented".into()))
+    async fn abort_multipart(&self, handle: MultipartHandle) -> StorageResult<()> {
+        let real_target = self.resolve(&handle.target)?;
+        let parent = real_target.parent().ok_or_else(|| {
+            StorageError::InvalidPath(format!("no parent for {}", handle.target.as_str()))
+        })?;
+        let temp_dir = parent.join(format!(".upload-{}", handle.upload_id));
+        let _ = fs::remove_dir_all(&temp_dir).await;
+        Ok(())
     }
 }
 

@@ -17,6 +17,7 @@ use hex as _;
 use infer as _;
 use phf as _;
 use rand as _;
+use sha2 as _;
 use thiserror as _;
 use tracing as _;
 
@@ -425,15 +426,11 @@ async fn local_backend_passes_trait_suite() {
     std::mem::forget(dir);
     let counter = std::sync::atomic::AtomicU32::new(0);
 
-    run_storage_suite(
-        "local",
-        SuiteCaps { multipart: false }, // multipart lands in batch E
-        || {
-            let n = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            let sub = path.join(format!("storage-{n}"));
-            std::fs::create_dir_all(&sub).unwrap();
-            crabcloud_storage::local::LocalStorage::new(sub).unwrap()
-        },
-    )
+    run_storage_suite("local", SuiteCaps::default(), || {
+        let n = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let sub = path.join(format!("storage-{n}"));
+        std::fs::create_dir_all(&sub).unwrap();
+        crabcloud_storage::local::LocalStorage::new(sub).unwrap()
+    })
     .await;
 }
