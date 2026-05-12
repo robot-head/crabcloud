@@ -14,6 +14,12 @@ pub(crate) mod _deps_anchor {
     pub(crate) const _INFER_LEN: usize = std::mem::size_of::<infer::Infer>();
     pub(crate) const _PHF_LEN: usize = std::mem::size_of::<phf::Map<&'static str, &'static str>>();
 
+    // xattr is unix-only ([target.'cfg(unix)'.dependencies]); anchor it
+    // under the same cfg so the Linux CI build doesn't flag it as unused
+    // while the Windows local build doesn't see it at all.
+    #[cfg(unix)]
+    pub(crate) use xattr as _xattr_anchor;
+
     pub(crate) fn _trace_anchor() {
         tracing::trace!("local backend stub loaded");
     }
