@@ -28,6 +28,10 @@ pub enum PendingCookie {
     Set {
         /// Plaintext token to embed (HMAC-signed by the layer).
         raw_token: String,
+        /// Authoritative `oc_authtoken` row id this cookie binds to. The
+        /// SessionLayer saves the ephemeral session blob under this id so it
+        /// survives the cookie swap (login mint, post-password-change rotation).
+        token_id: i64,
         /// `Max-Age` cookie attribute, in seconds.
         max_age_secs: u64,
     },
@@ -182,24 +186,40 @@ where
 
             let mut resp = inner.call(req).await?;
 
-            // Persist blob mutations.
-            if let Some(id) = token_id_opt {
+            // Determine where to save the blob: a freshly-set pending cookie
+            // changes the canonical token_id (login mint, post-password-change
+            // rotation). Without this, the blob would be saved under the OLD
+            // (or None) token id and lost across the cookie swap — which would
+            // produce an empty csrf_token on the next request and silently
+            // bypass CSRF.
+            let pending = handle.pending_cookie.lock().await.clone();
+            let save_id = match &pending {
+                Some(PendingCookie::Set { token_id, .. }) => Some(*token_id),
+                Some(PendingCookie::Destroy) => None,
+                None => token_id_opt,
+            };
+
+            if let Some(id) = save_id {
                 let final_session = handle.inner.lock().await.clone();
                 let _ = store.save_for_token(id, &final_session).await;
             }
 
             // Apply pending cookie mutation.
-            if let Some(pending) = handle.pending_cookie.lock().await.clone() {
+            if let Some(pending) = pending {
                 match pending {
                     PendingCookie::Set {
                         raw_token,
                         max_age_secs,
+                        ..
                     } => {
                         let value = encode_cookie(&raw_token, secret.expose_secret().as_bytes());
                         resp.headers_mut()
                             .append(SET_COOKIE, make_set_cookie(&value, secure, max_age_secs));
                     }
                     PendingCookie::Destroy => {
+                        if let Some(id) = token_id_opt {
+                            let _ = store.destroy_for_token(id).await;
+                        }
                         resp.headers_mut()
                             .append(SET_COOKIE, make_destroy_cookie(secure));
                     }
@@ -234,6 +254,7 @@ mod tests {
         handle
             .set_pending_cookie(PendingCookie::Set {
                 raw_token: "the-raw-token".into(),
+                token_id: 7,
                 max_age_secs: 1800,
             })
             .await;
@@ -270,5 +291,41 @@ mod tests {
         assert!(setc.starts_with(&format!("{COOKIE_NAME}=")));
         assert!(setc.contains("HttpOnly"));
         assert!(setc.contains("SameSite=Lax"));
+    }
+
+    #[tokio::test]
+    async fn pending_cookie_set_saves_blob_under_new_token_id() {
+        let cache: Arc<dyn crabcloud_cache::Cache> = Arc::new(MemoryCache::new());
+        let store = SessionStore::new(cache.clone(), "inst1");
+        let layer = SessionLayer::new(store, SecretString::new("secret".into()), false);
+
+        async fn mint_session(
+            axum::Extension(handle): axum::Extension<SessionHandle>,
+        ) -> &'static str {
+            handle
+                .mutate(|s| {
+                    s.csrf_token = "abc".into();
+                })
+                .await;
+            handle
+                .set_pending_cookie(PendingCookie::Set {
+                    raw_token: "raw".into(),
+                    token_id: 42,
+                    max_age_secs: 1800,
+                })
+                .await;
+            "ok"
+        }
+
+        let app = Router::new().route("/mint", get(mint_session)).layer(layer);
+        let req = Request::builder().uri("/mint").body(Body::empty()).unwrap();
+        let _resp = app.oneshot(req).await.unwrap();
+
+        // Blob should have been saved under token_id=42, even though the
+        // request had no AuthContext (token_id_opt was None).
+        let key = "inst1:session_blob:42";
+        let bytes = cache.get(key).await.unwrap().expect("blob missing");
+        let s: Session = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(s.csrf_token, "abc");
     }
 }

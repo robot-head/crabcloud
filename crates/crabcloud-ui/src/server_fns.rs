@@ -93,7 +93,7 @@ pub async fn login(
         .unwrap_or("Browser")
         .to_string();
 
-    let (_row, raw) = ap
+    let (row, raw) = ap
         .mint(
             &user.uid,
             &username,
@@ -115,9 +115,14 @@ pub async fn login(
             s.two_factor_passed = true;
         })
         .await;
+    // Pass the freshly-minted row's id so the SessionLayer saves this
+    // request's blob (incl. the rotated csrf_token + two_factor_passed) under
+    // the NEW token id. Without this the AuthLayer's `token_id_opt` is None
+    // for the login request and the blob would be dropped on the floor.
     session
         .set_pending_cookie(crabcloud_http::PendingCookie::Set {
             raw_token: raw.expose().to_string(),
+            token_id: row.id,
             max_age_secs: 30 * 60,
         })
         .await;

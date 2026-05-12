@@ -119,7 +119,7 @@ pub async fn put_self(
                     .mint(
                         &uid,
                         &ctx.login_name,
-                        "Browser",
+                        "Password-rotation",
                         AuthTokenType::Session,
                         ctx.remember,
                     )
@@ -133,9 +133,15 @@ pub async fn put_self(
                         "revoke_other_sessions failed after password change"
                     );
                 }
+                // Rotate CSRF + bind the blob to the new token id via the
+                // pending cookie so the SessionLayer saves the rotated csrf
+                // under the freshly-minted row.id (not the old, now-revoked
+                // token id).
+                handle.mutate(|s| s.rotate_csrf()).await;
                 handle
                     .set_pending_cookie(PendingCookie::Set {
                         raw_token: raw.expose().to_string(),
+                        token_id: new_row.id,
                         max_age_secs: 30 * 60,
                     })
                     .await;

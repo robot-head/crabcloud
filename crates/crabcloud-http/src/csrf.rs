@@ -96,7 +96,16 @@ where
                 .headers()
                 .get(&TOKEN_HEADER)
                 .and_then(|v| v.to_str().ok());
-            if supplied.map(|s| s == expected).unwrap_or(false) {
+            // Defense-in-depth: refuse to authorize an unsafe request when
+            // either side of the comparison is empty. An empty expected
+            // token would otherwise admit a request whose supplied token is
+            // also empty (e.g., `requesttoken: `), turning a cache-miss on
+            // the session blob into a silent CSRF bypass.
+            let valid = !expected.is_empty()
+                && supplied
+                    .map(|s| !s.is_empty() && s == expected)
+                    .unwrap_or(false);
+            if valid {
                 inner.call(req).await
             } else {
                 Ok((StatusCode::FORBIDDEN, "csrf token missing or mismatched").into_response())
@@ -244,6 +253,24 @@ mod tests {
             .header("requesttoken", "wrong")
             .extension(auth_ctx(AuthMethod::Session))
             .extension(session_handle_with_token("expected"))
+            .body(Body::empty())
+            .unwrap();
+        let resp = app().oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn empty_expected_csrf_rejects_unsafe_post() {
+        // Regression for the Batch D bug: if the SessionLayer ever produced
+        // a Session with an empty csrf_token (e.g., cache miss + a defaulted
+        // blob), the CSRF middleware must NOT accept an empty supplied
+        // header — that would be a silent auth bypass.
+        let req = Request::builder()
+            .method("POST")
+            .uri("/danger")
+            .header("requesttoken", "")
+            .extension(auth_ctx(AuthMethod::Session))
+            .extension(session_handle_with_token(""))
             .body(Body::empty())
             .unwrap();
         let resp = app().oneshot(req).await.unwrap();
