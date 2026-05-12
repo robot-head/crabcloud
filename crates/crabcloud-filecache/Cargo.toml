@@ -1,0 +1,26 @@
+[package]
+name = "crabcloud-filecache"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+crabcloud-cache.workspace = true
+crabcloud-config = { workspace = true, features = ["test-support"] }
+crabcloud-db.workspace = true
+crabcloud-storage.workspace = true
+dashmap.workspace = true
+hex.workspace = true
+md-5.workspace = true
+sqlx = { workspace = true, default-features = false, features = ["macros", "runtime-tokio-rustls", "sqlite", "mysql", "postgres", "chrono"] }
+thiserror.workspace = true
+tokio = { workspace = true, features = ["fs", "io-util", "sync", "macros"] }
+tracing.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "fs", "io-util", "sync", "time"] }
+
+[lints]
+workspace = true

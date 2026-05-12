@@ -91,7 +91,7 @@ async fn migrate_sqlite() {
     let mut runner = MigrationRunner::new(&pool, &cfg.dbtableprefix);
     runner.register(core_set());
     let applied = runner.run().await.unwrap();
-    assert_eq!(applied, 3);
+    assert_eq!(applied, 4);
 
     assert_appconfig_table_usable(&pool).await;
     pool.close().await;
@@ -125,7 +125,7 @@ async fn migrate_mysql() {
     let mut runner = MigrationRunner::new(&pool, &cfg.dbtableprefix);
     runner.register(core_set());
     let applied = runner.run().await.unwrap();
-    assert_eq!(applied, 3);
+    assert_eq!(applied, 4);
 
     assert_appconfig_table_usable(&pool).await;
     pool.close().await;
@@ -158,7 +158,7 @@ async fn migrate_postgres() {
     let mut runner = MigrationRunner::new(&pool, &cfg.dbtableprefix);
     runner.register(core_set());
     let applied = runner.run().await.unwrap();
-    assert_eq!(applied, 3);
+    assert_eq!(applied, 4);
 
     assert_appconfig_table_usable(&pool).await;
     pool.close().await;

@@ -33,6 +33,13 @@ pub const CORE_MIGRATIONS: &[Migration] = &[
         mysql: include_str!("../../../migrations/core/0003_auth_tokens/mysql.sql"),
         postgres: include_str!("../../../migrations/core/0003_auth_tokens/postgres.sql"),
     },
+    Migration {
+        version: 4,
+        name: "filecache",
+        sqlite: include_str!("../../../migrations/core/0004_filecache/sqlite.sql"),
+        mysql: include_str!("../../../migrations/core/0004_filecache/mysql.sql"),
+        postgres: include_str!("../../../migrations/core/0004_filecache/postgres.sql"),
+    },
 ];
 
 /// Returns the `core` migration set ready to be registered with a
@@ -60,7 +67,7 @@ mod tests {
         let mut runner = MigrationRunner::new(&pool, &cfg.dbtableprefix);
         runner.register(core_set());
         let applied = runner.run().await.unwrap();
-        assert_eq!(applied, 3);
+        assert_eq!(applied, 4);
 
         // Verify oc_appconfig exists and accepts a row.
         match &pool {
