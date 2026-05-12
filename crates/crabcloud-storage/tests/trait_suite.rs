@@ -17,7 +17,6 @@ use hex as _;
 use infer as _;
 use phf as _;
 use rand as _;
-use tempfile as _;
 use thiserror as _;
 use tracing as _;
 
@@ -26,13 +25,31 @@ use std::sync::Arc;
 use support::RecordingSink;
 use tokio::io::AsyncReadExt;
 
+/// Capability flags controlling which trait-suite assertions to run.
+/// Backends that haven't implemented every method yet (e.g. LocalStorage
+/// during batch D, before multipart lands in batch E) set the matching
+/// flag to `false` to skip those assertions.
+pub struct SuiteCaps {
+    pub multipart: bool,
+}
+
+impl Default for SuiteCaps {
+    fn default() -> Self {
+        Self { multipart: true }
+    }
+}
+
 /// Drive the full battery of trait-level assertions against `factory()`,
 /// which must produce a fresh, empty storage on each call.
 pub async fn run_storage_suite<S: Storage + 'static>(
     name: &str,
+    caps: SuiteCaps,
     factory: impl Fn() -> S + Send + Sync,
 ) {
-    eprintln!("--- storage suite: {name} ---");
+    eprintln!(
+        "--- storage suite: {name} (multipart={}) ---",
+        caps.multipart
+    );
 
     path_invariants();
     write_then_read(&factory).await;
@@ -45,10 +62,12 @@ pub async fn run_storage_suite<S: Storage + 'static>(
     delete_empty_dir_ok_nonempty_errs(&factory).await;
     rename_moves(&factory).await;
     copy_preserves_contents_changes_etag(&factory).await;
-    multipart_happy_path(&factory).await;
-    multipart_abort_drops_target(&factory).await;
-    multipart_gap_rejected(&factory).await;
-    multipart_duplicate_rejected(&factory).await;
+    if caps.multipart {
+        multipart_happy_path(&factory).await;
+        multipart_abort_drops_target(&factory).await;
+        multipart_gap_rejected(&factory).await;
+        multipart_duplicate_rejected(&factory).await;
+    }
     event_sink_emits_one_per_mutation(&factory).await;
 }
 
@@ -391,8 +410,30 @@ fn make_body(bytes: &'static [u8]) -> std::pin::Pin<Box<dyn tokio::io::AsyncRead
 
 #[tokio::test]
 async fn memory_backend_passes_trait_suite() {
-    run_storage_suite("memory", || {
+    run_storage_suite("memory", SuiteCaps::default(), || {
         crabcloud_storage::memory::MemoryStorage::new("test")
     })
+    .await;
+}
+
+#[tokio::test]
+async fn local_backend_passes_trait_suite() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().to_path_buf();
+    // Leak the TempDir so it survives until process exit. Each factory call
+    // makes a fresh subdir under the leaked root.
+    std::mem::forget(dir);
+    let counter = std::sync::atomic::AtomicU32::new(0);
+
+    run_storage_suite(
+        "local",
+        SuiteCaps { multipart: false }, // multipart lands in batch E
+        || {
+            let n = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let sub = path.join(format!("storage-{n}"));
+            std::fs::create_dir_all(&sub).unwrap();
+            crabcloud_storage::local::LocalStorage::new(sub).unwrap()
+        },
+    )
     .await;
 }
