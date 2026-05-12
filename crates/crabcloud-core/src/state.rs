@@ -147,8 +147,9 @@ impl AppStateBuilder {
             svc
         } else {
             use crabcloud_users::{
-                BcryptVerifier, GroupStore, PreferenceStore, SqlGroupStore, SqlPreferenceStore,
-                SqlUserStore, UserStore, UsersService,
+                AppPasswordService, BcryptVerifier, GroupStore, PreferenceStore, SqlGroupStore,
+                SqlPreferenceStore, SqlTokenStore, SqlUserStore, TokenAuthCache, TokenStore,
+                UserStore, UsersService,
             };
             let sql_users: Arc<dyn UserStore> = Arc::new(SqlUserStore::new(pool.clone()));
             let sql_groups: Arc<dyn GroupStore> = Arc::new(SqlGroupStore::new(pool.clone()));
@@ -162,12 +163,23 @@ impl AppStateBuilder {
                 )),
                 None => sql_users,
             };
+            let token_store: Arc<dyn TokenStore> = Arc::new(SqlTokenStore::new(pool.clone()));
+            let token_cache = Arc::new(TokenAuthCache::new(
+                token_store,
+                cache.clone(),
+                &self.config.instanceid,
+            ));
+            let app_passwords = Arc::new(AppPasswordService::new(
+                token_cache,
+                self.config.secret.clone(),
+            ));
             UsersService::new(
                 user_store,
                 sql_groups,
                 sql_prefs,
                 Arc::new(BcryptVerifier::new()),
             )
+            .with_app_passwords(app_passwords)
         };
 
         let state = AppState {
