@@ -21,13 +21,7 @@ pub struct AuthenticatedUser {
     pub auth_method: AuthMethod,
 }
 
-/// Mechanism by which the request was authenticated.
-#[derive(Debug, Clone)]
-pub enum AuthMethod {
-    /// Authenticated via session cookie.
-    Session,
-    // Bearer / Basic / AppPassword variants land in the users sub-project.
-}
+pub use crate::auth_context::AuthMethod;
 
 /// Rejection produced when `AuthenticatedUser` fails to resolve; renders as HTTP 401.
 pub struct UnauthorizedRejection;
