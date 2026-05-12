@@ -153,11 +153,13 @@ pub async fn put_self(
 #[cfg(test)]
 mod tests {
     use crate::router::build_router;
+    use crate::session::{encode_cookie, Session, SessionId, SessionStore, COOKIE_NAME};
     use axum::body::Body;
     use axum::http::{Request, StatusCode};
     use crabcloud_config::test_support::minimal_sqlite_config;
     use crabcloud_core::{AppState, AppStateBuilder};
     use crabcloud_users::{BcryptVerifier, PasswordVerifier, User, UserId};
+    use secrecy::ExposeSecret;
     use tempfile::tempdir;
     use tower::ServiceExt;
 
@@ -185,25 +187,28 @@ mod tests {
             .unwrap();
     }
 
-    /// Log in via `POST /index.php/login` and return the session cookie (only
-    /// the `name=value` portion, suitable for sending as a `Cookie:` header).
-    async fn login_cookie(app: axum::Router, user: &str, pass: &str) -> String {
-        let req = Request::builder()
-            .method("POST")
-            .uri("/index.php/login")
-            .header("content-type", "application/x-www-form-urlencoded")
-            .body(Body::from(format!("username={user}&password={pass}")))
-            .unwrap();
-        let resp = app.oneshot(req).await.unwrap();
-        assert_eq!(resp.status(), StatusCode::SEE_OTHER, "login failed");
-        let setc = resp
-            .headers()
-            .get("set-cookie")
-            .expect("login should set cookie")
-            .to_str()
-            .unwrap()
-            .to_string();
-        setc.split(';').next().unwrap().to_string()
+    /// Seed an authenticated session directly into the store and return the
+    /// `Cookie:` value that the SessionLayer will accept.
+    ///
+    /// Login itself is a Dioxus `#[server]` function now (`/index.php/login`)
+    /// and the verification flow is covered by `crabcloud-users`' Playwright
+    /// suite. These OCS tests just need to *be authenticated* to exercise the
+    /// `/cloud/user` GET/PUT branches; going through HTTP login from inside
+    /// crabcloud-http's tests would require a cargo dev-dep cycle on
+    /// crabcloud-ui, which compiles SessionHandle in a separate unit and
+    /// breaks extension lookup at runtime via `TypeId` mismatch.
+    async fn seed_login(state: &AppState, uid: &str) -> String {
+        let store = SessionStore::new(state.cache.clone(), &state.config.instanceid);
+        let id = SessionId::new_random();
+        let mut session = Session::new();
+        session.user_id = Some(uid.to_string());
+        session.rotate_csrf();
+        session.two_factor_passed = true;
+        store.save(&id, &session).await.unwrap();
+        store.record_for_user(uid, &id).await.unwrap();
+        let cookie_value =
+            encode_cookie(id.as_str(), state.config.secret.expose_secret().as_bytes());
+        format!("{COOKIE_NAME}={cookie_value}")
     }
 
     #[tokio::test]
@@ -211,9 +216,8 @@ mod tests {
         let dir = tempdir().unwrap();
         let state = make_state(dir.path().join("user.db")).await;
         seed_user(&state, "alice", "hunter2").await;
-
-        let app = build_router(state);
-        let cookie = login_cookie(app.clone(), "alice", "hunter2").await;
+        let cookie = seed_login(&state, "alice").await;
+        let app = build_router(state, axum::Router::new());
 
         let req = Request::builder()
             .uri("/ocs/v2.php/cloud/user?format=json")
@@ -237,7 +241,7 @@ mod tests {
     async fn get_self_without_session_is_unauthorized() {
         let dir = tempdir().unwrap();
         let state = make_state(dir.path().join("user.db")).await;
-        let app = build_router(state);
+        let app = build_router(state, axum::Router::new());
 
         let req = Request::builder()
             .uri("/ocs/v2.php/cloud/user?format=json")
@@ -253,9 +257,8 @@ mod tests {
         let dir = tempdir().unwrap();
         let state = make_state(dir.path().join("user.db")).await;
         seed_user(&state, "alice", "old").await;
-
-        let app = build_router(state);
-        let cookie = login_cookie(app.clone(), "alice", "old").await;
+        let cookie = seed_login(&state, "alice").await;
+        let app = build_router(state, axum::Router::new());
 
         let req = Request::builder()
             .method("PUT")
@@ -276,12 +279,10 @@ mod tests {
         let dir = tempdir().unwrap();
         let state = make_state(dir.path().join("user.db")).await;
         seed_user(&state, "alice", "old").await;
-
-        let app = build_router(state.clone());
-
         // Two parallel sessions for alice.
-        let cookie_a = login_cookie(app.clone(), "alice", "old").await;
-        let cookie_b = login_cookie(app.clone(), "alice", "old").await;
+        let cookie_a = seed_login(&state, "alice").await;
+        let cookie_b = seed_login(&state, "alice").await;
+        let app = build_router(state.clone(), axum::Router::new());
         assert_ne!(cookie_a, cookie_b, "sessions should differ");
 
         // Sanity: session B can currently see itself.
@@ -332,9 +333,8 @@ mod tests {
         let dir = tempdir().unwrap();
         let state = make_state(dir.path().join("user.db")).await;
         seed_user(&state, "alice", "hunter2").await;
-
-        let app = build_router(state.clone());
-        let cookie = login_cookie(app.clone(), "alice", "hunter2").await;
+        let cookie = seed_login(&state, "alice").await;
+        let app = build_router(state.clone(), axum::Router::new());
 
         let put_req = Request::builder()
             .method("PUT")
@@ -363,9 +363,8 @@ mod tests {
         let dir = tempdir().unwrap();
         let state = make_state(dir.path().join("user.db")).await;
         seed_user(&state, "alice", "hunter2").await;
-
-        let app = build_router(state);
-        let cookie = login_cookie(app.clone(), "alice", "hunter2").await;
+        let cookie = seed_login(&state, "alice").await;
+        let app = build_router(state, axum::Router::new());
 
         let put_req = Request::builder()
             .method("PUT")

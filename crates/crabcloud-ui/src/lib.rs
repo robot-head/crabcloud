@@ -1,46 +1,21 @@
-//! Crabcloud UI — Dioxus 0.6 application. SSR-first; the WASM client hydrates
-//! the same component tree.
+//! Crabcloud UI — Dioxus 0.7 fullstack application. The same component tree
+//! is rendered on the server (SSR) and hydrated on the client (WASM). Per-
+//! request data (user id, locale) flows through `FullstackContext` on the
+//! server, is replayed into the hydration payload via `use_server_cached`, and
+//! reaches components through `use_context`. The CSRF token is emitted as a
+//! `<meta name="requesttoken">` tag from the App root so existing client code
+//! that reads it from the DOM continues to work.
 
-// Integration-test fixtures pull in many sibling crates; their deps appear in
-// `[dev-dependencies]` and surface as `unused_crate_dependencies` for the lib's
-// own test build. Quiet those here so the genuine signal stays visible.
 #![cfg_attr(test, allow(unused_crate_dependencies))]
-
-// Wasm32 target pulls in deps consumed only by the WASM bin or by SSR code
-// that's cfg-gated out for this target; the lib build flags them as unused
-// extern crates. Silence them on the wasm32 target only.
-#[cfg(target_arch = "wasm32")]
-#[allow(unused_extern_crates)]
-mod _wasm_lint_silencer {
-    use console_error_panic_hook as _;
-    use dioxus_history as _;
-    use dioxus_web as _;
-    use rust_embed as _;
-    use web_sys as _;
-}
-
-// `dioxus_router` is referenced indirectly via `dioxus::prelude::*` re-exports.
-// Keep an explicit crate-level use so the unused-crate-dependencies lint
-// recognizes the dependency.
-use dioxus_router as _;
 
 mod app;
 mod context;
-mod hydration;
 pub mod pages;
+mod server_fns;
 
-// SSR helpers + asset serving compile only for the host (server) target.
-// The browser WASM bundle never touches `dioxus-ssr` or `axum`.
-#[cfg(not(target_arch = "wasm32"))]
-pub mod assets;
-#[cfg(not(target_arch = "wasm32"))]
-mod ssr;
+#[cfg(feature = "server")]
+pub mod server;
 
 pub use app::{App, Route};
 pub use context::RequestContext;
-pub use hydration::render_hydration_script;
-
-#[cfg(not(target_arch = "wasm32"))]
-pub use ssr::{
-    html_escape, is_not_found, render_app_html, render_head_html, resolve_route, HTML_DOCTYPE,
-};
+pub use server_fns::{login, status, StatusInfo};

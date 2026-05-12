@@ -1,15 +1,24 @@
-//! End-to-end flow against `build_router(state)` exercising spec acceptance criteria.
+//! End-to-end flow against the OCS surface of the HTTP router exercising
+//! spec acceptance criteria for the users sub-project.
+//!
+//! Login itself moved to a Dioxus `#[server]` function in `crabcloud-ui` as
+//! part of the fullstack migration, so it's not reachable from `build_router`
+//! alone; verification is covered by the Playwright suite. These tests seed
+//! the session directly via `SessionStore` to focus on the `/cloud/user`
+//! semantics.
 
 #![allow(unused_crate_dependencies)]
 use axum::body::{to_bytes, Body};
 use axum::http::{Request, StatusCode};
 use crabcloud_core::AppStateBuilder;
 use crabcloud_http::build_router;
+use crabcloud_http::session::{encode_cookie, Session, SessionId, SessionStore, COOKIE_NAME};
 use crabcloud_users::{BcryptVerifier, PasswordVerifier, User, UserId};
+use secrecy::ExposeSecret;
 use tempfile::tempdir;
 use tower::ServiceExt;
 
-async fn build_app() -> axum::Router {
+async fn build_app() -> (axum::Router, String) {
     let dir = tempdir().unwrap();
     let cfg = crabcloud_config::test_support::minimal_sqlite_config(dir.path().join("flow.db"));
     let state = AppStateBuilder::new(cfg)
@@ -34,79 +43,35 @@ async fn build_app() -> axum::Router {
         .await
         .unwrap();
     std::mem::forget(dir);
-    build_router(state)
-}
 
-#[tokio::test]
-async fn login_with_real_user_succeeds() {
-    let app = build_app().await;
-    let req = Request::builder()
-        .method("POST")
-        .uri("/index.php/login")
-        .header("content-type", "application/x-www-form-urlencoded")
-        .body(Body::from("username=alice&password=hunter2"))
-        .unwrap();
-    let resp = app.oneshot(req).await.unwrap();
-    assert_eq!(resp.status(), StatusCode::SEE_OTHER);
-}
+    // Seed an authenticated session for alice.
+    let store = SessionStore::new(state.cache.clone(), &state.config.instanceid);
+    let id = SessionId::new_random();
+    let mut session = Session::new();
+    session.user_id = Some("alice".to_string());
+    session.rotate_csrf();
+    session.two_factor_passed = true;
+    store.save(&id, &session).await.unwrap();
+    store.record_for_user("alice", &id).await.unwrap();
+    let cookie_value = encode_cookie(id.as_str(), state.config.secret.expose_secret().as_bytes());
+    let cookie = format!("{COOKIE_NAME}={cookie_value}");
 
-#[tokio::test]
-async fn login_with_wrong_password_401() {
-    let app = build_app().await;
-    let req = Request::builder()
-        .method("POST")
-        .uri("/index.php/login")
-        .header("content-type", "application/x-www-form-urlencoded")
-        .body(Body::from("username=alice&password=WRONG"))
-        .unwrap();
-    let resp = app.oneshot(req).await.unwrap();
-    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
-}
-
-#[tokio::test]
-async fn login_with_unknown_user_401() {
-    let app = build_app().await;
-    let req = Request::builder()
-        .method("POST")
-        .uri("/index.php/login")
-        .header("content-type", "application/x-www-form-urlencoded")
-        .body(Body::from("username=nobody&password=anything"))
-        .unwrap();
-    let resp = app.oneshot(req).await.unwrap();
-    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    (build_router(state, axum::Router::new()), cookie)
 }
 
 #[tokio::test]
 async fn get_self_returns_payload() {
-    let app = build_app().await;
-    let req1 = Request::builder()
-        .method("POST")
-        .uri("/index.php/login")
-        .header("content-type", "application/x-www-form-urlencoded")
-        .body(Body::from("username=alice&password=hunter2"))
-        .unwrap();
-    let r1 = app.clone().oneshot(req1).await.unwrap();
-    let cookie = r1
-        .headers()
-        .get("set-cookie")
-        .unwrap()
-        .to_str()
-        .unwrap()
-        .split(';')
-        .next()
-        .unwrap()
-        .to_string();
-
-    let req2 = Request::builder()
+    let (app, cookie) = build_app().await;
+    let req = Request::builder()
         .method("GET")
         .uri("/ocs/v2.php/cloud/user?format=json")
         .header("ocs-apirequest", "true")
         .header("cookie", &cookie)
         .body(Body::empty())
         .unwrap();
-    let r2 = app.oneshot(req2).await.unwrap();
-    assert_eq!(r2.status(), StatusCode::OK);
-    let body = to_bytes(r2.into_body(), 16 * 1024).await.unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = to_bytes(resp.into_body(), 16 * 1024).await.unwrap();
     let parsed: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(parsed["ocs"]["data"]["id"], "alice");
     assert_eq!(parsed["ocs"]["data"]["display-name"], "Alice");

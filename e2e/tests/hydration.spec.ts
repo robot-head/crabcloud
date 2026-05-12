@@ -4,7 +4,6 @@ const BASE_URL = process.env.CRABCLOUD_E2E_URL ?? "http://127.0.0.1:18765";
 
 test.describe("Crabcloud SSR + hydration", () => {
     test("home page SSRs with hydration marker and hydrates", async ({ page }) => {
-        // Capture the response before JS executes to verify the SSR snapshot.
         const response = await page.goto("/");
         expect(response).not.toBeNull();
         expect(response!.status()).toBe(200);
@@ -12,7 +11,10 @@ test.describe("Crabcloud SSR + hydration", () => {
         const htmlBeforeJs = await response!.text();
         expect(htmlBeforeJs).toContain("Welcome, guest");
         expect(htmlBeforeJs).toContain("data-hydrated=\"false\"");
-        expect(htmlBeforeJs).toContain("<script id=\"__dx_ctx\"");
+        // CSRF token surfaces as a <meta requesttoken> tag in the document
+        // head; the custom __dx_ctx JSON payload is gone — context now rides
+        // the standard Dioxus 0.7 hydration data channel via use_server_cached.
+        expect(htmlBeforeJs).toContain("name=\"requesttoken\"");
 
         // After the WASM bundle loads + use_effect runs, the marker flips.
         await expect(page.locator("#app-root")).toHaveAttribute(
@@ -23,18 +25,18 @@ test.describe("Crabcloud SSR + hydration", () => {
     });
 
     test("login flow then home shows authenticated greeting", async ({ page, request }) => {
-        // POST to /index.php/login directly (the form's action). Use the
-        // request context so we can capture and replay the cookie.
+        // /index.php/login is a Dioxus #[server] function (JSON codec, 200 on
+        // success). SessionLayer still attaches the session cookie via
+        // Set-Cookie regardless of the body shape.
         const loginResp = await request.post("/index.php/login", {
-            form: { username: "admin", password: "hunter2" },
-            maxRedirects: 0,
+            data: { username: "admin", password: "hunter2" },
+            headers: { "content-type": "application/json" },
         });
-        expect(loginResp.status()).toBe(303);
+        expect(loginResp.status()).toBe(200);
 
         const cookie = loginResp.headers()["set-cookie"];
         expect(cookie).toContain("oc_sessionPassphrase=");
 
-        // Visit `/` with the new session cookie.
         const sessionValue = /oc_sessionPassphrase=([^;]+)/.exec(cookie!)![1];
         await page.context().addCookies([{
             name: "oc_sessionPassphrase",
@@ -46,7 +48,6 @@ test.describe("Crabcloud SSR + hydration", () => {
         expect(homeResp!.status()).toBe(200);
         await expect(page.locator("body")).toContainText("Welcome, admin");
 
-        // And hydration still happens.
         await expect(page.locator("#app-root")).toHaveAttribute(
             "data-hydrated",
             "true",
@@ -57,11 +58,9 @@ test.describe("Crabcloud SSR + hydration", () => {
     test("404 path returns 404 status with rendered NotFound page", async ({ page }) => {
         const response = await page.goto("/this/does/not/exist");
         expect(response!.status()).toBe(404);
-        // Assert against the SSR response body (what crawlers see) rather than
-        // the live DOM: post-mount, the WASM client wipes `#main` before
-        // re-rendering, so the DOM state during retry-loop sampling depends on
-        // dx-router's client-side catchall resolution — exercised separately
-        // in `crabcloud_ui::ssr::resolve_tests::unknown_path_resolves_to_not_found`.
+        // Assert against the SSR response body (what crawlers see) rather
+        // than the live DOM. The status code is set by the NotFoundRoute
+        // component via `FullstackContext::commit_http_status`.
         const html = await response!.text();
         expect(html).toContain("404 — Not Found");
     });

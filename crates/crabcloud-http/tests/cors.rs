@@ -23,7 +23,7 @@ async fn cors_allows_both_http_and_https_origins_for_trusted_domain() {
         .build()
         .await
         .unwrap();
-    let app = build_router(state);
+    let app = build_router(state, axum::Router::new());
 
     for scheme in ["http", "https"] {
         let origin = format!("{scheme}://cloud.example.com");
@@ -51,7 +51,7 @@ async fn cors_preflight_response_has_security_headers() {
         .build()
         .await
         .unwrap();
-    let app = build_router(state);
+    let app = build_router(state, axum::Router::new());
 
     let req = Request::builder()
         .method(Method::OPTIONS)

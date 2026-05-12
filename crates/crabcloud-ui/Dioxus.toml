@@ -1,18 +1,29 @@
 [application]
 name = "crabcloud-ui"
+# `dx build --platform web` produces just the WASM client bundle that the
+# fullstack server (crabcloud-server) loads from disk at runtime. We don't
+# use `dx serve` (the entire stack runs through crabcloud-server's axum
+# binary), so `default_platform` stays `web` — only the build is needed.
 default_platform = "web"
 out_dir = "public"
 
 [web.app]
 title = "Crabcloud"
-base_path = "assets"
+# `base_path` was previously "assets", which made dx emit script src URLs like
+# `/assets/assets/<bundle>.js` — double `assets/` prefix → 404 in the browser.
+# The bundle already lives under `public/assets/`, and the fullstack server
+# (`dioxus::server::router`) serves the public dir at the URL root, so paths
+# resolve correctly without a base_path override.
 
 [web.watcher]
 reload_html = false
 watch_path = ["src", "assets"]
 
 [web.resource]
-style = ["assets/app.css"]
+# Stylesheets are bundled from Rust via `document::Stylesheet { href: asset!(..) }`
+# so dx hashes + ships them. Listing them here would add a second untracked
+# <link> tag that 404s when the served path doesn't match the on-disk one.
+style = []
 script = []
 
 [web.resource.dev]

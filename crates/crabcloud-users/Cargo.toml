@@ -22,6 +22,7 @@ axum.workspace = true
 crabcloud-config = { workspace = true, features = ["test-support"] }
 crabcloud-core.workspace = true
 crabcloud-http.workspace = true
+secrecy = { workspace = true, features = ["serde"] }
 serde_json.workspace = true
 tempfile.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

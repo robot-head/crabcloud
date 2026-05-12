@@ -36,6 +36,12 @@ impl SessionHandle {
     pub async fn read(&self) -> Session {
         self.inner.lock().await.clone()
     }
+    /// Best-effort sync snapshot used by SSR rendering (which can't `.await`).
+    /// Returns `None` if the lock is currently held; callers should treat
+    /// that as "session not available this frame" rather than retrying.
+    pub fn try_read_snapshot(&self) -> Option<Session> {
+        self.inner.try_lock().ok().map(|g| g.clone())
+    }
     /// Mutate the session under the lock; changes are persisted by the layer
     /// when the response is flushed.
     pub async fn mutate<F: FnOnce(&mut Session)>(&self, f: F) {
