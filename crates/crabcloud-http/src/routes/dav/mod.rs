@@ -12,6 +12,8 @@ pub mod extractor;
 pub mod headers;
 pub mod methods;
 pub mod moves;
+pub mod propfind;
+pub mod xml;
 
 use axum::routing::{any, options, MethodRouter};
 use axum::Router;

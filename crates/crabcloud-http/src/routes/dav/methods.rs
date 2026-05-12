@@ -93,10 +93,13 @@ async fn dispatch_inner(
         m if m.as_str() == "COPY" => {
             crate::routes::dav::moves::copy(state, &uid, &user_path, &headers).await
         }
-        // PROPFIND/PROPPATCH/LOCK/UNLOCK land in batches D/E/F.
-        m if matches!(m.as_str(), "PROPFIND" | "PROPPATCH" | "LOCK" | "UNLOCK") => Err(
-            DavError::BadRequest(format!("{} not yet implemented", m.as_str())),
-        ),
+        m if m.as_str() == "PROPFIND" => {
+            crate::routes::dav::propfind::handle(state, &uid, &user_path, &headers).await
+        }
+        // PROPPATCH/LOCK/UNLOCK land in batches E/F.
+        m if matches!(m.as_str(), "PROPPATCH" | "LOCK" | "UNLOCK") => Err(DavError::BadRequest(
+            format!("{} not yet implemented", m.as_str()),
+        )),
         _ => Ok((
             StatusCode::METHOD_NOT_ALLOWED,
             [(header::ALLOW, HeaderValue::from_static(ALLOW_HEADER))],
