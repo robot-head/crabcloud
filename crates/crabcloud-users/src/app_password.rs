@@ -81,6 +81,9 @@ impl AppPasswordService {
         if row.is_unusable(now) {
             return Err(UsersError::TokenNotFound);
         }
+        // Best-effort: a failed activity bump must not fail an otherwise-valid
+        // auth. The next request hits the cache anyway; activity will catch up
+        // on the next successful bump.
         let _ = self.tokens.maybe_bump_activity(&row, now).await;
         Ok(row)
     }

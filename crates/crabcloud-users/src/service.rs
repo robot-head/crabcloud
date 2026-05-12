@@ -84,6 +84,20 @@ impl UsersService {
 
     /// Rehash + write the new password. If an [`AppPasswordService`] is
     /// attached, also cascades `password_invalid=1` on every token row.
+    ///
+    /// **Non-atomic.** The password update and the token-cascade UPDATE are
+    /// two separate SQL statements. If the cascade fails after the password
+    /// has been rotated, the caller receives an `Err` and the system is left
+    /// in a state where the new password is in effect but old app-password
+    /// tokens are still valid. Both operations are idempotent — retrying
+    /// `set_password` with the same `new` password rehashes to a different
+    /// hash (bcrypt salts), but the post-conditions ("oc_users row's
+    /// password column matches the verifier's `hash(new)`" + "every
+    /// `oc_authtoken` row for `uid` has `password_invalid=1`") converge on
+    /// retry. Callers should treat any `Err` as "retry once before giving
+    /// up" so a transient cascade failure doesn't leave the user without
+    /// invalidated tokens. A future transactional rewrite (single sqlx tx
+    /// spanning both UPDATEs) closes this window entirely.
     pub async fn set_password(&self, uid: &UserId, new: &str) -> UsersResult<()> {
         let hash = self.verifier.hash(new)?;
         self.users.set_password(uid, &hash).await?;
