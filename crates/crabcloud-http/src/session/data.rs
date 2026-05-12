@@ -11,7 +11,7 @@ impl SessionId {
     pub fn new_random() -> Self {
         use rand::Rng;
         let mut buf = [0u8; 32];
-        rand::rng().fill_bytes(&mut buf);
+        rand::thread_rng().fill_bytes(&mut buf);
         SessionId(hex::encode(buf))
     }
 
@@ -68,7 +68,7 @@ impl Session {
 fn random_token() -> String {
     use rand::Rng;
     let mut buf = [0u8; 32];
-    rand::rng().fill_bytes(&mut buf);
+    rand::thread_rng().fill_bytes(&mut buf);
     hex::encode(buf)
 }
 
