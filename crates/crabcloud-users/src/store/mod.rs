@@ -18,6 +18,26 @@ pub struct UserWithHash {
     pub password_hash: Option<String>,
 }
 
+/// Filter shape for [`UserStore::list_users`]. Substring search is case-
+/// insensitive and runs against `uid`, `displayname`, `email`. Empty / `None`
+/// search returns all rows in `uid` order. `limit` is clamped to `[1, 500]`
+/// by the handler; offset has no upper bound (callers paginate).
+#[derive(Debug, Clone)]
+pub struct UserListFilter<'a> {
+    pub search: Option<&'a str>,
+    pub limit: u32,
+    pub offset: u32,
+}
+
+/// Filter shape for [`GroupStore::list_groups`]. Substring search on
+/// `gid OR displayname`. Same clamp semantics as [`UserListFilter`].
+#[derive(Debug, Clone)]
+pub struct GroupListFilter<'a> {
+    pub search: Option<&'a str>,
+    pub limit: u32,
+    pub offset: u32,
+}
+
 #[async_trait]
 pub trait UserStore: Send + Sync {
     async fn lookup(&self, uid: &UserId) -> UsersResult<Option<User>>;
@@ -31,6 +51,19 @@ pub trait UserStore: Send + Sync {
     async fn create(&self, user: &User, password_hash: Option<&str>) -> UsersResult<()>;
     async fn delete(&self, uid: &UserId) -> UsersResult<()>;
     async fn touch_last_seen(&self, uid: &UserId) -> UsersResult<()>;
+
+    /// Paginated user list with optional case-insensitive substring search.
+    /// Search hits `uid OR displayname OR email`; empty search returns all.
+    /// Returns rows in `uid` ASC order.
+    async fn list_users(&self, filter: UserListFilter<'_>) -> UsersResult<Vec<User>>;
+
+    /// True iff a real DB row exists in `oc_users`. The default impl delegates
+    /// to `lookup`; layers that synthesize users (e.g. `BootstrapAdminBackend`)
+    /// override this to bypass the synthesis path. Used by admin OCS handlers
+    /// to 404 cleanly on the virtual admin without exposing shim internals.
+    async fn exists_in_storage(&self, uid: &UserId) -> UsersResult<bool> {
+        Ok(self.lookup(uid).await?.is_some())
+    }
 }
 
 #[async_trait]
@@ -43,6 +76,10 @@ pub trait GroupStore: Send + Sync {
     async fn remove_from_group(&self, uid: &UserId, gid: &GroupId) -> UsersResult<()>;
     async fn create(&self, group: &Group) -> UsersResult<()>;
     async fn delete(&self, gid: &GroupId) -> UsersResult<()>;
+
+    /// Paginated group list with optional case-insensitive substring search.
+    /// Search hits `gid OR displayname`. Returns rows in `gid` ASC order.
+    async fn list_groups(&self, filter: GroupListFilter<'_>) -> UsersResult<Vec<Group>>;
 }
 
 #[async_trait]

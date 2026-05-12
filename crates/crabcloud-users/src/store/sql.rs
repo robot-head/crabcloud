@@ -1,7 +1,9 @@
 //! SQL backend for the three store traits. Per-dialect query dispatch follows
 //! the platform-core `match &pool` pattern.
 
-use super::{GroupStore, PreferenceStore, UserStore, UserWithHash};
+use super::{
+    GroupListFilter, GroupStore, PreferenceStore, UserListFilter, UserStore, UserWithHash,
+};
 use crate::email::Email;
 use crate::error::{UsersError, UsersResult};
 use crate::group::{Group, GroupId};
@@ -504,6 +506,97 @@ impl UserStore for SqlUserStore {
         };
         Ok(())
     }
+
+    async fn list_users(&self, filter: UserListFilter<'_>) -> UsersResult<Vec<User>> {
+        let limit_i = filter.limit as i64;
+        let offset_i = filter.offset as i64;
+        let pattern = filter
+            .search
+            .filter(|s| !s.is_empty())
+            .map(|s| format!("%{}%", s.to_ascii_lowercase()));
+        let rows: Vec<(String, Option<String>, Option<String>, i64, i64)> =
+            match (&self.pool, pattern) {
+                (DbPool::Sqlite(p), Some(pat)) => map_sqlx(
+                    sqlx::query_as(
+                        "SELECT uid, displayname, email, last_seen, enabled FROM oc_users \
+                     WHERE LOWER(uid) LIKE ? \
+                        OR LOWER(COALESCE(displayname, '')) LIKE ? \
+                        OR LOWER(COALESCE(email, '')) LIKE ? \
+                     ORDER BY uid ASC LIMIT ? OFFSET ?",
+                    )
+                    .bind(&pat)
+                    .bind(&pat)
+                    .bind(&pat)
+                    .bind(limit_i)
+                    .bind(offset_i)
+                    .fetch_all(p)
+                    .await,
+                )?,
+                (DbPool::Sqlite(p), None) => map_sqlx(
+                    sqlx::query_as(
+                        "SELECT uid, displayname, email, last_seen, enabled FROM oc_users \
+                     ORDER BY uid ASC LIMIT ? OFFSET ?",
+                    )
+                    .bind(limit_i)
+                    .bind(offset_i)
+                    .fetch_all(p)
+                    .await,
+                )?,
+                (DbPool::MySql(p), Some(pat)) => map_sqlx(
+                    sqlx::query_as(
+                        "SELECT uid, displayname, email, last_seen, enabled FROM oc_users \
+                     WHERE LOWER(uid) LIKE ? \
+                        OR LOWER(COALESCE(displayname, '')) LIKE ? \
+                        OR LOWER(COALESCE(email, '')) LIKE ? \
+                     ORDER BY uid ASC LIMIT ? OFFSET ?",
+                    )
+                    .bind(&pat)
+                    .bind(&pat)
+                    .bind(&pat)
+                    .bind(limit_i)
+                    .bind(offset_i)
+                    .fetch_all(p)
+                    .await,
+                )?,
+                (DbPool::MySql(p), None) => map_sqlx(
+                    sqlx::query_as(
+                        "SELECT uid, displayname, email, last_seen, enabled FROM oc_users \
+                     ORDER BY uid ASC LIMIT ? OFFSET ?",
+                    )
+                    .bind(limit_i)
+                    .bind(offset_i)
+                    .fetch_all(p)
+                    .await,
+                )?,
+                (DbPool::Postgres(p), Some(pat)) => map_sqlx(
+                    sqlx::query_as(
+                        "SELECT uid, displayname, email, last_seen, enabled FROM oc_users \
+                     WHERE LOWER(uid) LIKE $1 \
+                        OR LOWER(COALESCE(displayname, '')) LIKE $1 \
+                        OR LOWER(COALESCE(email, '')) LIKE $1 \
+                     ORDER BY uid ASC LIMIT $2 OFFSET $3",
+                    )
+                    .bind(&pat)
+                    .bind(limit_i)
+                    .bind(offset_i)
+                    .fetch_all(p)
+                    .await,
+                )?,
+                (DbPool::Postgres(p), None) => map_sqlx(
+                    sqlx::query_as(
+                        "SELECT uid, displayname, email, last_seen, enabled FROM oc_users \
+                     ORDER BY uid ASC LIMIT $1 OFFSET $2",
+                    )
+                    .bind(limit_i)
+                    .bind(offset_i)
+                    .fetch_all(p)
+                    .await,
+                )?,
+            };
+        rows.into_iter()
+            .map(|(u, d, e, l, en)| row_to_user(u, d, e, l, en))
+            .collect()
+    }
 }
 
 #[derive(Clone)]
@@ -762,6 +855,96 @@ impl GroupStore for SqlGroupStore {
             };
         }
         Ok(())
+    }
+
+    async fn list_groups(&self, filter: GroupListFilter<'_>) -> UsersResult<Vec<Group>> {
+        let limit_i = filter.limit as i64;
+        let offset_i = filter.offset as i64;
+        let pattern = filter
+            .search
+            .filter(|s| !s.is_empty())
+            .map(|s| format!("%{}%", s.to_ascii_lowercase()));
+        let rows: Vec<(String, Option<String>)> = match (&self.pool, pattern) {
+            (DbPool::Sqlite(p), Some(pat)) => map_sqlx(
+                sqlx::query_as(
+                    "SELECT gid, displayname FROM oc_groups \
+                     WHERE LOWER(gid) LIKE ? \
+                        OR LOWER(COALESCE(displayname, '')) LIKE ? \
+                     ORDER BY gid ASC LIMIT ? OFFSET ?",
+                )
+                .bind(&pat)
+                .bind(&pat)
+                .bind(limit_i)
+                .bind(offset_i)
+                .fetch_all(p)
+                .await,
+            )?,
+            (DbPool::Sqlite(p), None) => map_sqlx(
+                sqlx::query_as(
+                    "SELECT gid, displayname FROM oc_groups \
+                     ORDER BY gid ASC LIMIT ? OFFSET ?",
+                )
+                .bind(limit_i)
+                .bind(offset_i)
+                .fetch_all(p)
+                .await,
+            )?,
+            (DbPool::MySql(p), Some(pat)) => map_sqlx(
+                sqlx::query_as(
+                    "SELECT gid, displayname FROM oc_groups \
+                     WHERE LOWER(gid) LIKE ? \
+                        OR LOWER(COALESCE(displayname, '')) LIKE ? \
+                     ORDER BY gid ASC LIMIT ? OFFSET ?",
+                )
+                .bind(&pat)
+                .bind(&pat)
+                .bind(limit_i)
+                .bind(offset_i)
+                .fetch_all(p)
+                .await,
+            )?,
+            (DbPool::MySql(p), None) => map_sqlx(
+                sqlx::query_as(
+                    "SELECT gid, displayname FROM oc_groups \
+                     ORDER BY gid ASC LIMIT ? OFFSET ?",
+                )
+                .bind(limit_i)
+                .bind(offset_i)
+                .fetch_all(p)
+                .await,
+            )?,
+            (DbPool::Postgres(p), Some(pat)) => map_sqlx(
+                sqlx::query_as(
+                    "SELECT gid, displayname FROM oc_groups \
+                     WHERE LOWER(gid) LIKE $1 \
+                        OR LOWER(COALESCE(displayname, '')) LIKE $1 \
+                     ORDER BY gid ASC LIMIT $2 OFFSET $3",
+                )
+                .bind(&pat)
+                .bind(limit_i)
+                .bind(offset_i)
+                .fetch_all(p)
+                .await,
+            )?,
+            (DbPool::Postgres(p), None) => map_sqlx(
+                sqlx::query_as(
+                    "SELECT gid, displayname FROM oc_groups \
+                     ORDER BY gid ASC LIMIT $1 OFFSET $2",
+                )
+                .bind(limit_i)
+                .bind(offset_i)
+                .fetch_all(p)
+                .await,
+            )?,
+        };
+        rows.into_iter()
+            .map(|(g, d)| {
+                Ok(Group {
+                    gid: GroupId::new(g)?,
+                    display_name: d.unwrap_or_default(),
+                })
+            })
+            .collect::<UsersResult<Vec<Group>>>()
     }
 }
 
@@ -1159,5 +1342,284 @@ mod tests {
 
         let miss = store.lookup_for_auth("nobody@nowhere.com").await.unwrap();
         assert!(miss.is_none());
+    }
+
+    fn fixture_user(uid: &str, email: Option<&str>) -> User {
+        User {
+            uid: UserId::new(uid).unwrap(),
+            display_name: uid.to_string(),
+            email: email.map(|e| Email::parse(e).unwrap()),
+            enabled: true,
+            last_seen: 0,
+        }
+    }
+
+    #[tokio::test]
+    async fn list_users_empty_search_returns_all_in_uid_order() {
+        let pool = fresh_pool().await;
+        let store = SqlUserStore::new(pool);
+        store
+            .create(&fixture_user("charlie", None), Some("h"))
+            .await
+            .unwrap();
+        store
+            .create(&fixture_user("alice", None), Some("h"))
+            .await
+            .unwrap();
+        store
+            .create(&fixture_user("bob", None), Some("h"))
+            .await
+            .unwrap();
+        let rows = store
+            .list_users(UserListFilter {
+                search: None,
+                limit: 100,
+                offset: 0,
+            })
+            .await
+            .unwrap();
+        let uids: Vec<&str> = rows.iter().map(|u| u.uid.as_str()).collect();
+        assert_eq!(uids, vec!["alice", "bob", "charlie"]);
+    }
+
+    #[tokio::test]
+    async fn list_users_substring_search_matches_uid() {
+        let pool = fresh_pool().await;
+        let store = SqlUserStore::new(pool);
+        store
+            .create(&fixture_user("alice", None), Some("h"))
+            .await
+            .unwrap();
+        store
+            .create(&fixture_user("bob", None), Some("h"))
+            .await
+            .unwrap();
+        store
+            .create(&fixture_user("alicia", None), Some("h"))
+            .await
+            .unwrap();
+        let rows = store
+            .list_users(UserListFilter {
+                search: Some("ali"),
+                limit: 100,
+                offset: 0,
+            })
+            .await
+            .unwrap();
+        let uids: Vec<&str> = rows.iter().map(|u| u.uid.as_str()).collect();
+        assert_eq!(uids, vec!["alice", "alicia"]);
+    }
+
+    #[tokio::test]
+    async fn list_users_search_matches_displayname() {
+        let pool = fresh_pool().await;
+        let store = SqlUserStore::new(pool);
+        let mut alice = fixture_user("alice", None);
+        alice.display_name = "Alice Wonderland".into();
+        store.create(&alice, Some("h")).await.unwrap();
+        let mut bob = fixture_user("bob", None);
+        bob.display_name = "Robert".into();
+        store.create(&bob, Some("h")).await.unwrap();
+        let rows = store
+            .list_users(UserListFilter {
+                search: Some("wonderland"),
+                limit: 100,
+                offset: 0,
+            })
+            .await
+            .unwrap();
+        let uids: Vec<&str> = rows.iter().map(|u| u.uid.as_str()).collect();
+        assert_eq!(uids, vec!["alice"]);
+    }
+
+    #[tokio::test]
+    async fn list_users_search_matches_email() {
+        let pool = fresh_pool().await;
+        let store = SqlUserStore::new(pool);
+        let mut alice = fixture_user("alice", None);
+        alice.email = Some(crate::email::Email::parse("alice@example.com").unwrap());
+        store.create(&alice, Some("h")).await.unwrap();
+        let bob = fixture_user("bob", None);
+        store.create(&bob, Some("h")).await.unwrap();
+        let rows = store
+            .list_users(UserListFilter {
+                search: Some("@example"),
+                limit: 100,
+                offset: 0,
+            })
+            .await
+            .unwrap();
+        let uids: Vec<&str> = rows.iter().map(|u| u.uid.as_str()).collect();
+        assert_eq!(uids, vec!["alice"]);
+    }
+
+    #[tokio::test]
+    async fn list_users_pagination_returns_disjoint_windows() {
+        let pool = fresh_pool().await;
+        let store = SqlUserStore::new(pool);
+        for uid in ["alice", "bob", "carol", "dave", "eve"] {
+            store
+                .create(&fixture_user(uid, None), Some("h"))
+                .await
+                .unwrap();
+        }
+        let page1 = store
+            .list_users(UserListFilter {
+                search: None,
+                limit: 2,
+                offset: 0,
+            })
+            .await
+            .unwrap();
+        let page2 = store
+            .list_users(UserListFilter {
+                search: None,
+                limit: 2,
+                offset: 2,
+            })
+            .await
+            .unwrap();
+        let page3 = store
+            .list_users(UserListFilter {
+                search: None,
+                limit: 2,
+                offset: 4,
+            })
+            .await
+            .unwrap();
+        assert_eq!(
+            page1.iter().map(|u| u.uid.as_str()).collect::<Vec<_>>(),
+            vec!["alice", "bob"]
+        );
+        assert_eq!(
+            page2.iter().map(|u| u.uid.as_str()).collect::<Vec<_>>(),
+            vec!["carol", "dave"]
+        );
+        assert_eq!(
+            page3.iter().map(|u| u.uid.as_str()).collect::<Vec<_>>(),
+            vec!["eve"]
+        );
+    }
+
+    #[tokio::test]
+    async fn exists_in_storage_true_for_real_row() {
+        let pool = fresh_pool().await;
+        let store = SqlUserStore::new(pool);
+        store
+            .create(&fixture_user("alice", None), Some("h"))
+            .await
+            .unwrap();
+        assert!(store
+            .exists_in_storage(&UserId::new("alice").unwrap())
+            .await
+            .unwrap());
+    }
+
+    #[tokio::test]
+    async fn exists_in_storage_false_for_missing_uid() {
+        let pool = fresh_pool().await;
+        let store = SqlUserStore::new(pool);
+        assert!(!store
+            .exists_in_storage(&UserId::new("ghost").unwrap())
+            .await
+            .unwrap());
+    }
+
+    #[tokio::test]
+    async fn list_groups_empty_search_returns_all_in_gid_order() {
+        let pool = fresh_pool().await;
+        let store = SqlGroupStore::new(pool);
+        // The "admin" group is seeded by migration 0002, so we also create two more.
+        store
+            .create(&Group {
+                gid: GroupId::new("zulu").unwrap(),
+                display_name: "Z".into(),
+            })
+            .await
+            .unwrap();
+        store
+            .create(&Group {
+                gid: GroupId::new("mango").unwrap(),
+                display_name: "M".into(),
+            })
+            .await
+            .unwrap();
+        let rows = store
+            .list_groups(GroupListFilter {
+                search: None,
+                limit: 100,
+                offset: 0,
+            })
+            .await
+            .unwrap();
+        let gids: Vec<&str> = rows.iter().map(|g| g.gid.as_str()).collect();
+        assert_eq!(gids, vec!["admin", "mango", "zulu"]);
+    }
+
+    #[tokio::test]
+    async fn list_groups_substring_search_matches_gid() {
+        let pool = fresh_pool().await;
+        let store = SqlGroupStore::new(pool);
+        store
+            .create(&Group {
+                gid: GroupId::new("developers").unwrap(),
+                display_name: "Devs".into(),
+            })
+            .await
+            .unwrap();
+        store
+            .create(&Group {
+                gid: GroupId::new("designers").unwrap(),
+                display_name: "Designers".into(),
+            })
+            .await
+            .unwrap();
+        store
+            .create(&Group {
+                gid: GroupId::new("ops").unwrap(),
+                display_name: "Ops".into(),
+            })
+            .await
+            .unwrap();
+        let rows = store
+            .list_groups(GroupListFilter {
+                search: Some("dev"),
+                limit: 100,
+                offset: 0,
+            })
+            .await
+            .unwrap();
+        let gids: Vec<&str> = rows.iter().map(|g| g.gid.as_str()).collect();
+        assert_eq!(gids, vec!["developers"]);
+    }
+
+    #[tokio::test]
+    async fn list_groups_search_matches_displayname() {
+        let pool = fresh_pool().await;
+        let store = SqlGroupStore::new(pool);
+        store
+            .create(&Group {
+                gid: GroupId::new("aaa").unwrap(),
+                display_name: "Apple Team".into(),
+            })
+            .await
+            .unwrap();
+        store
+            .create(&Group {
+                gid: GroupId::new("bbb").unwrap(),
+                display_name: "Banana Team".into(),
+            })
+            .await
+            .unwrap();
+        let rows = store
+            .list_groups(GroupListFilter {
+                search: Some("apple"),
+                limit: 100,
+                offset: 0,
+            })
+            .await
+            .unwrap();
+        let gids: Vec<&str> = rows.iter().map(|g| g.gid.as_str()).collect();
+        assert_eq!(gids, vec!["aaa"]);
     }
 }
