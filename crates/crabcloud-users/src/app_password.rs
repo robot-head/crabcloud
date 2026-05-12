@@ -104,6 +104,17 @@ impl AppPasswordService {
         self.tokens.revoke_all_for_user_except(uid, current).await
     }
 
+    /// Delete every token row owned by `uid`. Used by `UsersService::{disable,
+    /// delete}_user` to force-logout the target across all devices.
+    ///
+    /// Implementation forwards to the cache's `revoke_all_for_user_except`
+    /// with `except = i64::MIN` (no real row's id is `MIN`, so nothing is
+    /// preserved). Future hardening could add a dedicated `revoke_all_for_user`
+    /// on `TokenAuthCache` to avoid the sentinel.
+    pub async fn revoke_all_for_user(&self, uid: &UserId) -> UsersResult<()> {
+        self.tokens.revoke_all_for_user_except(uid, i64::MIN).await
+    }
+
     pub async fn invalidate_all_for_user(&self, uid: &UserId) -> UsersResult<()> {
         self.tokens.invalidate_all_for_user(uid).await
     }
