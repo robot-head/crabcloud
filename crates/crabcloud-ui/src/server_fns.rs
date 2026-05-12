@@ -46,16 +46,22 @@ pub async fn status() -> Result<StatusInfo, ServerFnError> {
     })
 }
 
-/// `POST /index.php/login` — login via the users service. Mutates the session
-/// (via the request extension installed by `crabcloud-http`'s `SessionLayer`)
-/// to record the authenticated user, rotate the CSRF token, and mark two-
-/// factor as passed.
+/// `POST /index.php/login` — login via the users service. Mints a session-
+/// kind `AuthToken` for the user, stashes a pending Set-Cookie on the
+/// `SessionHandle`, and mutates the ephemeral blob (user_id, CSRF, 2FA).
+///
+/// The cookie payload is the raw token; the SessionLayer HMAC-signs it.
 #[server(endpoint = "index.php/login", prefix = "")]
-pub async fn login(username: String, password: String) -> Result<(), ServerFnError> {
+pub async fn login(
+    username: String,
+    password: String,
+    remember: Option<bool>,
+) -> Result<(), ServerFnError> {
+    use crabcloud_users::AuthTokenType;
     use dioxus::fullstack::FullstackContext;
+
     let fs =
         FullstackContext::current().ok_or_else(|| ServerFnError::new("not running on server"))?;
-
     let state = fs
         .extension::<crabcloud_core::AppState>()
         .ok_or_else(|| ServerFnError::new("AppState extension missing"))?;
@@ -71,13 +77,48 @@ pub async fn login(username: String, password: String) -> Result<(), ServerFnErr
             ::tracing::warn!(username = %username, error = %e, "login verify failed");
             ServerFnError::new("unauthorized")
         })?;
-    let uid_str = user.uid.as_str().to_string();
 
+    let ap = state
+        .users
+        .app_passwords()
+        .ok_or_else(|| ServerFnError::new("app_passwords missing on AppState"))?
+        .clone();
+
+    // Best-effort user-agent extraction via FullstackContext's request parts.
+    let user_agent = fs
+        .parts_mut()
+        .headers
+        .get(axum::http::header::USER_AGENT)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("Browser")
+        .to_string();
+
+    let (_row, raw) = ap
+        .mint(
+            &user.uid,
+            &username,
+            &user_agent,
+            AuthTokenType::Session,
+            remember.unwrap_or(false),
+        )
+        .await
+        .map_err(|e| {
+            ::tracing::warn!(error = %e, "session token mint failed");
+            ServerFnError::new("internal")
+        })?;
+
+    let uid_str = user.uid.as_str().to_string();
     session
         .mutate(|s| {
-            s.user_id = Some(uid_str.clone());
+            s.user_id = Some(uid_str);
             s.rotate_csrf();
             s.two_factor_passed = true;
+        })
+        .await;
+    session
+        .set_pending_cookie(crabcloud_http::PendingCookie::Set {
+            raw_token: raw.expose().to_string(),
+            max_age_secs: 30 * 60,
         })
         .await;
     Ok(())

@@ -811,6 +811,7 @@ dependencies = [
  "crabcloud-core",
  "crabcloud-http",
  "crabcloud-i18n",
+ "crabcloud-users",
  "dioxus",
  "serde",
  "serde_json",
