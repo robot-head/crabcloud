@@ -14,7 +14,7 @@ use quick_xml::reader::Reader;
 use crate::routes::dav::error::{DavError, DavResult};
 use crate::routes::dav::xml::{multistatus, write_leaf, write_propstat, write_response};
 use axum::body::Body;
-use axum::http::{header, HeaderValue, StatusCode};
+use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 
 /// Props the server computes (spec §8.2). Attempts to set/remove these are
@@ -196,8 +196,13 @@ pub async fn handle(
     state: AppState,
     uid: &UserId,
     user_path: &UserPath,
+    headers: &HeaderMap,
     body: Body,
 ) -> DavResult<Response> {
+    // Lock-aware: PROPPATCH mutates per-resource state and is gated by
+    // the same If-token contract as PUT/MKCOL/DELETE/MOVE/COPY.
+    let locks = crabcloud_filecache::LockStore::new(state.filecache.pool().clone());
+    crate::routes::dav::lock::lock_check(&locks, uid, user_path, headers).await?;
     // Verify resource exists (404 → propagated up).
     let view = state.view_for(uid).await?;
     let _meta = view.stat(user_path).await?;
