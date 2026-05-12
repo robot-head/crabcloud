@@ -8,14 +8,18 @@
 //! sync clients see byte-identical ETags at every level.
 
 pub mod error;
+pub mod locks;
 pub mod mimetypes;
 pub mod populate;
 pub mod propagate;
+pub mod properties;
 pub mod scanner;
 pub mod schema;
 pub mod storages;
 
 pub use error::{FileCacheError, FileCacheResult};
+pub use locks::{LockRow, LockStore};
+pub use properties::{PropertyRow, PropertyStore};
 pub use scanner::Scanner;
 pub use schema::{path_hash, type_half, FilecacheRow, FilecacheRowRaw, DIRECTORY_MIMETYPE};
 

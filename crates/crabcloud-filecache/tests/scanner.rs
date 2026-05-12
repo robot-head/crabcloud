@@ -19,6 +19,7 @@ use tokio::io::AsyncRead;
 // pull in transitively.
 use async_trait as _;
 use crabcloud_cache as _;
+use crabcloud_users as _;
 use dashmap as _;
 use hex as _;
 use md5 as _;

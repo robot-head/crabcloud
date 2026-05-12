@@ -17,6 +17,7 @@ use support::{harness, make_dir_metadata, make_metadata};
 use async_trait as _;
 use crabcloud_cache as _;
 use crabcloud_config as _;
+use crabcloud_users as _;
 use dashmap as _;
 use hex as _;
 use md5 as _;
