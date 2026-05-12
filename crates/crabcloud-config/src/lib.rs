@@ -8,4 +8,6 @@ pub mod test_support;
 mod types;
 
 pub use loader::{load, LoadError};
-pub use types::{BootstrapAdminConfig, CacheConfig, DbType, FileConfig, FileConfigError};
+pub use types::{
+    BootstrapAdminConfig, CacheConfig, DbType, FileConfig, FileConfigError, FilecacheConfig,
+};

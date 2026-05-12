@@ -6,8 +6,10 @@ use crate::error::{CoreResult, Error};
 use crabcloud_cache::{Cache, MemoryCache};
 use crabcloud_config::FileConfig;
 use crabcloud_db::{core_set, DbPool, MigrationRunner};
+use crabcloud_filecache::{FileCache, Scanner};
 use crabcloud_i18n::I18n;
 use crabcloud_ocs::CapabilityProvider;
+use crabcloud_storage::ChannelEventSink;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -29,6 +31,17 @@ pub struct AppState {
     pub capability_providers: Arc<Mutex<Vec<Arc<dyn CapabilityProvider>>>>,
     /// Composed users service (lookup, verify, password, groups, prefs).
     pub users: crabcloud_users::UsersService,
+    /// Broadcast sink storage backends publish `StorageEvent`s into. Cloneable
+    /// `Arc`; subscribers (the scanner consumer, future indexes) take their
+    /// own receiver via `subscribe`.
+    pub storage_sink: Arc<ChannelEventSink>,
+    /// DB-backed file cache (`oc_filecache` + `oc_storages` + `oc_mimetypes`).
+    pub filecache: Arc<FileCache>,
+    /// Scanner: continuous event consumer + on-demand `full_scan` + drift
+    /// recovery on `RecvError::Lagged`. The consumer task is spawned during
+    /// `AppStateBuilder::build` iff `config.filecache.enabled` is true;
+    /// `register_storage` / `full_scan` work regardless.
+    pub scanner: Arc<Scanner>,
 }
 
 impl std::fmt::Debug for AppState {
@@ -189,6 +202,18 @@ impl AppStateBuilder {
             .with_app_passwords(app_passwords)
         };
 
+        let storage_sink = Arc::new(ChannelEventSink::new(
+            self.config.filecache.event_channel_capacity,
+        ));
+        let filecache = Arc::new(FileCache::new(pool.clone()));
+        let scanner = Arc::new(Scanner::new(filecache.clone(), storage_sink.clone()));
+        if self.config.filecache.enabled {
+            // The consumer task owns its receiver and runs for the process
+            // lifetime; the `JoinHandle` is intentionally dropped (graceful
+            // shutdown lives outside 4b's scope).
+            std::mem::drop(scanner.clone().spawn());
+        }
+
         let state = AppState {
             config: self.config.clone(),
             pool,
@@ -197,6 +222,9 @@ impl AppStateBuilder {
             appconfig,
             capability_providers: Arc::new(Mutex::new(Vec::new())),
             users,
+            storage_sink,
+            filecache,
+            scanner,
         };
 
         self.registry.run(&state).await?;

@@ -107,6 +107,9 @@ pub struct FileConfig {
     /// Cache backend selection (currently `memory` only).
     #[serde(default)]
     pub cache: CacheConfig,
+    /// Filecache + scanner tuning. Defaults: enabled, 1024-event channel.
+    #[serde(default)]
+    pub filecache: FilecacheConfig,
 
     /// Optional bootstrap admin (Phase 3 deferred-users stand-in).
     pub bootstrap_admin: Option<BootstrapAdminConfig>,
@@ -119,6 +122,33 @@ pub struct CacheConfig {
     /// Backend identifier (`memory` is the only implemented value).
     #[serde(default = "default_cache_backend")]
     pub backend: String,
+}
+
+/// Filecache + scanner tuning. Drives `AppStateBuilder::build` (whether the
+/// scanner consumer is spawned, and the broadcast channel capacity used by
+/// `ChannelEventSink`).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FilecacheConfig {
+    /// When `true`, `AppStateBuilder::build` spawns the scanner's continuous
+    /// consumer loop. When `false`, `register_storage` + `full_scan` still
+    /// work — only the background apply loop is suppressed.
+    #[serde(default = "default_filecache_enabled")]
+    pub enabled: bool,
+    /// `tokio::sync::broadcast` capacity wired into `ChannelEventSink`.
+    /// Slow consumers past this bound get `RecvError::Lagged`, which the
+    /// scanner recovers from via a full-scan of every registered storage.
+    #[serde(default = "default_event_channel_capacity")]
+    pub event_channel_capacity: usize,
+}
+
+impl Default for FilecacheConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_filecache_enabled(),
+            event_channel_capacity: default_event_channel_capacity(),
+        }
+    }
 }
 
 /// Phase 3 stub for the deferred users sub-project. A single admin account
@@ -150,6 +180,12 @@ fn default_bind_address() -> SocketAddr {
 }
 fn default_cache_backend() -> String {
     "memory".to_string()
+}
+fn default_filecache_enabled() -> bool {
+    true
+}
+fn default_event_channel_capacity() -> usize {
+    1024
 }
 
 /// Errors raised while validating a parsed config.
@@ -224,6 +260,7 @@ mod tests {
             cache: CacheConfig {
                 backend: "memory".to_string(),
             },
+            filecache: FilecacheConfig::default(),
             bootstrap_admin: None,
         }
     }
