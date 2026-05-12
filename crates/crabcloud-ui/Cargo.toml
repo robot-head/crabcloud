@@ -25,6 +25,7 @@ server = [
     "dep:crabcloud-core",
     "dep:crabcloud-http",
     "dep:crabcloud-i18n",
+    "dep:crabcloud-users",
     "dep:tracing",
 ]
 web = ["dioxus/web"]
@@ -40,6 +41,7 @@ axum = { workspace = true, optional = true }
 crabcloud-core = { workspace = true, optional = true }
 crabcloud-http = { workspace = true, optional = true }
 crabcloud-i18n = { workspace = true, optional = true }
+crabcloud-users = { workspace = true, optional = true }
 tracing = { workspace = true, optional = true }
 
 [dev-dependencies]

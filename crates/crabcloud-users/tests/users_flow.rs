@@ -3,8 +3,8 @@
 //!
 //! Login itself moved to a Dioxus `#[server]` function in `crabcloud-ui` as
 //! part of the fullstack migration, so it's not reachable from `build_router`
-//! alone; verification is covered by the Playwright suite. These tests seed
-//! the session directly via `SessionStore` to focus on the `/cloud/user`
+//! alone; verification is covered by the Playwright suite. These tests mint
+//! a real session-kind `AuthToken` directly to focus on the `/cloud/user`
 //! semantics.
 
 #![allow(unused_crate_dependencies)]
@@ -12,8 +12,8 @@ use axum::body::{to_bytes, Body};
 use axum::http::{Request, StatusCode};
 use crabcloud_core::AppStateBuilder;
 use crabcloud_http::build_router;
-use crabcloud_http::session::{encode_cookie, Session, SessionId, SessionStore, COOKIE_NAME};
-use crabcloud_users::{BcryptVerifier, PasswordVerifier, User, UserId};
+use crabcloud_http::session::{encode_cookie, COOKIE_NAME};
+use crabcloud_users::{AuthTokenType, BcryptVerifier, PasswordVerifier, User, UserId};
 use secrecy::ExposeSecret;
 use tempfile::tempdir;
 use tower::ServiceExt;
@@ -44,23 +44,26 @@ async fn build_app() -> (axum::Router, String) {
         .unwrap();
     std::mem::forget(dir);
 
-    // Seed an authenticated session for alice.
-    let store = SessionStore::new(state.cache.clone(), &state.config.instanceid);
-    let id = SessionId::new_random();
-    let mut session = Session::new();
-    session.user_id = Some("alice".to_string());
-    session.rotate_csrf();
-    session.two_factor_passed = true;
-    store.save(&id, &session).await.unwrap();
-    store.record_for_user("alice", &id).await.unwrap();
-    let cookie_value = encode_cookie(id.as_str(), state.config.secret.expose_secret().as_bytes());
+    // Mint a real session-kind AuthToken for alice and sign the raw token
+    // into a cookie value.
+    let ap = state.users.app_passwords().unwrap().clone();
+    let (_row, raw) = ap
+        .mint(
+            &UserId::new("alice").unwrap(),
+            "alice",
+            "test",
+            AuthTokenType::Session,
+            false,
+        )
+        .await
+        .unwrap();
+    let cookie_value = encode_cookie(raw.expose(), state.config.secret.expose_secret().as_bytes());
     let cookie = format!("{COOKIE_NAME}={cookie_value}");
 
     (build_router(state, axum::Router::new()), cookie)
 }
 
 #[tokio::test]
-#[ignore = "Batch D: rewire session seeding to mint a real session AuthToken"]
 async fn get_self_returns_payload() {
     let (app, cookie) = build_app().await;
     let req = Request::builder()

@@ -20,7 +20,7 @@ pub fn Login(ctx: RequestContext) -> Element {
         let u = username();
         let p = password();
         spawn(async move {
-            match login(u, p).await {
+            match login(u, p, None).await {
                 Ok(()) => {
                     nav.replace("/");
                 }

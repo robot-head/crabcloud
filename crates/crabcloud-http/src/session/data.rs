@@ -22,7 +22,7 @@ impl SessionId {
 }
 
 /// Server-side session data. Persisted in cache keyed by `SessionId`.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Session {
     /// Authenticated user ID, if any.
     pub user_id: Option<String>,
@@ -35,6 +35,16 @@ pub struct Session {
     /// existed.
     #[serde(default)]
     pub two_factor_passed: bool,
+}
+
+impl Default for Session {
+    /// Delegate to [`Session::new`] so a defaulted session has a fresh random
+    /// CSRF token — never the empty string. A `derive(Default)` would leave
+    /// `csrf_token` empty, which collapses CSRF protection (an empty header
+    /// would compare equal to an empty expected value).
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Session {
@@ -101,5 +111,12 @@ mod tests {
         let before = s.csrf_token.clone();
         s.rotate_csrf();
         assert_ne!(s.csrf_token, before);
+    }
+
+    #[test]
+    fn default_session_has_random_csrf_token() {
+        let s = Session::default();
+        assert!(!s.csrf_token.is_empty());
+        assert_eq!(s.csrf_token.len(), 64);
     }
 }
