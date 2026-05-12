@@ -9,9 +9,9 @@ pub struct SessionId(pub String);
 impl SessionId {
     /// Generate a fresh random session id (32 bytes, hex-encoded).
     pub fn new_random() -> Self {
-        use rand::RngCore;
+        use rand::Rng;
         let mut buf = [0u8; 32];
-        rand::thread_rng().fill_bytes(&mut buf);
+        rand::rng().fill_bytes(&mut buf);
         SessionId(hex::encode(buf))
     }
 
@@ -66,9 +66,9 @@ impl Session {
 }
 
 fn random_token() -> String {
-    use rand::RngCore;
+    use rand::Rng;
     let mut buf = [0u8; 32];
-    rand::thread_rng().fill_bytes(&mut buf);
+    rand::rng().fill_bytes(&mut buf);
     hex::encode(buf)
 }
 

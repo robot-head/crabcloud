@@ -154,9 +154,9 @@ pub(crate) const LOGIN_V2_TTL_SECS: u64 = 20 * 60;
 
 #[cfg(feature = "server")]
 fn login_v2_random_id() -> String {
-    use rand::RngCore;
+    use rand::Rng;
     let mut buf = [0u8; 32];
-    rand::rngs::OsRng.fill_bytes(&mut buf);
+    rand::rng().fill_bytes(&mut buf);
     hex::encode(buf)
 }
 
