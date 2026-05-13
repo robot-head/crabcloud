@@ -16,6 +16,12 @@ use crabcloud_cache as _;
 #[cfg(feature = "server")]
 use crabcloud_fs as _;
 
+// `js-sys` is consumed only by the wasm32 `current_time_ms` helper in
+// `pages::files::row`. The dependency must still be declared for the WASM
+// build, so silence the unused-crate lint on native targets.
+#[cfg(not(target_arch = "wasm32"))]
+use js_sys as _;
+
 mod app;
 mod context;
 pub mod pages;
@@ -26,4 +32,4 @@ pub mod server;
 
 pub use app::{App, Route};
 pub use context::RequestContext;
-pub use server_fns::{login, status, StatusInfo};
+pub use server_fns::{list_dir, login, status, FileEntry, StatusInfo};
