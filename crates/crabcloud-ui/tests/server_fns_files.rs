@@ -256,3 +256,52 @@ async fn delete_removes_files() {
     let r = app.oneshot(get).await.unwrap();
     assert_eq!(r.status(), StatusCode::NOT_FOUND);
 }
+
+#[tokio::test]
+async fn move_paths_moves_files_into_destination() {
+    let dir = tempdir().unwrap();
+    let data = tempdir().unwrap();
+    let state = make_state_with_user(dir.path().join("mv.db"), data.path().to_path_buf()).await;
+    let token = alice_bearer(&state).await;
+    let app = build_app(state);
+
+    // Create dest dir + two source files.
+    let _ = post_json(
+        &app,
+        &token,
+        "/api/files/mkdir",
+        serde_json::json!({ "path": "/dest" }),
+    )
+    .await;
+    put_file(&app, &token, "/a.txt", "a").await;
+    put_file(&app, &token, "/b.txt", "b").await;
+
+    let resp = post_json(
+        &app,
+        &token,
+        "/api/files/move",
+        serde_json::json!({ "paths": ["/a.txt", "/b.txt"], "dest_dir": "/dest" }),
+    )
+    .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    // Sources should be gone, destinations present.
+    let g_old = Request::builder()
+        .method("GET")
+        .uri("/dav/files/alice/a.txt")
+        .header("authorization", format!("Bearer {token}"))
+        .body(Body::empty())
+        .unwrap();
+    assert_eq!(
+        app.clone().oneshot(g_old).await.unwrap().status(),
+        StatusCode::NOT_FOUND
+    );
+
+    let g_new = Request::builder()
+        .method("GET")
+        .uri("/dav/files/alice/dest/a.txt")
+        .header("authorization", format!("Bearer {token}"))
+        .body(Body::empty())
+        .unwrap();
+    assert_eq!(app.oneshot(g_new).await.unwrap().status(), StatusCode::OK);
+}

@@ -649,6 +649,34 @@ pub async fn delete(paths: Vec<String>) -> Result<(), ServerFnError> {
     Ok(())
 }
 
+#[server(endpoint = "api/files/move", prefix = "")]
+pub async fn move_paths(
+    paths: Vec<String>,
+    dest_dir: String,
+) -> Result<Vec<FileEntry>, ServerFnError> {
+    use crabcloud_fs::UserPath;
+    let (state, uid) = require_user().await?;
+    let dest =
+        UserPath::new(&dest_dir).map_err(|e| ServerFnError::new(format!("invalid_path: {e}")))?;
+    let view = state.view_for(&uid).await.map_err(map_fs_err)?;
+    let mut out = Vec::with_capacity(paths.len());
+    for path in paths {
+        let from =
+            UserPath::new(&path).map_err(|e| ServerFnError::new(format!("invalid_path: {e}")))?;
+        let leaf = path.rsplit('/').next().unwrap_or("");
+        if leaf.is_empty() {
+            return Err(ServerFnError::new("invalid_path: empty leaf"));
+        }
+        let to = dest
+            .join(leaf)
+            .map_err(|e| ServerFnError::new(format!("invalid_path: {e}")))?;
+        view.rename(&from, &to).await.map_err(map_fs_err)?;
+        let meta = view.stat(&to).await.map_err(map_fs_err)?;
+        out.push(metadata_to_entry(&to, meta));
+    }
+    Ok(out)
+}
+
 #[cfg(feature = "server")]
 fn metadata_to_entry(
     user_path: &crabcloud_fs::UserPath,
