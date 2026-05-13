@@ -11,8 +11,8 @@ mod types;
 
 pub use error::ShareError;
 pub use permissions::SharePermissions;
+pub use service::Shares;
 pub use types::{CreateShareRequest, ItemType, ShareRow, ShareType, UpdateShareFields};
-// `Shares` re-export lands when the service is implemented in Batch B.
 
 // Anchors for crates whose first real call site lands in later tasks/batches
 // (e.g. `async-trait` traits in Batch B; `crabcloud-storage` integrations in
