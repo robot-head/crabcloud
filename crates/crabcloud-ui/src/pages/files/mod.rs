@@ -10,6 +10,7 @@ pub mod mkdir_row;
 pub mod path;
 pub mod row;
 pub mod states;
+pub mod toolbar;
 
 #[cfg(feature = "server")]
 pub mod ssr;
