@@ -10,6 +10,7 @@ pub mod mkdir_row;
 pub mod path;
 pub mod row;
 pub mod states;
+pub mod toolbar;
 
 #[cfg(feature = "server")]
 pub mod ssr;
@@ -19,9 +20,16 @@ use crate::pages::files::breadcrumb::Breadcrumb;
 use crate::pages::files::delete_modal::DeleteModal;
 use crate::pages::files::list::FileList;
 use crate::pages::files::mkdir_row::MkdirRow;
-use crate::server_fns::{delete, list_dir, mkdir, rename, FileEntry};
+use crate::pages::files::toolbar::Toolbar;
+use crate::server_fns::{delete, list_dir, mkdir, move_paths, rename, FileEntry};
 use dioxus::prelude::*;
 use std::collections::HashSet;
+
+#[derive(Clone, PartialEq)]
+pub struct Clipboard {
+    pub source_dir: String,
+    pub paths: Vec<String>,
+}
 
 #[component]
 pub fn Files(ctx: RequestContext, path: String) -> Element {
@@ -44,13 +52,17 @@ pub fn Files(ctx: RequestContext, path: String) -> Element {
     let user_id = ctx.user_id.clone().unwrap_or_default();
     let mut path_sig = use_signal(|| path.clone());
     let mut refresh = use_signal(|| 0u64);
+    let mut selection: Signal<HashSet<String>> = use_signal(HashSet::new);
 
     // Keep the route's `path` prop in sync with the signal. Back/forward
     // navigation re-renders this component with a new `path` prop; the
     // `use_reactive` adapter (Dioxus 0.7.9) re-fires the effect when the
-    // captured non-reactive prop value changes.
+    // captured non-reactive prop value changes. Selection is also cleared
+    // because it's path-scoped; clipboard intentionally persists across
+    // navigation so a user can cut here and paste in a different folder.
     use_effect(use_reactive((&path,), move |(p,)| {
         path_sig.set(p);
+        selection.set(HashSet::new());
     }));
 
     // The list_dir server fn is only invoked from the client (wasm) side.
@@ -81,7 +93,11 @@ pub fn Files(ctx: RequestContext, path: String) -> Element {
     let mut rename_target: Signal<Option<String>> = use_signal(|| None);
     let mut delete_target: Signal<Option<Vec<String>>> = use_signal(|| None);
     let mut mkdir_active = use_signal(|| false);
-    let mut selection: Signal<HashSet<String>> = use_signal(HashSet::new);
+
+    // Cut/paste state — D3. The clipboard intentionally outlives a single
+    // folder view so the user can navigate from source to destination
+    // between cut and paste.
+    let mut clipboard: Signal<Option<Clipboard>> = use_signal(|| None);
 
     let on_toggle_select = move |p: String| {
         let mut s = selection();
@@ -132,6 +148,39 @@ pub fn Files(ctx: RequestContext, path: String) -> Element {
         });
     };
 
+    // Cut/paste + bulk selection handlers — D3.
+    let on_cut = move |_| {
+        let s = selection();
+        if !s.is_empty() {
+            clipboard.set(Some(Clipboard {
+                source_dir: path_sig(),
+                paths: s.into_iter().collect(),
+            }));
+            selection.set(HashSet::new());
+        }
+    };
+    let on_clear_selection = move |_| selection.set(HashSet::new());
+    let on_clear_clipboard = move |_| clipboard.set(None);
+    let on_delete_selection = move |_| {
+        let s = selection();
+        if !s.is_empty() {
+            delete_target.set(Some(s.into_iter().collect()));
+        }
+    };
+    let on_paste = move |_| {
+        if let Some(cb) = clipboard() {
+            let dest = path_sig();
+            if dest == cb.source_dir {
+                return;
+            }
+            spawn(async move {
+                let _ = move_paths(cb.paths, dest).await;
+                clipboard.set(None);
+                refresh.set(refresh() + 1);
+            });
+        }
+    };
+
     let entries_view: Option<Result<Vec<FileEntry>, String>> = entries.read().clone();
 
     rsx! {
@@ -140,12 +189,21 @@ pub fn Files(ctx: RequestContext, path: String) -> Element {
             div { class: "files-body",
                 chrome::Sidebar {}
                 main { class: "files-main",
-                    div { class: "files-toolbar",
-                        button {
-                            class: "files-tb-btn files-tb-primary",
-                            onclick: on_mkdir_start,
-                            "+ New folder"
-                        }
+                    Toolbar {
+                        selection_count: selection().len(),
+                        clipboard_count: clipboard().as_ref().map(|c| c.paths.len()).unwrap_or(0),
+                        clipboard_source: clipboard().as_ref().map(|c| c.source_dir.clone()),
+                        can_paste: clipboard()
+                            .as_ref()
+                            .map(|c| c.source_dir != path_sig())
+                            .unwrap_or(false),
+                        on_new_folder: on_mkdir_start,
+                        on_upload: move |_| {}, // wired in Batch E
+                        on_cut,
+                        on_delete_selection,
+                        on_clear_selection,
+                        on_paste,
+                        on_clear_clipboard,
                     }
                     Breadcrumb {
                         path: path_sig(),

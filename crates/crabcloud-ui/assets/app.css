@@ -98,3 +98,11 @@ form button { margin-top: 1rem; padding: 0.5rem 1rem; font: inherit; cursor: poi
 .files-toolbar { display: flex; gap: 8px; margin-bottom: 12px; }
 .files-tb-btn { padding: 6px 14px; border-radius: 4px; border: 1px solid #d0d0d0; background: white; font: inherit; cursor: pointer; }
 .files-tb-primary { background: #0082c9; color: white; border-color: #0082c9; }
+.files-chip { display: inline-flex; align-items: center; gap: 8px; padding: 4px 10px; border-radius: 14px; font-size: 12px; }
+.files-chip-selection { background: #e8f3fb; color: #0082c9; }
+.files-chip-clipboard { background: #fff3d6; color: #a07300; }
+.files-chip-action { background: none; border: 0; padding: 2px 6px; font: inherit; cursor: pointer; color: inherit; }
+.files-chip-action[disabled] { opacity: 0.4; cursor: not-allowed; }
+.files-chip-danger { color: #d33; }
+.files-chip-close { background: none; border: 0; padding: 2px 6px; cursor: pointer; color: inherit; opacity: 0.6; }
+.files-chip-close:hover { opacity: 1; }
