@@ -1,0 +1,14 @@
+//! User and group sharing for Crabcloud.
+//!
+//! Schema lives in `migrations/core/0006_shares`. Design spec:
+//! `docs/superpowers/specs/2026-05-13-sharing-user-group-and-virtual-mount-design.md`.
+
+mod error;
+mod permissions;
+mod service;
+mod sql;
+mod types;
+
+pub use error::ShareError;
+pub use permissions::SharePermissions;
+// `Shares` and the request/row types are re-exported as their modules are populated below.
