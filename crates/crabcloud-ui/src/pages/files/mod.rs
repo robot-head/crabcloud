@@ -4,6 +4,9 @@
 
 pub mod path;
 
+#[cfg(feature = "server")]
+pub mod ssr;
+
 use crate::context::RequestContext;
 use dioxus::prelude::*;
 
