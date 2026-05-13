@@ -922,6 +922,7 @@ dependencies = [
  "axum",
  "crabcloud-cache",
  "crabcloud-core",
+ "crabcloud-fs",
  "crabcloud-http",
  "crabcloud-i18n",
  "crabcloud-users",

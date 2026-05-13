@@ -34,6 +34,11 @@ pub enum Route {
     #[route("/settings/security")]
     SettingsSecurityRoute {},
 
+    /// Files browser. Catch-all so paths like `/apps/files/photos/vacation`
+    /// route here and the page renders the folder identified by `segments`.
+    #[route("/apps/files/:..segments")]
+    FilesRoute { segments: Vec<String> },
+
     /// Catch-all 404 page. SSR uses this to detect unknown paths and emit
     /// an HTTP 404 status.
     #[route("/:..segments")]
@@ -65,6 +70,14 @@ pub fn LoginV2FlowRoute(flow_id: String) -> Element {
 pub fn SettingsSecurityRoute() -> Element {
     let ctx = use_context::<RequestContext>();
     rsx! { SettingsSecurity { ctx: ctx.clone() } }
+}
+
+#[component]
+pub fn FilesRoute(segments: Vec<String>) -> Element {
+    use crate::pages::files::{path::segments_to_path, Files};
+    let ctx = use_context::<RequestContext>();
+    let path = segments_to_path(&segments);
+    rsx! { Files { ctx, path } }
 }
 
 #[component]
