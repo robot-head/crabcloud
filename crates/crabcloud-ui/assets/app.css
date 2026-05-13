@@ -95,3 +95,6 @@ form button { margin-top: 1rem; padding: 0.5rem 1rem; font: inherit; cursor: poi
 .files-modal-cancel, .files-modal-confirm { padding: 6px 14px; border-radius: 4px; border: 0; font: inherit; cursor: pointer; }
 .files-modal-cancel { background: #f5f5f5; color: #333; }
 .files-modal-confirm { background: #d33; color: white; }
+.files-toolbar { display: flex; gap: 8px; margin-bottom: 12px; }
+.files-tb-btn { padding: 6px 14px; border-radius: 4px; border: 1px solid #d0d0d0; background: white; font: inherit; cursor: pointer; }
+.files-tb-primary { background: #0082c9; color: white; border-color: #0082c9; }
