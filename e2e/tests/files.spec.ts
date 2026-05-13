@@ -81,27 +81,10 @@ test.describe("Files web UI", () => {
     });
 
     test("listing shows file uploaded via WebDAV", async ({ page, request }) => {
-        // DEBUG: capture console + relevant network responses to verify the
-        // CSRF fetch interceptor (crabcloud-ui/src/app.rs) is actually
-        // installing and that requesttoken is going out on /api/ requests.
-        page.on("console", (m) => console.log(`[browser ${m.type()}]`, m.text()));
-        page.on("pageerror", (e) => console.log("[browser pageerror]", e.message));
-        page.on("request", (r) => {
-            const u = r.url();
-            if (u.includes("/api/")) {
-                const h = r.headers();
-                console.log(`[req ${r.method()}]`, u, "rt=", h["requesttoken"] ?? "<none>", "ocs=", h["ocs-apirequest"] ?? "<none>");
-            }
-        });
-        page.on("response", (r) => {
-            const u = r.url();
-            if (u.includes("/api/")) {
-                console.log(`[resp ${r.status()}]`, u);
-            }
-        });
-
         await loginInBrowser(page);
         const cookie = await login(request);
+        // Pre-cleanup: a prior failed run may leave the file behind, in which
+        // case PUT returns 204 instead of 201 and the assertion below trips.
         await request.fetch("/dav/files/admin/e2e-upload.txt", { method: "DELETE", headers: { cookie } });
         const r = await request.fetch("/dav/files/admin/e2e-upload.txt", {
             method: "PUT",
@@ -110,18 +93,6 @@ test.describe("Files web UI", () => {
         });
         expect(r.status()).toBe(201);
         await gotoFiles(page);
-
-        // Give resources a chance + dump page state for diagnosis.
-        await page.waitForTimeout(2000);
-        const probe = await page.evaluate(() => ({
-            patched: (window as any).__crabcloud_fetch_patched ?? false,
-            metaToken: document.querySelector('meta[name="requesttoken"]')?.getAttribute("content") ?? null,
-            metaCount: document.querySelectorAll('meta[name="requesttoken"]').length,
-            error: !!document.querySelector(".files-error"),
-            errorText: document.querySelector(".files-error-sub")?.textContent ?? null,
-        }));
-        console.log("[DIAGNOSTIC]", JSON.stringify(probe));
-
         await expect(page.locator(".files-name", { hasText: "e2e-upload.txt" })).toBeVisible();
         await request.fetch("/dav/files/admin/e2e-upload.txt", { method: "DELETE", headers: { cookie } });
     });
