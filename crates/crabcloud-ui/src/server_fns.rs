@@ -549,10 +549,15 @@ pub struct FileEntry {
     pub etag: String,
 }
 
-/// `GET /api/files/list?path=...` — list a directory. Returns sorted
-/// entries (directories first, then files; alphabetical within each group,
-/// case-insensitive).
-#[get("/api/files/list")]
+/// `POST /api/files/list` — list a directory. Returns sorted entries
+/// (directories first, then files; alphabetical within each group,
+/// case-insensitive). JSON body: `{ "path": "/photos" }`.
+///
+/// Auth: any method (Bearer / Basic / Session) recognized by `AuthLayer`
+/// — the Files surface is browser-cookie-only in practice but the
+/// extractor is method-agnostic so integration tests can drive it with
+/// bearer tokens, same as the WebDAV surface.
+#[server(endpoint = "api/files/list", prefix = "")]
 pub async fn list_dir(path: String) -> Result<Vec<FileEntry>, ServerFnError> {
     use crabcloud_fs::UserPath;
     use dioxus::fullstack::FullstackContext;
@@ -562,14 +567,10 @@ pub async fn list_dir(path: String) -> Result<Vec<FileEntry>, ServerFnError> {
     let state = fs
         .extension::<crabcloud_core::AppState>()
         .ok_or_else(|| ServerFnError::new("AppState extension missing"))?;
-    let session = fs.extension::<crabcloud_http::SessionHandle>();
-    let snapshot = session.and_then(|s| s.try_read_snapshot());
-    let uid_str = snapshot
-        .as_ref()
-        .and_then(|s| s.user_id.clone())
+    let auth = fs
+        .extension::<crabcloud_http::AuthContext>()
         .ok_or_else(|| ServerFnError::new("unauthorized"))?;
-    let uid = crabcloud_users::UserId::new(&uid_str)
-        .map_err(|e| ServerFnError::new(format!("invalid uid: {e}")))?;
+    let uid = auth.user_id.clone();
 
     let user_path =
         UserPath::new(path).map_err(|e| ServerFnError::new(format!("invalid path: {e}")))?;
