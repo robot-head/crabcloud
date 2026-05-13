@@ -13,6 +13,8 @@
 // to be in scope. Keep the dep listed and silence the lint.
 #[cfg(feature = "server")]
 use crabcloud_cache as _;
+#[cfg(feature = "server")]
+use crabcloud_fs as _;
 
 mod app;
 mod context;
