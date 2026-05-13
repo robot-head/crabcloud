@@ -21,3 +21,28 @@ form label { display: block; margin: 0.75rem 0 0.25rem; font-weight: 600; }
 form input { padding: 0.5rem; font: inherit; width: 100%; max-width: 24rem; }
 form button { margin-top: 1rem; padding: 0.5rem 1rem; font: inherit; cursor: pointer; background: var(--accent); color: white; border: 0; }
 .error { color: var(--error); }
+
+/* ---- Files page chrome ---- */
+.files-page { display: grid; grid-template-rows: auto 1fr; height: 100vh; }
+.topbar {
+  display: flex; align-items: center; gap: 16px;
+  padding: 8px 16px; background: #0082c9; color: white;
+  font-size: 14px;
+}
+.topbar-brand { color: white; font-weight: 600; text-decoration: none; }
+.topbar-nav { display: flex; gap: 12px; }
+.topbar-link { color: white; text-decoration: none; opacity: 0.85; }
+.topbar-link.active { opacity: 1; font-weight: 600; }
+.topbar-spacer { flex: 1; }
+.topbar-user {
+  width: 28px; height: 28px; border-radius: 50%;
+  background: rgba(255,255,255,0.2);
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.files-body { display: grid; grid-template-columns: 200px 1fr; min-height: 0; }
+.sidebar { background: #fafafa; border-right: 1px solid #eee; padding: 16px 8px; font-size: 13px; }
+.sidebar-list { list-style: none; padding: 0; margin: 0; }
+.sidebar-item { display: flex; align-items: center; gap: 8px; padding: 8px; border-radius: 4px; }
+.sidebar-item.active { background: #e8f3fb; color: #0082c9; }
+.sidebar-icon { width: 16px; text-align: center; }
+.files-main { padding: 16px 24px; overflow: auto; }

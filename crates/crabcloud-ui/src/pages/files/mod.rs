@@ -4,6 +4,8 @@
 
 pub mod path;
 
+pub mod chrome;
+
 #[cfg(feature = "server")]
 pub mod ssr;
 
