@@ -220,6 +220,11 @@ impl Shares {
         }
     }
 
+    /// List the outgoing shares `owner` has created on `path`. `home_storage_id`
+    /// is the namespace under which the filecache lookup is scoped — caller
+    /// derives it via the storage factory (e.g. `storage_factory.home_storage(owner)
+    /// .id()`). This crate doesn't depend on `crabcloud-fs`, so the id can't be
+    /// computed here.
     pub async fn list_for_owner_path(
         &self,
         owner: &UserId,
@@ -464,8 +469,14 @@ fn unix_now() -> i64 {
         .unwrap_or(0)
 }
 
-fn map_filecache(_e: crabcloud_filecache::FileCacheError) -> ShareError {
-    ShareError::PathNotOwned
+fn map_filecache(e: crabcloud_filecache::FileCacheError) -> ShareError {
+    use crabcloud_filecache::FileCacheError as FE;
+    match e {
+        FE::Db(err) => ShareError::DbError(err),
+        FE::NotFound | FE::AncestorMissing(_) | FE::Storage(_) | FE::Invalid(_) => {
+            ShareError::PathNotOwned
+        }
+    }
 }
 
 async fn user_row_exists(pool: &DbPool, uid: &str) -> Result<bool, ShareError> {
