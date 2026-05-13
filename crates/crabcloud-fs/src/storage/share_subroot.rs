@@ -13,8 +13,10 @@
 //!   bit 4 (create) when it doesn't. The `Storage` trait has no
 //!   create-vs-overwrite flag, so we `exists()` first.
 //! - `delete` requires bit 8.
-//! - `rename` / `copy` are always within-mount (cross-mount moves get
-//!   decomposed by the View layer) so they require bit 2 (update).
+//! - `rename` is within-mount (cross-mount moves get decomposed by the View
+//!   layer) so it requires bit 2 (update) — relocates an existing entry.
+//! - `copy` is within-mount but creates a NEW entry at the destination, so
+//!   it requires bit 4 (create), not bit 2.
 
 use async_trait::async_trait;
 use crabcloud_sharing::SharePermissions;
@@ -140,7 +142,7 @@ impl Storage for SharedSubrootStorage {
         to: &StoragePath,
         sink: &dyn EventSink,
     ) -> StorageResult<()> {
-        if !self.permissions.allows_update() {
+        if !self.permissions.allows_create() {
             return Err(StorageError::PermissionDenied);
         }
         self.inner
@@ -301,6 +303,58 @@ mod tests {
         s.delete(&StoragePath::new("x.jpg").unwrap(), &NoopEventSink)
             .await
             .unwrap();
+    }
+
+    #[tokio::test]
+    async fn rename_with_update_bit_succeeds() {
+        let s = wrap(seed_owner().await, 3); // read + update
+        s.rename(
+            &StoragePath::new("x.jpg").unwrap(),
+            &StoragePath::new("y.jpg").unwrap(),
+            &NoopEventSink,
+        )
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn rename_without_update_bit_denied() {
+        let s = wrap(seed_owner().await, 1); // read only
+        let r = s
+            .rename(
+                &StoragePath::new("x.jpg").unwrap(),
+                &StoragePath::new("y.jpg").unwrap(),
+                &NoopEventSink,
+            )
+            .await;
+        assert!(matches!(r, Err(StorageError::PermissionDenied)));
+    }
+
+    #[tokio::test]
+    async fn copy_without_create_bit_denied() {
+        // read|update (3) — can edit existing entries but not create new ones.
+        // Copy creates a new entry at the destination, so must be denied.
+        let s = wrap(seed_owner().await, 3);
+        let r = s
+            .copy(
+                &StoragePath::new("x.jpg").unwrap(),
+                &StoragePath::new("x-copy.jpg").unwrap(),
+                &NoopEventSink,
+            )
+            .await;
+        assert!(matches!(r, Err(StorageError::PermissionDenied)));
+    }
+
+    #[tokio::test]
+    async fn copy_with_create_bit_succeeds() {
+        let s = wrap(seed_owner().await, 0x0F);
+        s.copy(
+            &StoragePath::new("x.jpg").unwrap(),
+            &StoragePath::new("x-copy.jpg").unwrap(),
+            &NoopEventSink,
+        )
+        .await
+        .unwrap();
     }
 
     #[tokio::test]
