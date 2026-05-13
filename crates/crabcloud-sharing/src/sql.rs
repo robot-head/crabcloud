@@ -123,6 +123,10 @@ pub(crate) fn select_incoming(group_count: usize, dialect: Dialect) -> String {
 
 /// SQL placeholder style. `Qm` covers sqlite + mysql (positional `?`); `Pg`
 /// covers postgres (numbered `$N`).
+///
+/// Intentionally distinct from `crabcloud_db::Dialect` — that enum models the
+/// engine (three variants); this one models placeholder syntax (two), since
+/// the only thing `select_incoming` cares about is how to write `?` vs `$2`.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) enum Dialect {
     Qm,

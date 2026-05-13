@@ -191,6 +191,8 @@ fn decode_mysql_row(row: sqlx::mysql::MySqlRow) -> FileCacheResult<FilecacheRowR
     // protocol surfaces as VARBINARY instead of VARCHAR. `try_get_unchecked`
     // bypasses the sqlx type check and decodes from raw bytes via the
     // `MySqlValue` impl — which for `String` is `String::from_utf8_lossy`.
+    // No data-loss risk: storage IDs, paths, and names are written by the
+    // application and constrained to valid UTF-8 by `StoragePath::new`.
     Ok(FilecacheRowRaw {
         fileid: row
             .try_get::<u64, _>("fileid")

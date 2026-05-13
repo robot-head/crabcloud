@@ -479,6 +479,11 @@ fn map_filecache(e: crabcloud_filecache::FileCacheError) -> ShareError {
     }
 }
 
+// Direct `SELECT 1 FROM oc_users / oc_groups WHERE …` instead of going
+// through `UsersService::lookup` because `SqlUserStore::lookup` decodes
+// `enabled SMALLINT` as `i64`, which only matches sqlite's storage class
+// — it fails on mysql (`TINYINT`) and postgres (`INT2`). Unwind this
+// workaround when the upstream bug in `crabcloud-users` is fixed.
 async fn user_row_exists(pool: &DbPool, uid: &str) -> Result<bool, ShareError> {
     match pool {
         DbPool::Sqlite(p) => {
@@ -531,12 +536,17 @@ async fn group_row_exists(pool: &DbPool, gid: &str) -> Result<bool, ShareError> 
     }
 }
 
+// `map_users` is only invoked when the input is the *authenticated requester*
+// (e.g. `groups_of(&ctx.user_id)`), never a free-form "share with" target.
+// A non-Db error there means the requester's own user record is missing or
+// storage is broken — not that a sharing target is unknown. Route those
+// through DbError so they surface as 500 in OCS, not 404.
 fn map_users(e: crabcloud_users::UsersError) -> ShareError {
     match e {
         crabcloud_users::UsersError::Db(crabcloud_db::DbError::Sqlx(inner)) => {
             ShareError::DbError(inner)
         }
-        _ => ShareError::RecipientUnknown,
+        _ => ShareError::DbError(sqlx::Error::Protocol(format!("users service: {e}"))),
     }
 }
 
