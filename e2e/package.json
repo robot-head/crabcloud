@@ -4,7 +4,8 @@
   "version": "0.0.0",
   "scripts": {
     "test": "playwright test",
-    "test:headed": "playwright test --headed"
+    "test:headed": "playwright test --headed",
+    "screenshots": "playwright test --config playwright.screenshots.config.ts"
   },
   "devDependencies": {
     "@playwright/test": "1.60.0",

@@ -7,8 +7,12 @@
 use dioxus::fullstack::FullstackContext;
 
 /// If the current request is unauthenticated, commit a 303 redirect to
-/// `/index.php/login?redirect_url=<encoded current path>` and return
-/// `true` so the caller can short-circuit page rendering.
+/// `/login?redirect_url=<encoded current path>` and return `true` so the
+/// caller can short-circuit page rendering.
+///
+/// The redirect target is the `/login` UI route, not the `/index.php/login`
+/// server function — the latter is POST-only (it processes credentials) and
+/// would return 405 on the GET that a browser does when following a 303.
 ///
 /// `current_path` is the user-facing absolute path the user requested,
 /// e.g. `/apps/files/photos/vacation`.
@@ -25,7 +29,7 @@ pub fn redirect_if_anonymous(user_id: &Option<String>, current_path: &str) -> bo
         return false;
     };
     let encoded = url_encode(current_path);
-    let location = format!("/index.php/login?redirect_url={encoded}");
+    let location = format!("/login?redirect_url={encoded}");
     let header_value: axum::http::HeaderValue = match location.parse() {
         Ok(v) => v,
         // `location` is built from a path we url-encoded ourselves, so the

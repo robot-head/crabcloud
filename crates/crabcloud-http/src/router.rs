@@ -12,6 +12,7 @@ use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::trace::TraceLayer;
 
 use crate::csrf::CsrfLayer;
+use crate::middleware::asset_rewrite::{AssetRewriteLayer, AssetRewriteMap};
 use crate::middleware::proxy_headers::ProxyHeadersLayer;
 use crate::middleware::security_headers::SecurityHeadersLayer;
 use crate::middleware::trusted_domain::TrustedDomainLayer;
@@ -78,9 +79,16 @@ pub fn build_router(state: AppState, app_router: Router) -> Router {
             crate::routes::dav::dav_router().with_state(state.clone()),
         );
 
+    // Load the dx asset manifest (sibling of `public/`) and apply href
+    // rewrites to SSR'd HTML. The native server isn't dx-post-processed,
+    // so `Asset` values otherwise serialize to their absolute source
+    // paths — see `middleware::asset_rewrite` for the full story.
+    let asset_rewrite = AssetRewriteLayer::new(AssetRewriteMap::from_env());
+
     // OCS + app (Dioxus SSR + server functions) sub-router. Wrapped in CORS
-    // and CSRF below.
-    let ocs_app = app_router.nest(
+    // and CSRF below. The asset rewrite layer sits inside CSRF/CORS so it
+    // runs *after* SSR produces a body but before the response is shipped.
+    let ocs_app = app_router.layer(asset_rewrite).nest(
         "/ocs",
         crate::routes::ocs::router().with_state(state.clone()),
     );
