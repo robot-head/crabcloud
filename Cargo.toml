@@ -37,7 +37,7 @@ cookie = { version = "0.18", features = ["percent-encode"] }
 dashmap = "6"
 figment = { version = "0.10", features = ["toml", "env"] }
 futures = "0.3"
-gloo-net = "0.6"
+gloo-net = "0.7"
 hex = "0.4"
 hmac = "0.13"
 httpdate = "1"
