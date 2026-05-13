@@ -81,8 +81,23 @@ test.describe("Files web UI", () => {
     });
 
     test("listing shows file uploaded via WebDAV", async ({ page, request }) => {
+        // DEBUG: capture browser console + server-fn responses to diagnose
+        // why the list isn't populating in CI.
+        page.on("console", (m) => console.log(`[browser ${m.type()}]`, m.text()));
+        page.on("pageerror", (e) => console.log("[browser pageerror]", e.message));
+        page.on("response", (r) => {
+            const u = r.url();
+            if (u.includes("/api/") || u.includes("/server_fn") || u.includes("list_dir") || u.includes(".wasm")) {
+                console.log(`[net ${r.status()}]`, u);
+            }
+        });
+
         await loginInBrowser(page);
         const cookie = await login(request);
+        // Pre-cleanup: prior failed runs may leave the file behind. PUT returns
+        // 204 (no content) when the file already exists, but the test wants the
+        // file to exist regardless.
+        await request.fetch("/dav/files/admin/e2e-upload.txt", { method: "DELETE", headers: { cookie } });
         const r = await request.fetch("/dav/files/admin/e2e-upload.txt", {
             method: "PUT",
             headers: { cookie },
@@ -90,6 +105,21 @@ test.describe("Files web UI", () => {
         });
         expect(r.status()).toBe(201);
         await gotoFiles(page);
+
+        // Diagnostic: dump which list state is showing.
+        // Wait a bit to give list_dir a chance to fetch.
+        await page.waitForTimeout(2000);
+        const state = await page.evaluate(() => ({
+            skeleton: !!document.querySelector(".files-skeleton"),
+            empty: !!document.querySelector(".files-empty"),
+            error: !!document.querySelector(".files-error"),
+            errorText: document.querySelector(".files-error-sub")?.textContent ?? null,
+            table: !!document.querySelector(".files-table"),
+            rowCount: document.querySelectorAll(".files-row").length,
+            names: Array.from(document.querySelectorAll(".files-name")).map((n) => n.textContent),
+        }));
+        console.log("[DIAGNOSTIC]", JSON.stringify(state));
+
         await expect(page.locator(".files-name", { hasText: "e2e-upload.txt" })).toBeVisible();
         await request.fetch("/dav/files/admin/e2e-upload.txt", { method: "DELETE", headers: { cookie } });
     });
