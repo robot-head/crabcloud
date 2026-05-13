@@ -30,6 +30,7 @@ pub use auth_context::{AuthContext, AuthMethod};
 pub use csrf::CsrfLayer;
 pub use error::{ApiError, OcsError};
 pub use extractors::auth::{AdminUser, AuthenticatedUser, OptionalUser};
+pub use middleware::asset_rewrite::{AssetRewriteLayer, AssetRewriteMap};
 pub use middleware::auth::AuthLayer;
 pub use router::build_router;
 pub use session::{PendingCookie, Session, SessionHandle, SessionId, SessionLayer, SessionStore};
