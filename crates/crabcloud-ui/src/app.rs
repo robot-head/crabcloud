@@ -119,49 +119,45 @@ const APP_CSS: Asset = asset!("/assets/app.css");
 /// first request). The patched function reads the meta tag at call time,
 /// not at install time, so it doesn't matter that the App component hasn't
 /// rendered yet — the SSR'd HTML already has the tag in the document.
+///
+/// The JS body is compiled into the wasm-bindgen glue via `inline_js`
+/// (served from `'self'`) rather than `js_sys::eval`: the server's CSP
+/// (`script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'`) blocks runtime
+/// `eval` but permits scripts from same-origin and inline content.
 #[cfg(target_arch = "wasm32")]
-pub fn install_csrf_fetch_interceptor() {
-    // The guard makes the patch idempotent in case this is somehow called
-    // more than once over the WASM bundle's lifetime.
-    const JS: &str = r#"
-        (function() {
-            if (window.__crabcloud_fetch_patched) return;
-            window.__crabcloud_fetch_patched = true;
-            var orig = window.fetch.bind(window);
-            window.fetch = function(input, init) {
-                init = init || {};
-                var url = typeof input === "string"
-                    ? input
-                    : ((input && input.url) || "");
-                var apiPrefix = "/api/";
-                var sameOriginApi = url.indexOf(apiPrefix) === 0
-                    || url.indexOf(location.origin + apiPrefix) === 0;
-                if (sameOriginApi) {
-                    var meta = document.querySelector('meta[name="requesttoken"]');
-                    var token = meta ? meta.getAttribute("content") : "";
-                    if (token) {
-                        var headers = new Headers(
-                            init.headers || (input && input.headers) || undefined
-                        );
-                        if (!headers.has("requesttoken")) {
-                            headers.set("requesttoken", token);
-                        }
-                        init.headers = headers;
-                    }
+#[wasm_bindgen::prelude::wasm_bindgen(inline_js = r#"
+export function install_csrf_fetch_interceptor() {
+    if (window.__crabcloud_fetch_patched) return;
+    window.__crabcloud_fetch_patched = true;
+    var orig = window.fetch.bind(window);
+    window.fetch = function(input, init) {
+        init = init || {};
+        var url = typeof input === "string"
+            ? input
+            : ((input && input.url) || "");
+        var apiPrefix = "/api/";
+        var sameOriginApi = url.indexOf(apiPrefix) === 0
+            || url.indexOf(location.origin + apiPrefix) === 0;
+        if (sameOriginApi) {
+            var meta = document.querySelector('meta[name="requesttoken"]');
+            var token = meta ? meta.getAttribute("content") : "";
+            if (token) {
+                var headers = new Headers(
+                    init.headers || (input && input.headers) || undefined
+                );
+                if (!headers.has("requesttoken")) {
+                    headers.set("requesttoken", token);
                 }
-                return orig(input, init);
-            };
-            try { console.log("[crabcloud] CSRF fetch interceptor installed"); } catch (e) {}
-        })();
-    "#;
-    match js_sys::eval(JS) {
-        Ok(_) => {}
-        Err(e) => {
-            web_sys::console::error_1(
-                &format!("[crabcloud] CSRF fetch interceptor install failed: {e:?}").into(),
-            );
+                init.headers = headers;
+            }
         }
-    }
+        return orig(input, init);
+    };
+    try { console.log("[crabcloud] CSRF fetch interceptor installed"); } catch (e) {}
+}
+"#)]
+extern "C" {
+    pub fn install_csrf_fetch_interceptor();
 }
 
 /// Root component. Captures the per-request context on the server, replays it
