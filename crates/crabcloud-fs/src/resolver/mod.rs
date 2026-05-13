@@ -28,6 +28,7 @@ impl MountResolver for HomeMountResolver {
         Ok(vec![Mount {
             path_prefix: StoragePath::root(),
             storage,
+            metadata: None,
         }])
     }
 }

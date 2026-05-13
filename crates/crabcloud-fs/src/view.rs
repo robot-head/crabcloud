@@ -225,6 +225,7 @@ mod tests {
         let mount = Mount {
             path_prefix: StoragePath::root(),
             storage,
+            metadata: None,
         };
         let view = build_view_with_mounts(vec![mount]);
         let (m, sp) = view
@@ -240,6 +241,7 @@ mod tests {
         let mount = Mount {
             path_prefix: StoragePath::root(),
             storage,
+            metadata: None,
         };
         let view = build_view_with_mounts(vec![mount]);
         let (_, sp) = view.resolve(&UserPath::root()).unwrap();
@@ -254,10 +256,12 @@ mod tests {
             Mount {
                 path_prefix: StoragePath::root(),
                 storage: s1,
+                metadata: None,
             },
             Mount {
                 path_prefix: StoragePath::new("Shared").unwrap(),
                 storage: s2,
+                metadata: None,
             },
         ];
         let view = build_view_with_mounts(mounts);

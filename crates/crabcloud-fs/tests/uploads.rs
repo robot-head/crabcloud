@@ -25,6 +25,7 @@ fn uploads_home(h: &support::Harness) -> Uploads {
         vec![Mount {
             path_prefix: StoragePath::root(),
             storage: h.storage.clone(),
+            metadata: None,
         }],
         h.sink.clone(),
         h.filecache.clone(),

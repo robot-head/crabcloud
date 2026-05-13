@@ -216,6 +216,7 @@ mod tests {
         Mount {
             path_prefix: p,
             storage: Arc::new(MemoryStorage::new(id)) as Arc<dyn Storage>,
+            metadata: None,
         }
     }
 

@@ -21,7 +21,7 @@ pub mod uploads;
 pub mod view;
 
 pub use error::{FsError, FsResult};
-pub use mount::{Mount, MountResolver, StorageFactory};
+pub use mount::{Mount, MountKind, MountMetadata, MountResolver, StorageFactory};
 pub use path::UserPath;
 pub use resolver::local::LocalStorageFactory;
 pub use resolver::HomeMountResolver;
