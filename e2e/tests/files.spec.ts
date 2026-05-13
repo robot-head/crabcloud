@@ -23,17 +23,34 @@ async function loginInBrowser(page: any) {
     ]);
 }
 
+// The Files page's listing, toolbar buttons, and row click handlers are all
+// owned by the client-side WASM bundle: SSR emits the chrome but `list_dir`
+// is only invoked after hydration, and onclick handlers aren't attached
+// until then either. Tests that interact with the page must wait for
+// `data-hydrated="true"` first (set by `App` in crabcloud-ui/src/app.rs).
+async function gotoFiles(page: any, path: string = "/apps/files/") {
+    const r = await page.goto(path);
+    await expect(page.locator("#app-root")).toHaveAttribute(
+        "data-hydrated",
+        "true",
+        { timeout: 10_000 },
+    );
+    return r;
+}
+
 test.describe("Files web UI", () => {
     test("anonymous /apps/files redirects to login with redirect_url", async ({ page }) => {
         const r = await page.goto("/apps/files/", { waitUntil: "domcontentloaded" });
         expect(r!.url()).toContain("/index.php/login");
         expect(r!.url()).toContain("redirect_url");
-        expect(decodeURIComponent(r!.url())).toContain("/apps/files/");
+        // Server normalizes the root path: `/apps/files/` → `/apps/files`
+        // (no trailing slash). The router serves both, so this is fine.
+        expect(decodeURIComponent(r!.url())).toContain("/apps/files");
     });
 
     test("authenticated /apps/files renders chrome + folder list", async ({ page }) => {
         await loginInBrowser(page);
-        const r = await page.goto("/apps/files/");
+        const r = await gotoFiles(page);
         expect(r!.status()).toBe(200);
         await expect(page.locator(".files-page")).toBeVisible();
         await expect(page.locator(".sidebar-item.active")).toContainText("All files");
@@ -41,7 +58,7 @@ test.describe("Files web UI", () => {
 
     test("mkdir + rename + delete round-trip", async ({ page }) => {
         await loginInBrowser(page);
-        await page.goto("/apps/files/");
+        await gotoFiles(page);
 
         // mkdir
         await page.click(".files-tb-primary");
@@ -72,7 +89,7 @@ test.describe("Files web UI", () => {
             data: "hello e2e",
         });
         expect(r.status()).toBe(201);
-        await page.goto("/apps/files/");
+        await gotoFiles(page);
         await expect(page.locator(".files-name", { hasText: "e2e-upload.txt" })).toBeVisible();
         await request.fetch("/dav/files/admin/e2e-upload.txt", { method: "DELETE", headers: { cookie } });
     });
@@ -81,7 +98,7 @@ test.describe("Files web UI", () => {
         await loginInBrowser(page);
         const cookie = await login(request);
         await request.fetch("/dav/files/admin/clickable/", { method: "MKCOL", headers: { cookie } });
-        await page.goto("/apps/files/");
+        await gotoFiles(page);
         await page.click('.files-name-folder:has-text("clickable")');
         await expect(page).toHaveURL(/\/apps\/files\/clickable$/);
         await request.fetch("/dav/files/admin/clickable", { method: "DELETE", headers: { cookie } });
@@ -96,7 +113,7 @@ test.describe("Files web UI", () => {
         await request.fetch("/dav/files/admin/dest-dir/", {
             method: "MKCOL", headers: { cookie },
         });
-        await page.goto("/apps/files/");
+        await gotoFiles(page);
         await page.click('.files-row:has-text("src-file.txt") input[type=checkbox]');
         await page.click('.files-chip-selection .files-chip-action:has-text("Cut")');
         await page.click('.files-name-folder:has-text("dest-dir")');
@@ -111,7 +128,7 @@ test.describe("Files web UI", () => {
         await loginInBrowser(page);
         const cookie = await login(request);
         await request.fetch("/dav/files/admin/persist-dir/", { method: "MKCOL", headers: { cookie } });
-        await page.goto("/apps/files/persist-dir");
+        await gotoFiles(page, "/apps/files/persist-dir");
         await page.reload();
         await expect(page).toHaveURL(/\/apps\/files\/persist-dir$/);
         await request.fetch("/dav/files/admin/persist-dir", { method: "DELETE", headers: { cookie } });
