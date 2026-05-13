@@ -4,6 +4,7 @@ pub mod admin_groups;
 pub mod admin_users;
 pub mod app_password;
 pub mod capabilities;
+pub mod files_sharing;
 pub mod user;
 
 use axum::routing::{delete, get, put};
@@ -12,6 +13,7 @@ use crabcloud_core::AppState;
 
 pub fn router() -> Router<AppState> {
     Router::new()
+        .nest("/v2.php/apps/files_sharing/api/v1", files_sharing::router())
         .route("/v2.php/cloud/capabilities", get(capabilities::handler))
         .route(
             "/v2.php/cloud/user",

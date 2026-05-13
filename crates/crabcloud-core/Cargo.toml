@@ -13,6 +13,7 @@ crabcloud-filecache.workspace = true
 crabcloud-fs.workspace = true
 crabcloud-i18n.workspace = true
 crabcloud-ocs.workspace = true
+crabcloud-sharing.workspace = true
 crabcloud-storage.workspace = true
 crabcloud-users.workspace = true
 dashmap.workspace = true

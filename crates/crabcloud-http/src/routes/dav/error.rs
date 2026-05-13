@@ -96,6 +96,9 @@ impl IntoResponse for DavError {
             DavError::Fs(FsError::Storage(StorageError::NotFound)) => {
                 (StatusCode::NOT_FOUND, "").into_response()
             }
+            DavError::Fs(FsError::Storage(StorageError::PermissionDenied)) => {
+                (StatusCode::FORBIDDEN, "").into_response()
+            }
             DavError::Fs(FsError::FileCache(FileCacheError::NotFound)) => {
                 (StatusCode::NOT_FOUND, "").into_response()
             }
