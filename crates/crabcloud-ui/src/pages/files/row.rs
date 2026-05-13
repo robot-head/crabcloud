@@ -17,6 +17,7 @@ pub struct FileRowProps {
     pub on_rename_commit: EventHandler<(String, String)>, // (from_path, new_name)
     pub on_rename_cancel: EventHandler<()>,
     pub on_delete: EventHandler<String>,
+    pub on_share: EventHandler<String>,
 }
 
 #[component]
@@ -32,6 +33,7 @@ pub fn FileRow(props: FileRowProps) -> Element {
         on_rename_commit,
         on_rename_cancel,
         on_delete,
+        on_share,
     } = props;
 
     let icon = if entry.is_dir { "📁" } else { "📄" };
@@ -45,8 +47,11 @@ pub fn FileRow(props: FileRowProps) -> Element {
     let path_for_toggle = entry.path.clone();
     let path_for_rename_start = entry.path.clone();
     let path_for_delete = entry.path.clone();
+    let path_for_share = entry.path.clone();
     let path_for_commit_enter = entry.path.clone();
     let path_for_commit_blur = entry.path.clone();
+    let shared_by = entry.shared_by.clone();
+    let share_count = entry.share_count;
     let entry_name_for_enter = entry.name.clone();
     let entry_name_for_blur = entry.name.clone();
 
@@ -120,7 +125,15 @@ pub fn FileRow(props: FileRowProps) -> Element {
                     onchange: move |_| on_toggle_select.call(path_for_toggle.clone()),
                 }
             }
-            td { class: "files-cell", {name_cell} }
+            td { class: "files-cell",
+                {name_cell}
+                if let Some(by) = &shared_by {
+                    span { class: "row-shared-by", "(shared by {by})" }
+                }
+                if share_count > 0 {
+                    span { class: "row-share-chip", "🔗 {share_count}" }
+                }
+            }
             td { class: "files-cell files-size", "{size}" }
             td { class: "files-cell files-mtime", "{mtime}" }
             td { class: "files-cell files-actions",
@@ -146,6 +159,14 @@ pub fn FileRow(props: FileRowProps) -> Element {
                                 on_delete.call(path_for_delete.clone());
                             },
                             "Delete"
+                        }
+                        button {
+                            class: "files-overflow-item",
+                            onclick: move |_| {
+                                menu_open.set(false);
+                                on_share.call(path_for_share.clone());
+                            },
+                            "🔗  Share"
                         }
                     }
                 }

@@ -958,6 +958,7 @@ dependencies = [
  "crabcloud-users",
  "dioxus",
  "gloo-net 0.7.0",
+ "gloo-timers",
  "hex",
  "js-sys",
  "rand 0.10.1",

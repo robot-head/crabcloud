@@ -38,6 +38,7 @@ web = ["dioxus/web"]
 [dependencies]
 dioxus = { workspace = true }
 gloo-net = { workspace = true }
+gloo-timers = { workspace = true }
 js-sys = { workspace = true }
 serde.workspace = true
 serde_json = { workspace = true }
