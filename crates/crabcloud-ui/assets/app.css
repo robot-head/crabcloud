@@ -75,3 +75,6 @@ form button { margin-top: 1rem; padding: 0.5rem 1rem; font: inherit; cursor: poi
 .files-breadcrumb-link:hover { text-decoration: underline; }
 .files-breadcrumb-here { font-weight: 600; color: #333; }
 .files-breadcrumb-sep { color: #aaa; }
+
+.files-row-mkdir { background: #fffbe6; }
+.files-mkdir-input { padding: 4px 6px; font: inherit; border: 1px solid #d0d0d0; border-radius: 3px; width: 240px; }

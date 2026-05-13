@@ -5,6 +5,7 @@
 pub mod breadcrumb;
 pub mod chrome;
 pub mod list;
+pub mod mkdir_row;
 pub mod path;
 pub mod row;
 pub mod states;
