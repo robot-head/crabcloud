@@ -2,10 +2,8 @@
 //! reading, and writing the user's home storage. See
 //! `docs/superpowers/specs/2026-05-12-files-web-ui-design.md`.
 
-pub mod path;
-
 pub mod chrome;
-
+pub mod path;
 pub mod states;
 
 #[cfg(feature = "server")]
@@ -14,14 +12,34 @@ pub mod ssr;
 use crate::context::RequestContext;
 use dioxus::prelude::*;
 
-/// Files page entry point. For Batch A this renders a placeholder list so
-/// the route is wired end-to-end; Batch B replaces the body with real data.
 #[component]
 pub fn Files(ctx: RequestContext, path: String) -> Element {
-    let _ = (ctx, path);
+    // SSR-only: redirect anonymous visitors to login with redirect_url.
+    #[cfg(feature = "server")]
+    {
+        let current_path = format!(
+            "/apps/files{}",
+            if path == "/" {
+                String::new()
+            } else {
+                path.clone()
+            }
+        );
+        if ssr::redirect_if_anonymous(&ctx.user_id, &current_path) {
+            return rsx! { "" };
+        }
+    }
+
+    let _ = path;
     rsx! {
-        main { class: "files-page",
-            p { "Files (placeholder — batch A)" }
+        div { class: "files-page",
+            chrome::TopBar { ctx: ctx.clone() }
+            div { class: "files-body",
+                chrome::Sidebar {}
+                main { class: "files-main",
+                    states::EmptyFolder {}
+                }
+            }
         }
     }
 }
