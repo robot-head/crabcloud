@@ -165,3 +165,94 @@ async fn list_dir_invalid_path_returns_non_ok() {
     let resp = app.oneshot(req).await.unwrap();
     assert_ne!(resp.status(), StatusCode::OK);
 }
+
+/// POST a JSON body to a server-fn endpoint with bearer auth and the
+/// OCS sentinel header (required by the CSRF / OCS middleware in
+/// `build_router`). Mirrors the WebDAV `put_file` helper above.
+async fn post_json(
+    app: &axum::Router,
+    token: &str,
+    uri: &str,
+    body: serde_json::Value,
+) -> axum::response::Response {
+    let req = Request::builder()
+        .method("POST")
+        .uri(uri)
+        .header("authorization", format!("Bearer {token}"))
+        .header("ocs-apirequest", "true")
+        .header("content-type", "application/json")
+        .body(Body::from(body.to_string()))
+        .unwrap();
+    app.clone().oneshot(req).await.unwrap()
+}
+
+#[tokio::test]
+async fn mkdir_creates_directory() {
+    let dir = tempdir().unwrap();
+    let data = tempdir().unwrap();
+    let state = make_state_with_user(dir.path().join("mk.db"), data.path().to_path_buf()).await;
+    let token = alice_bearer(&state).await;
+    let app = build_app(state);
+    let resp = post_json(
+        &app,
+        &token,
+        "/api/files/mkdir",
+        serde_json::json!({ "path": "/newdir" }),
+    )
+    .await;
+    assert_eq!(resp.status(), StatusCode::OK, "got {}", resp.status());
+}
+
+#[tokio::test]
+async fn rename_moves_file() {
+    let dir = tempdir().unwrap();
+    let data = tempdir().unwrap();
+    let state = make_state_with_user(dir.path().join("rn.db"), data.path().to_path_buf()).await;
+    let token = alice_bearer(&state).await;
+    let app = build_app(state);
+    put_file(&app, &token, "/old.txt", "hi").await;
+    let resp = post_json(
+        &app,
+        &token,
+        "/api/files/rename",
+        serde_json::json!({ "from": "/old.txt", "to": "/new.txt" }),
+    )
+    .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    // Verify via DAV GET that the file moved.
+    let get = Request::builder()
+        .method("GET")
+        .uri("/dav/files/alice/new.txt")
+        .header("authorization", format!("Bearer {token}"))
+        .body(Body::empty())
+        .unwrap();
+    let r = app.clone().oneshot(get).await.unwrap();
+    assert_eq!(r.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn delete_removes_files() {
+    let dir = tempdir().unwrap();
+    let data = tempdir().unwrap();
+    let state = make_state_with_user(dir.path().join("dl.db"), data.path().to_path_buf()).await;
+    let token = alice_bearer(&state).await;
+    let app = build_app(state);
+    put_file(&app, &token, "/a.txt", "a").await;
+    put_file(&app, &token, "/b.txt", "b").await;
+    let resp = post_json(
+        &app,
+        &token,
+        "/api/files/delete",
+        serde_json::json!({ "paths": ["/a.txt", "/b.txt"] }),
+    )
+    .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let get = Request::builder()
+        .method("GET")
+        .uri("/dav/files/alice/a.txt")
+        .header("authorization", format!("Bearer {token}"))
+        .body(Body::empty())
+        .unwrap();
+    let r = app.oneshot(get).await.unwrap();
+    assert_eq!(r.status(), StatusCode::NOT_FOUND);
+}
