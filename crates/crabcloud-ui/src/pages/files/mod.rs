@@ -18,6 +18,7 @@ use crate::pages::files::breadcrumb::Breadcrumb;
 use crate::pages::files::list::FileList;
 use crate::server_fns::list_dir;
 use dioxus::prelude::*;
+use std::collections::HashSet;
 
 #[component]
 pub fn Files(ctx: RequestContext, path: String) -> Element {
@@ -87,8 +88,15 @@ pub fn Files(ctx: RequestContext, path: String) -> Element {
                     }
                     FileList {
                         entries: entries_view,
-                        user_id: user_id,
+                        user_id: user_id.clone(),
+                        selection: HashSet::new(),
+                        rename_target: Option::<String>::None,
                         on_open_folder,
+                        on_toggle_select: move |_path: String| {},
+                        on_rename_start: move |_path: String| {},
+                        on_rename_commit: move |_: (String, String)| {},
+                        on_rename_cancel: move |_| {},
+                        on_delete: move |_path: String| {},
                         on_retry,
                     }
                 }
