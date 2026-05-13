@@ -3,6 +3,13 @@
 //! Schema lives in `migrations/core/0006_shares`. Design spec:
 //! `docs/superpowers/specs/2026-05-13-sharing-user-group-and-virtual-mount-design.md`.
 
+// Test target pulls in dev-only deps (e.g. `crabcloud-config` for
+// `test_support`, `crabcloud-core` for `AppState` fixtures, `tempfile`) that
+// aren't referenced from the library crate proper. The first integration
+// tests land in Batch B; until then, silence the workspace
+// `unused_crate_dependencies` lint for the test build.
+#![cfg_attr(test, allow(unused_crate_dependencies))]
+
 mod error;
 mod permissions;
 mod service;
