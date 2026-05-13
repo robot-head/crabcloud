@@ -64,7 +64,7 @@ cargo run -p crabcloud-server -- user-add admin --admin
 - `crates/crabcloud-http` — axum router, middleware, session, CSRF, auth extractors, API handlers (including the Nextcloud-compatible admin OCS surface at `/ocs/v2.php/cloud/{users,groups}` and the WebDAV files API at `/dav/files/{user}/...` plus the legacy `/remote.php/dav/files/{user}/...` alias, with chunked uploads under `/dav/uploads/{user}/{upload_id}/...`).
 - `crates/crabcloud-storage` — `Storage` async trait + `MemoryStorage` and `LocalStorage` backends, `StoragePath` newtype, `EventSink` for cache/scanner consumers.
 - `crates/crabcloud-users` — user/group/preference stores, password verifier, `UsersService` façade, bootstrap-admin shim, `AppPasswordService` + `TokenStore` (auth tokens + Bearer/Basic).
-- `crates/crabcloud-ui` — Dioxus 0.6 SSR + WASM hydration UI. Includes the Files web app at `/apps/files/<path>`: browse, download (via the existing `/dav/files/...` WebDAV GET), mkdir/rename/delete, multi-select cut/paste move, upload (single-PUT + chunked via `/dav/uploads/...`). Metadata server fns live at `POST /api/files/{list,mkdir,rename,delete,move,upload_begin}`.
+- `crates/crabcloud-ui` — Dioxus 0.7 Fullstack (SSR + WASM hydration + `#[server]` functions). Includes the Files web app at `/apps/files/<path>`: browse, download (via the existing `/dav/files/...` WebDAV GET), mkdir/rename/delete, multi-select cut/paste move, upload (single-PUT + chunked via `/dav/uploads/...`). Metadata server fns live at `POST /api/files/{list,mkdir,rename,delete,move,upload_begin}`.
 - `crates/crabcloud-server` — the binary; CLI, tracing, lifecycle.
 - `xtask/` — project automation.
 - `e2e/` — Playwright tests (real-browser SSR + hydration verification).

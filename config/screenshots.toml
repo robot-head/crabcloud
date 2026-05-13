@@ -1,0 +1,21 @@
+instanceid     = "screenshots"
+secret         = "a-32-byte-or-longer-secret-key!"
+passwordsalt   = "ps"
+installed      = true
+version        = "31.0.0.0"
+versionstring  = "31.0.0"
+dbtype         = "sqlite"
+dbname         = "screenshots-work/db.sqlite"
+dbtableprefix  = "oc_"
+datadirectory  = "screenshots-work/data"
+trusted_domains = ["localhost", "127.0.0.1"]
+loglevel       = "info"
+bind_address   = "127.0.0.1:18765"
+db_pool_max    = 4
+
+[cache]
+backend = "memory"
+
+[bootstrap_admin]
+username      = "admin"
+password_hash = "$2b$12$nM2UmCwv1VbDNXd6A6UPFeB6dT84PBH6iv8wdeHtpzCIDnGpwwfWu"

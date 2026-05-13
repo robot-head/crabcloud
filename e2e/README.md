@@ -38,3 +38,31 @@ npm test
 The `e2e` job in `.github/workflows/ci.yml` automates the above: builds the
 release binary, starts it on `127.0.0.1:18765` with a fixture config, runs
 the Playwright tests, then tears down the server.
+
+## Documentation screenshots
+
+`screenshots.ts` (next to this README, not under `tests/`) drives the Files
+UI through four states and saves PNGs into `docs/screenshots/`. It uses its
+own Playwright config so it's not picked up by `npm test`.
+
+Quick run (with the server already up at `127.0.0.1:18765`):
+
+```bash
+# From the repo root, in another terminal — start the server with the
+# dedicated screenshots fixture (datadirectory is gitignored as
+# screenshots-work/).
+cargo run --release -p crabcloud-server -- --config config/screenshots.toml migrate
+cargo run --release -p crabcloud-server -- --config config/screenshots.toml serve
+
+# In e2e/:
+npm run screenshots
+```
+
+Output:
+
+- `docs/screenshots/files-empty.png`
+- `docs/screenshots/files-list.png`
+- `docs/screenshots/files-selection.png`
+- `docs/screenshots/files-delete-modal.png`
+
+The fixture's bootstrap admin is `admin` / `hunter2`.
