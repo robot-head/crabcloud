@@ -305,3 +305,26 @@ async fn move_paths_moves_files_into_destination() {
         .unwrap();
     assert_eq!(app.oneshot(g_new).await.unwrap().status(), StatusCode::OK);
 }
+
+#[tokio::test]
+async fn upload_begin_returns_opaque_id() {
+    let dir = tempdir().unwrap();
+    let data = tempdir().unwrap();
+    let state = make_state_with_user(dir.path().join("ub.db"), data.path().to_path_buf()).await;
+    let token = alice_bearer(&state).await;
+    let app = build_app(state);
+
+    let resp = post_json(
+        &app,
+        &token,
+        "/api/files/upload_begin",
+        serde_json::json!({ "dest_path": "/big.bin" }),
+    )
+    .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(resp.into_body(), 8 * 1024)
+        .await
+        .unwrap();
+    let parsed: crabcloud_ui::UploadBeginResponse = serde_json::from_slice(&body).unwrap();
+    assert!(parsed.upload_id.contains(':'));
+}
