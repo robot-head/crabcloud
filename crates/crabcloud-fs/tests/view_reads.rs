@@ -1,8 +1,9 @@
 mod support;
 
-use crabcloud_fs::{FsError, UserPath};
-use crabcloud_storage::{FileKind, NoopEventSink, StoragePath};
-use support::{harness, view_home};
+use crabcloud_fs::{FsError, MountKind, UserPath};
+use crabcloud_storage::{memory::MemoryStorage, FileKind, NoopEventSink, Storage, StoragePath};
+use std::sync::Arc;
+use support::{harness, view_home, view_with_share_mount};
 use tokio::io::AsyncReadExt;
 
 // Silence unused-crate-dependencies for deps the lib uses but this
@@ -150,6 +151,119 @@ async fn view_path_escape_via_dotdot_rejected() {
         UserPath::new("/photos/../../etc/passwd"),
         Err(FsError::InvalidPath(_))
     ));
+}
+
+#[tokio::test]
+async fn view_list_root_surfaces_share_mount_entry() {
+    // bob lists `/`; he sees his own home entries plus one synthetic
+    // entry for the share alice gave him. The synthetic entry's name is
+    // the mount's basename ("Vacation Photos"), and its metadata carries
+    // the share's `MountMetadata` so the server fn can decorate.
+    let h = harness().await;
+
+    // bob's home: one folder.
+    let bob_home: Arc<dyn Storage> = Arc::new(MemoryStorage::new("bob"));
+    bob_home
+        .mkdir(&StoragePath::new("MyStuff").unwrap(), &NoopEventSink)
+        .await
+        .unwrap();
+    // alice's home: the directory that backs the share.
+    let alice_home: Arc<dyn Storage> = Arc::new(MemoryStorage::new("alice"));
+    alice_home
+        .mkdir(
+            &StoragePath::new("Vacation Photos").unwrap(),
+            &NoopEventSink,
+        )
+        .await
+        .unwrap();
+
+    let view = view_with_share_mount(
+        &h,
+        bob_home,
+        alice_home,
+        "Vacation Photos",
+        "Vacation Photos",
+    );
+    let entries = view
+        .list_with_meta(&UserPath::new("/").unwrap())
+        .await
+        .unwrap();
+    let names: Vec<&str> = entries.iter().map(|e| e.entry.name.as_str()).collect();
+    assert!(names.contains(&"MyStuff"));
+    assert!(names.contains(&"Vacation Photos"));
+
+    let share_le = entries
+        .iter()
+        .find(|e| e.entry.name == "Vacation Photos")
+        .expect("share-mount entry present");
+    let md = share_le
+        .mount_metadata
+        .as_ref()
+        .expect("share entry carries mount metadata");
+    assert_eq!(md.kind, MountKind::Share);
+    assert_eq!(md.owner_uid.as_deref(), Some("alice"));
+    assert_eq!(share_le.entry.metadata.kind, FileKind::Directory);
+
+    // The plain `list` API also surfaces the entry (PROPFIND path),
+    // just without the metadata side-band.
+    let plain = view.list(&UserPath::new("/").unwrap()).await.unwrap();
+    let plain_names: Vec<&str> = plain.iter().map(|e| e.name.as_str()).collect();
+    assert!(plain_names.contains(&"Vacation Photos"));
+}
+
+#[tokio::test]
+async fn view_list_root_home_only_user_unchanged() {
+    let h = harness().await;
+    let view = view_home(&h);
+    view.mkdir(&UserPath::new("/folder").unwrap())
+        .await
+        .unwrap();
+    let entries = view
+        .list_with_meta(&UserPath::new("/").unwrap())
+        .await
+        .unwrap();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].entry.name, "folder");
+    assert!(entries[0].mount_metadata.is_none());
+}
+
+#[tokio::test]
+async fn view_list_share_mount_entry_carries_owners_metadata() {
+    // The synthetic entry's size / mtime / etag come from stat'ing the
+    // OWNER's backing folder through the share wrapper. We deliberately
+    // bypass the filecache for this stat (so we don't poison the cache
+    // by writing alice's `/` row with Photos-shaped metadata) — but the
+    // returned metadata's etag still equals what alice's storage reports
+    // for `Photos`, which is the spec §3.2 "fileid stays stable across
+    // recipients" invariant at the storage layer.
+    let h = harness().await;
+    let bob_home: Arc<dyn Storage> = Arc::new(MemoryStorage::new("bob"));
+    let alice_home: Arc<dyn Storage> = Arc::new(MemoryStorage::new("alice"));
+    alice_home
+        .mkdir(&StoragePath::new("Photos").unwrap(), &NoopEventSink)
+        .await
+        .unwrap();
+    let alice_direct = alice_home
+        .stat(&StoragePath::new("Photos").unwrap())
+        .await
+        .unwrap();
+
+    let view = view_with_share_mount(&h, bob_home, alice_home, "Photos", "Photos");
+    let entries = view
+        .list_with_meta(&UserPath::new("/").unwrap())
+        .await
+        .unwrap();
+    let share_le = entries
+        .iter()
+        .find(|e| e.entry.name == "Photos")
+        .expect("share entry");
+    assert_eq!(share_le.entry.metadata.kind, FileKind::Directory);
+    // The etag matches alice's direct stat — the synthetic entry is a
+    // round-trip of the owner's metadata, not a freshly minted one.
+    assert_eq!(
+        share_le.entry.metadata.etag.as_str(),
+        alice_direct.etag.as_str()
+    );
 }
 
 #[tokio::test]

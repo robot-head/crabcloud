@@ -7,6 +7,7 @@ use crabcloud_filecache::FileCache;
 use crabcloud_storage::StoragePath;
 use crabcloud_users::{GroupId, UserId, UsersService};
 use sqlx::Row as _;
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -298,6 +299,66 @@ impl Shares {
                 rows.into_iter().map(row_from_postgres).collect()
             }
         }
+    }
+
+    /// Bulk-count outgoing shares for a fixed set of fileids, scoped to
+    /// `owner`. Returns a map `file_source → count` containing only the
+    /// fileids that have at least one share row (callers default missing
+    /// keys to 0). Empty `fileids` returns an empty map without hitting
+    /// the database. Used by the Files UI to render `🔗 N` chips next
+    /// to owner-side rows in one batched query per listing.
+    pub async fn share_counts_for(
+        &self,
+        owner: &UserId,
+        fileids: &[i64],
+    ) -> Result<HashMap<i64, i64>, ShareError> {
+        if fileids.is_empty() {
+            return Ok(HashMap::new());
+        }
+        let mut out: HashMap<i64, i64> = HashMap::new();
+        match self.pool.as_ref() {
+            DbPool::Sqlite(p) => {
+                let q_text = sql::share_counts_for(fileids.len(), sql::Dialect::Qm);
+                let mut q = sqlx::query(&q_text).bind(owner.as_str());
+                for id in fileids {
+                    q = q.bind(*id);
+                }
+                let rows = q.fetch_all(p).await?;
+                for row in rows {
+                    let fid: i64 = row.try_get("file_source")?;
+                    let cnt: i64 = row.try_get("cnt")?;
+                    out.insert(fid, cnt);
+                }
+            }
+            DbPool::MySql(p) => {
+                let q_text = sql::share_counts_for(fileids.len(), sql::Dialect::Qm);
+                let mut q = sqlx::query(&q_text).bind(owner.as_str());
+                for id in fileids {
+                    q = q.bind(*id);
+                }
+                let rows = q.fetch_all(p).await?;
+                for row in rows {
+                    let fid: i64 = row.try_get("file_source")?;
+                    // MySQL COUNT(*) decodes as i64 on the wire.
+                    let cnt: i64 = row.try_get("cnt")?;
+                    out.insert(fid, cnt);
+                }
+            }
+            DbPool::Postgres(p) => {
+                let q_text = sql::share_counts_for(fileids.len(), sql::Dialect::Pg);
+                let mut q = sqlx::query(&q_text).bind(owner.as_str());
+                for id in fileids {
+                    q = q.bind(*id);
+                }
+                let rows = q.fetch_all(p).await?;
+                for row in rows {
+                    let fid: i64 = row.try_get("file_source")?;
+                    let cnt: i64 = row.try_get("cnt")?;
+                    out.insert(fid, cnt);
+                }
+            }
+        }
+        Ok(out)
     }
 
     pub async fn update(

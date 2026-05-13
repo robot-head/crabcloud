@@ -28,7 +28,7 @@ pub use resolver::local::LocalStorageFactory;
 pub use resolver::{FileCacheLookup, HomeMountResolver, ShareMountResolver, SharesLookup};
 pub use storage::SharedSubrootStorage;
 pub use uploads::{UploadHandle, Uploads};
-pub use view::View;
+pub use view::{ListedEntry, View};
 
 // Anchor crates whose real call sites are intentionally test-only or
 // reserved for follow-up. `tracing` will be picked up by future warn!/info!

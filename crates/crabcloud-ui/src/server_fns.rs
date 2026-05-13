@@ -537,7 +537,7 @@ pub async fn login_v2_authorize(flow_id: String) -> Result<(), ServerFnError> {
 
 /// Single entry in a `list_dir` response. Shape is what the UI needs;
 /// server-side it's filled from `crabcloud_storage::DirEntry`.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct FileEntry {
     pub name: String,
     /// Full UserPath, e.g. `/photos/cat.jpg`.
@@ -547,6 +547,16 @@ pub struct FileEntry {
     pub mtime_ms: i64,
     pub mime: Option<String>,
     pub etag: String,
+    /// Owner uid when this row sits at the recipient-facing root of an
+    /// incoming share mount; `None` for ordinary home-mount entries.
+    /// Populated by `list_dir` from the mount's `MountMetadata.owner_uid`.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub shared_by: Option<String>,
+    /// Outgoing-share count for owner-side rows. The Files UI renders a
+    /// `🔗 N` chip next to entries with `share_count > 0`. Bulk-computed
+    /// per listing via `Shares::share_counts_for`.
+    #[serde(default)]
+    pub share_count: i64,
 }
 
 /// Resolve the per-request `AppState` + caller `UserId` from the
@@ -589,12 +599,60 @@ pub async fn list_dir(path: String) -> Result<Vec<FileEntry>, ServerFnError> {
         .view_for(&uid)
         .await
         .map_err(|e| ServerFnError::new(format!("view: {e}")))?;
-    let raw = view.list(&user_path).await.map_err(map_fs_err)?;
+    let raw = view.list_with_meta(&user_path).await.map_err(map_fs_err)?;
 
     let mut out: Vec<FileEntry> = raw
         .into_iter()
-        .map(|entry| dir_entry_to_dto(&user_path, entry))
+        .map(|le| {
+            let mut dto = dir_entry_to_dto(&user_path, le.entry);
+            if let Some(md) = &le.mount_metadata {
+                if matches!(md.kind, crabcloud_fs::MountKind::Share) {
+                    dto.shared_by = md.owner_uid.clone();
+                }
+            }
+            dto
+        })
         .collect();
+
+    // Decorate owner-side rows with their outgoing-share count via one
+    // batched query. Look up fileids by `(home_storage_id, full_path)`
+    // for entries that did NOT come in as a share-mount synthetic entry
+    // (those belong to the owner, not to `uid`). Missing filecache rows
+    // are tolerated — drop the row from the count lookup and default to 0.
+    let owner_storage = state
+        .storage_factory
+        .home_storage(&uid)
+        .await
+        .map_err(map_fs_err)?;
+    let owner_sid = owner_storage.id().to_string();
+    let mut idx_to_fileid: Vec<(usize, i64)> = Vec::with_capacity(out.len());
+    for (i, e) in out.iter().enumerate() {
+        if e.shared_by.is_some() {
+            continue;
+        }
+        let storage_path_str = e.path.trim_start_matches('/');
+        let sp = match crabcloud_storage::StoragePath::new(storage_path_str) {
+            Ok(p) => p,
+            Err(_) => continue,
+        };
+        if let Ok(Some(row)) = state.filecache.lookup(&owner_sid, &sp).await {
+            idx_to_fileid.push((i, row.fileid));
+        }
+    }
+    let fileids: Vec<i64> = idx_to_fileid.iter().map(|(_, f)| *f).collect();
+    if !fileids.is_empty() {
+        let counts = state
+            .shares
+            .share_counts_for(&uid, &fileids)
+            .await
+            .map_err(|e| ServerFnError::new(format!("share counts: {e}")))?;
+        for (i, fid) in idx_to_fileid {
+            if let Some(n) = counts.get(&fid).copied() {
+                out[i].share_count = n;
+            }
+        }
+    }
+
     out.sort_by(|a, b| match (b.is_dir, a.is_dir) {
         (true, false) => std::cmp::Ordering::Greater,
         (false, true) => std::cmp::Ordering::Less,
@@ -702,6 +760,8 @@ fn metadata_to_entry(
         mtime_ms,
         mime: (!is_dir).then(|| meta.mimetype.as_str().to_string()),
         etag: meta.etag.as_str().to_string(),
+        shared_by: None,
+        share_count: 0,
     }
 }
 
@@ -730,6 +790,8 @@ fn dir_entry_to_dto(
         mtime_ms,
         mime: (!is_dir).then(|| entry.metadata.mimetype.as_str().to_string()),
         etag: entry.metadata.etag.as_str().to_string(),
+        shared_by: None,
+        share_count: 0,
     }
 }
 
