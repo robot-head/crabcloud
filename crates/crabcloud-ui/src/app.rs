@@ -99,6 +99,58 @@ pub fn NotFoundRoute(segments: Vec<String>) -> Element {
 /// would point at a path the bundler doesn't ship).
 const APP_CSS: Asset = asset!("/assets/app.css");
 
+/// On wasm32 only: monkey-patch `window.fetch` so every same-origin request
+/// to a server-fn endpoint (`/api/...`) carries the `requesttoken` header
+/// the CSRF middleware (`crabcloud-http/src/csrf.rs`) requires. The token
+/// itself comes from the `<meta name="requesttoken">` tag this App emits.
+///
+/// Why this exists: the Dioxus 0.7 server-fn client (built on `gloo_net` →
+/// `window.fetch`) has no per-call header API and no knowledge of our CSRF
+/// scheme. Without this shim every authenticated WASM-side server-fn call
+/// (list_dir, mkdir, rename, delete, etc.) is rejected with 403.
+///
+/// The direct-fetch upload code in `pages/files/upload.rs` sidesteps the
+/// issue by sending `ocs-apirequest: true`, but that bypasses CSRF rather
+/// than satisfying it — we want the real token on the standard server-fn
+/// path so protection stays in place.
+#[cfg(target_arch = "wasm32")]
+fn install_csrf_fetch_interceptor() {
+    // The guard (`__crabcloud_fetch_patched`) makes the patch idempotent so
+    // a second call (e.g., from a re-render before the `use_hook` short-
+    // circuits) is a no-op.
+    const JS: &str = r#"
+        (function() {
+            if (window.__crabcloud_fetch_patched) return;
+            window.__crabcloud_fetch_patched = true;
+            var orig = window.fetch.bind(window);
+            window.fetch = function(input, init) {
+                init = init || {};
+                var url = typeof input === "string"
+                    ? input
+                    : ((input && input.url) || "");
+                var apiPrefix = "/api/";
+                var sameOriginApi = url.indexOf(apiPrefix) === 0
+                    || url.indexOf(location.origin + apiPrefix) === 0;
+                if (sameOriginApi) {
+                    var meta = document.querySelector('meta[name="requesttoken"]');
+                    var token = meta ? meta.getAttribute("content") : "";
+                    if (token) {
+                        var headers = new Headers(
+                            init.headers || (input && input.headers) || undefined
+                        );
+                        if (!headers.has("requesttoken")) {
+                            headers.set("requesttoken", token);
+                        }
+                        init.headers = headers;
+                    }
+                }
+                return orig(input, init);
+            };
+        })();
+    "#;
+    let _ = js_sys::eval(JS);
+}
+
 /// Root component. Captures the per-request context on the server, replays it
 /// on the client via the hydration payload, and provides it to descendants.
 /// Emits `<meta name="requesttoken">` and the `data-hydrated` marker the
@@ -116,6 +168,14 @@ pub fn App() -> Element {
         }
     });
     use_context_provider(|| ctx.clone());
+
+    // Install the CSRF fetch interceptor exactly once on the client.
+    // `use_hook` runs the closure on first render and caches the result,
+    // so subsequent renders skip the (idempotent) JS eval entirely.
+    #[cfg(target_arch = "wasm32")]
+    use_hook(|| {
+        install_csrf_fetch_interceptor();
+    });
 
     let mut hydrated = use_signal(|| false);
     use_effect(move || {
