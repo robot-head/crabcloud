@@ -1,0 +1,121 @@
+//! Public types for the sharing service.
+
+use crate::permissions::SharePermissions;
+use chrono::{DateTime, NaiveDate, Utc};
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(into = "i16", try_from = "i16")]
+pub enum ShareType {
+    User = 0,
+    Group = 1,
+    Link = 3,
+}
+
+impl TryFrom<i16> for ShareType {
+    type Error = &'static str;
+    fn try_from(v: i16) -> Result<Self, Self::Error> {
+        match v {
+            0 => Ok(ShareType::User),
+            1 => Ok(ShareType::Group),
+            3 => Ok(ShareType::Link),
+            _ => Err("unsupported share_type"),
+        }
+    }
+}
+
+impl From<ShareType> for i16 {
+    fn from(v: ShareType) -> Self {
+        v as i16
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ItemType {
+    File,
+    Folder,
+}
+
+impl ItemType {
+    pub fn as_db_str(&self) -> &'static str {
+        match self {
+            ItemType::File => "file",
+            ItemType::Folder => "folder",
+        }
+    }
+    pub fn from_db_str(s: &str) -> Option<Self> {
+        match s {
+            "file" => Some(Self::File),
+            "folder" => Some(Self::Folder),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ShareRow {
+    pub id: i64,
+    pub share_type: ShareType,
+    pub share_with: Option<String>,
+    pub uid_owner: String,
+    pub uid_initiator: String,
+    pub parent: Option<i64>,
+    pub item_type: ItemType,
+    pub item_source: i64,
+    pub file_source: i64,
+    pub file_target: String,
+    pub permissions: SharePermissions,
+    pub stime: i64,
+    pub accepted: bool,
+    pub expiration: Option<DateTime<Utc>>,
+    pub token: Option<String>,
+    pub password_hash: Option<String>,
+}
+
+/// Caller-supplied create request. The service validates and normalizes
+/// before insertion. `requester` is the authenticated user driving the
+/// request; SP7 requires `requester == owner`.
+#[derive(Debug, Clone)]
+pub struct CreateShareRequest {
+    pub requester: String,
+    pub path: String, // absolute path inside requester's home
+    pub share_type: ShareType,
+    pub share_with: String,
+    pub permissions: u32, // raw bitmask from wire
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct UpdateShareFields {
+    pub permissions: Option<u32>,
+    pub expire_date: Option<Option<NaiveDate>>,
+    pub password: Option<Option<String>>,
+    pub note: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn share_type_round_trips_via_i16() {
+        for v in [0_i16, 1, 3] {
+            let st = ShareType::try_from(v).unwrap();
+            assert_eq!(i16::from(st), v);
+        }
+    }
+
+    #[test]
+    fn share_type_rejects_unknown() {
+        assert!(ShareType::try_from(2_i16).is_err());
+        assert!(ShareType::try_from(99_i16).is_err());
+    }
+
+    #[test]
+    fn item_type_db_round_trip() {
+        for it in [ItemType::File, ItemType::Folder] {
+            assert_eq!(ItemType::from_db_str(it.as_db_str()), Some(it));
+        }
+        assert!(ItemType::from_db_str("symlink").is_none());
+    }
+}
