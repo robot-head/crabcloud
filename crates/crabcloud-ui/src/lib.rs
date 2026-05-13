@@ -32,4 +32,4 @@ pub mod server;
 
 pub use app::{App, Route};
 pub use context::RequestContext;
-pub use server_fns::{list_dir, login, status, FileEntry, StatusInfo};
+pub use server_fns::{delete, list_dir, login, mkdir, rename, status, FileEntry, StatusInfo};

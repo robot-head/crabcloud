@@ -75,3 +75,26 @@ form button { margin-top: 1rem; padding: 0.5rem 1rem; font: inherit; cursor: poi
 .files-breadcrumb-link:hover { text-decoration: underline; }
 .files-breadcrumb-here { font-weight: 600; color: #333; }
 .files-breadcrumb-sep { color: #aaa; }
+
+.files-row-mkdir { background: #fffbe6; }
+.files-mkdir-input { padding: 4px 6px; font: inherit; border: 1px solid #d0d0d0; border-radius: 3px; width: 240px; }
+.files-rename-input { padding: 4px 6px; font: inherit; border: 1px solid #d0d0d0; border-radius: 3px; width: 240px; }
+.files-row-selected { background: #f5fafd; }
+.files-actions { width: 40px; text-align: right; position: relative; }
+.files-overflow-btn { background: none; border: 0; padding: 4px 8px; font: inherit; cursor: pointer; color: #666; }
+.files-overflow-btn:hover { color: #0082c9; }
+.files-overflow-menu { position: absolute; right: 4px; top: 28px; background: white; border: 1px solid #ddd; border-radius: 4px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); z-index: 10; min-width: 140px; padding: 4px 0; }
+.files-overflow-item { display: block; width: 100%; background: none; border: 0; padding: 6px 12px; text-align: left; font: inherit; cursor: pointer; }
+.files-overflow-item:hover { background: #f5fafd; }
+.files-overflow-danger { color: #d33; }
+.files-modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center; z-index: 100; }
+.files-modal { background: white; border-radius: 6px; padding: 20px; max-width: 360px; width: 100%; box-shadow: 0 12px 36px rgba(0,0,0,0.2); }
+.files-modal-title { font-weight: 600; margin-bottom: 8px; }
+.files-modal-body { font-size: 13px; color: #666; margin-bottom: 16px; }
+.files-modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.files-modal-cancel, .files-modal-confirm { padding: 6px 14px; border-radius: 4px; border: 0; font: inherit; cursor: pointer; }
+.files-modal-cancel { background: #f5f5f5; color: #333; }
+.files-modal-confirm { background: #d33; color: white; }
+.files-toolbar { display: flex; gap: 8px; margin-bottom: 12px; }
+.files-tb-btn { padding: 6px 14px; border-radius: 4px; border: 1px solid #d0d0d0; background: white; font: inherit; cursor: pointer; }
+.files-tb-primary { background: #0082c9; color: white; border-color: #0082c9; }

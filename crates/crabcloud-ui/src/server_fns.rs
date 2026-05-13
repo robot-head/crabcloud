@@ -549,6 +549,26 @@ pub struct FileEntry {
     pub etag: String,
 }
 
+/// Resolve the per-request `AppState` + caller `UserId` from the
+/// `FullstackContext`. Shared by every authenticated server fn in the
+/// Files surface — uses the `AuthContext` extension installed by
+/// `AuthLayer` (any auth method) rather than peeking at the session
+/// snapshot directly.
+#[cfg(feature = "server")]
+async fn require_user() -> Result<(crabcloud_core::AppState, crabcloud_users::UserId), ServerFnError>
+{
+    use dioxus::fullstack::FullstackContext;
+    let fs =
+        FullstackContext::current().ok_or_else(|| ServerFnError::new("not running on server"))?;
+    let state = fs
+        .extension::<crabcloud_core::AppState>()
+        .ok_or_else(|| ServerFnError::new("AppState extension missing"))?;
+    let auth = fs
+        .extension::<crabcloud_http::AuthContext>()
+        .ok_or_else(|| ServerFnError::new("unauthorized"))?;
+    Ok((state, auth.user_id.clone()))
+}
+
 /// `POST /api/files/list` — list a directory. Returns sorted entries
 /// (directories first, then files; alphabetical within each group,
 /// case-insensitive). JSON body: `{ "path": "/photos" }`.
@@ -560,17 +580,8 @@ pub struct FileEntry {
 #[server(endpoint = "api/files/list", prefix = "")]
 pub async fn list_dir(path: String) -> Result<Vec<FileEntry>, ServerFnError> {
     use crabcloud_fs::UserPath;
-    use dioxus::fullstack::FullstackContext;
 
-    let fs =
-        FullstackContext::current().ok_or_else(|| ServerFnError::new("not running on server"))?;
-    let state = fs
-        .extension::<crabcloud_core::AppState>()
-        .ok_or_else(|| ServerFnError::new("AppState extension missing"))?;
-    let auth = fs
-        .extension::<crabcloud_http::AuthContext>()
-        .ok_or_else(|| ServerFnError::new("unauthorized"))?;
-    let uid = auth.user_id.clone();
+    let (state, uid) = require_user().await?;
 
     let user_path =
         UserPath::new(path).map_err(|e| ServerFnError::new(format!("invalid path: {e}")))?;
@@ -590,6 +601,80 @@ pub async fn list_dir(path: String) -> Result<Vec<FileEntry>, ServerFnError> {
         _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
     });
     Ok(out)
+}
+
+/// `POST /api/files/mkdir` — create a directory at `path`. Returns the
+/// new directory's metadata as a `FileEntry`.
+#[server(endpoint = "api/files/mkdir", prefix = "")]
+pub async fn mkdir(path: String) -> Result<FileEntry, ServerFnError> {
+    use crabcloud_fs::UserPath;
+    let (state, uid) = require_user().await?;
+    let user_path =
+        UserPath::new(&path).map_err(|e| ServerFnError::new(format!("invalid_path: {e}")))?;
+    let view = state.view_for(&uid).await.map_err(map_fs_err)?;
+    let meta = view.mkdir(&user_path).await.map_err(map_fs_err)?;
+    Ok(metadata_to_entry(&user_path, meta))
+}
+
+/// `POST /api/files/rename` — move/rename `from` to `to`. Returns the
+/// destination entry's fresh metadata.
+#[server(endpoint = "api/files/rename", prefix = "")]
+pub async fn rename(from: String, to: String) -> Result<FileEntry, ServerFnError> {
+    use crabcloud_fs::UserPath;
+    let (state, uid) = require_user().await?;
+    let from_path =
+        UserPath::new(&from).map_err(|e| ServerFnError::new(format!("invalid_path: {e}")))?;
+    let to_path =
+        UserPath::new(&to).map_err(|e| ServerFnError::new(format!("invalid_path: {e}")))?;
+    let view = state.view_for(&uid).await.map_err(map_fs_err)?;
+    view.rename(&from_path, &to_path)
+        .await
+        .map_err(map_fs_err)?;
+    let meta = view.stat(&to_path).await.map_err(map_fs_err)?;
+    Ok(metadata_to_entry(&to_path, meta))
+}
+
+/// `POST /api/files/delete` — delete every path in `paths`. Best-effort
+/// sequential: the first error short-circuits the rest.
+#[server(endpoint = "api/files/delete", prefix = "")]
+pub async fn delete(paths: Vec<String>) -> Result<(), ServerFnError> {
+    use crabcloud_fs::UserPath;
+    let (state, uid) = require_user().await?;
+    let view = state.view_for(&uid).await.map_err(map_fs_err)?;
+    for path in paths {
+        let user_path =
+            UserPath::new(&path).map_err(|e| ServerFnError::new(format!("invalid_path: {e}")))?;
+        view.delete(&user_path).await.map_err(map_fs_err)?;
+    }
+    Ok(())
+}
+
+#[cfg(feature = "server")]
+fn metadata_to_entry(
+    user_path: &crabcloud_fs::UserPath,
+    meta: crabcloud_storage::FileMetadata,
+) -> FileEntry {
+    use std::time::UNIX_EPOCH;
+    let is_dir = matches!(meta.kind, crabcloud_storage::FileKind::Directory);
+    let mtime_ms = meta
+        .mtime
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+    FileEntry {
+        name: user_path
+            .as_str()
+            .rsplit('/')
+            .next()
+            .unwrap_or("")
+            .to_string(),
+        path: user_path.as_str().to_string(),
+        is_dir,
+        size: meta.size,
+        mtime_ms,
+        mime: (!is_dir).then(|| meta.mimetype.as_str().to_string()),
+        etag: meta.etag.as_str().to_string(),
+    }
 }
 
 #[cfg(feature = "server")]
