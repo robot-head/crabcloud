@@ -19,3 +19,5 @@ Thumbs.db
 
 # Node (e2e)
 node_modules/
+
+.superpowers/
