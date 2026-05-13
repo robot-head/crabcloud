@@ -930,6 +930,7 @@ dependencies = [
  "crabcloud-users",
  "dioxus",
  "hex",
+ "js-sys",
  "rand 0.10.1",
  "serde",
  "serde_json",

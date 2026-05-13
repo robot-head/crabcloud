@@ -3,7 +3,9 @@
 //! `docs/superpowers/specs/2026-05-12-files-web-ui-design.md`.
 
 pub mod chrome;
+pub mod list;
 pub mod path;
+pub mod row;
 pub mod states;
 
 #[cfg(feature = "server")]
