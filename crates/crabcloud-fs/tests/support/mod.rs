@@ -45,6 +45,7 @@ pub fn view_home(h: &Harness) -> View {
         vec![Mount {
             path_prefix: StoragePath::root(),
             storage: h.storage.clone(),
+            metadata: None,
         }],
         h.filecache.clone(),
         h.sink.clone(),
@@ -61,10 +62,12 @@ pub fn view_with_two_mounts(h: &Harness) -> View {
             Mount {
                 path_prefix: StoragePath::root(),
                 storage: h.storage.clone(),
+                metadata: None,
             },
             Mount {
                 path_prefix: StoragePath::new("Shared").unwrap(),
                 storage: shared,
+                metadata: None,
             },
         ],
         h.filecache.clone(),

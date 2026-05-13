@@ -16,6 +16,7 @@ use base64 as _;
 use crabcloud_cache as _;
 use crabcloud_db as _;
 use crabcloud_filecache as _;
+use crabcloud_sharing as _;
 use crabcloud_storage as _;
 use thiserror as _;
 use tracing as _;

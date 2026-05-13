@@ -12,6 +12,7 @@ use async_trait as _;
 use base64 as _;
 use crabcloud_cache as _;
 use crabcloud_core as _;
+use crabcloud_sharing as _;
 use thiserror as _;
 use tracing as _;
 
@@ -25,6 +26,7 @@ fn uploads_home(h: &support::Harness) -> Uploads {
         vec![Mount {
             path_prefix: StoragePath::root(),
             storage: h.storage.clone(),
+            metadata: None,
         }],
         h.sink.clone(),
         h.filecache.clone(),

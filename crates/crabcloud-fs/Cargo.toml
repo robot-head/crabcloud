@@ -8,6 +8,7 @@ rust-version.workspace = true
 async-trait.workspace = true
 base64.workspace = true
 crabcloud-filecache.workspace = true
+crabcloud-sharing.workspace = true
 crabcloud-storage.workspace = true
 crabcloud-users.workspace = true
 thiserror.workspace = true

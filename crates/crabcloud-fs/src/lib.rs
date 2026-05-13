@@ -17,14 +17,16 @@ pub mod error;
 pub mod mount;
 pub mod path;
 pub mod resolver;
+pub mod storage;
 pub mod uploads;
 pub mod view;
 
 pub use error::{FsError, FsResult};
-pub use mount::{Mount, MountResolver, StorageFactory};
+pub use mount::{Mount, MountKind, MountMetadata, MountResolver, StorageFactory};
 pub use path::UserPath;
 pub use resolver::local::LocalStorageFactory;
-pub use resolver::HomeMountResolver;
+pub use resolver::{FileCacheLookup, HomeMountResolver, ShareMountResolver, SharesLookup};
+pub use storage::SharedSubrootStorage;
 pub use uploads::{UploadHandle, Uploads};
 pub use view::View;
 

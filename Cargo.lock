@@ -808,6 +808,7 @@ dependencies = [
  "crabcloud-core",
  "crabcloud-db",
  "crabcloud-filecache",
+ "crabcloud-sharing",
  "crabcloud-storage",
  "crabcloud-users",
  "tempfile",

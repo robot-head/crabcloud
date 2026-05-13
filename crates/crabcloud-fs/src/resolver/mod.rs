@@ -3,6 +3,9 @@
 //! mounts on top.
 
 pub mod local;
+pub mod share;
+
+pub use share::{FileCacheLookup, ShareMountResolver, SharesLookup};
 
 use crabcloud_storage::StoragePath;
 use crabcloud_users::UserId;
@@ -28,6 +31,7 @@ impl MountResolver for HomeMountResolver {
         Ok(vec![Mount {
             path_prefix: StoragePath::root(),
             storage,
+            metadata: None,
         }])
     }
 }
