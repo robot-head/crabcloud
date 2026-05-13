@@ -921,6 +921,7 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "crabcloud-cache",
+ "crabcloud-config",
  "crabcloud-core",
  "crabcloud-fs",
  "crabcloud-http",
@@ -932,6 +933,9 @@ dependencies = [
  "rand 0.10.1",
  "serde",
  "serde_json",
+ "tempfile",
+ "tokio",
+ "tower",
  "tracing",
 ]
 
