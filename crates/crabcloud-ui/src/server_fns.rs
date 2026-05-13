@@ -733,6 +733,24 @@ fn dir_entry_to_dto(
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct UploadBeginResponse {
+    pub upload_id: String,
+}
+
+#[server(endpoint = "api/files/upload_begin", prefix = "")]
+pub async fn upload_begin(dest_path: String) -> Result<UploadBeginResponse, ServerFnError> {
+    use crabcloud_fs::UserPath;
+    let (state, uid) = require_user().await?;
+    let dest =
+        UserPath::new(&dest_path).map_err(|e| ServerFnError::new(format!("invalid_path: {e}")))?;
+    let uploads = state.uploads_for(&uid).await.map_err(map_fs_err)?;
+    let handle = uploads.begin(&dest).await.map_err(map_fs_err)?;
+    Ok(UploadBeginResponse {
+        upload_id: handle.upload_id,
+    })
+}
+
 #[cfg(feature = "server")]
 fn map_fs_err(err: crabcloud_fs::FsError) -> ServerFnError {
     use crabcloud_fs::FsError;
