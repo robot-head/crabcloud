@@ -17,6 +17,7 @@ pub mod error;
 pub mod mount;
 pub mod path;
 pub mod resolver;
+pub mod storage;
 pub mod uploads;
 pub mod view;
 
@@ -25,6 +26,7 @@ pub use mount::{Mount, MountKind, MountMetadata, MountResolver, StorageFactory};
 pub use path::UserPath;
 pub use resolver::local::LocalStorageFactory;
 pub use resolver::HomeMountResolver;
+pub use storage::SharedSubrootStorage;
 pub use uploads::{UploadHandle, Uploads};
 pub use view::View;
 
