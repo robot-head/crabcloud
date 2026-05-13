@@ -10,7 +10,12 @@ pub fn TopBar(ctx: RequestContext) -> Element {
         .display_name
         .clone()
         .unwrap_or_else(|| "User".to_string());
-    let initial = display.chars().next().unwrap_or('U').to_uppercase().to_string();
+    let initial = display
+        .chars()
+        .next()
+        .unwrap_or('U')
+        .to_uppercase()
+        .to_string();
     rsx! {
         header { class: "topbar",
             a { class: "topbar-brand", href: "/", "Crabcloud" }
