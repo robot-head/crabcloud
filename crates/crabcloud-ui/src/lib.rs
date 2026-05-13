@@ -44,6 +44,8 @@ mod server_fns;
 #[cfg(feature = "server")]
 pub mod server;
 
+#[cfg(target_arch = "wasm32")]
+pub use app::install_csrf_fetch_interceptor;
 pub use app::{App, Route};
 pub use context::RequestContext;
 pub use server_fns::{
