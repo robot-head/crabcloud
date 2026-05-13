@@ -925,6 +925,7 @@ dependencies = [
  "crabcloud-fs",
  "crabcloud-http",
  "crabcloud-i18n",
+ "crabcloud-storage",
  "crabcloud-users",
  "dioxus",
  "hex",

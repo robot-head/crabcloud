@@ -534,3 +534,101 @@ pub async fn login_v2_authorize(flow_id: String) -> Result<(), ServerFnError> {
     let _ = cache.del(&flow_key).await;
     Ok(())
 }
+
+/// Single entry in a `list_dir` response. Shape is what the UI needs;
+/// server-side it's filled from `crabcloud_storage::DirEntry`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct FileEntry {
+    pub name: String,
+    /// Full UserPath, e.g. `/photos/cat.jpg`.
+    pub path: String,
+    pub is_dir: bool,
+    pub size: u64,
+    pub mtime_ms: i64,
+    pub mime: Option<String>,
+    pub etag: String,
+}
+
+/// `GET /api/files/list?path=...` — list a directory. Returns sorted
+/// entries (directories first, then files; alphabetical within each group,
+/// case-insensitive).
+#[get("/api/files/list")]
+pub async fn list_dir(path: String) -> Result<Vec<FileEntry>, ServerFnError> {
+    use crabcloud_fs::UserPath;
+    use dioxus::fullstack::FullstackContext;
+
+    let fs =
+        FullstackContext::current().ok_or_else(|| ServerFnError::new("not running on server"))?;
+    let state = fs
+        .extension::<crabcloud_core::AppState>()
+        .ok_or_else(|| ServerFnError::new("AppState extension missing"))?;
+    let session = fs.extension::<crabcloud_http::SessionHandle>();
+    let snapshot = session.and_then(|s| s.try_read_snapshot());
+    let uid_str = snapshot
+        .as_ref()
+        .and_then(|s| s.user_id.clone())
+        .ok_or_else(|| ServerFnError::new("unauthorized"))?;
+    let uid = crabcloud_users::UserId::new(&uid_str)
+        .map_err(|e| ServerFnError::new(format!("invalid uid: {e}")))?;
+
+    let user_path =
+        UserPath::new(path).map_err(|e| ServerFnError::new(format!("invalid path: {e}")))?;
+    let view = state
+        .view_for(&uid)
+        .await
+        .map_err(|e| ServerFnError::new(format!("view: {e}")))?;
+    let raw = view.list(&user_path).await.map_err(map_fs_err)?;
+
+    let mut out: Vec<FileEntry> = raw
+        .into_iter()
+        .map(|entry| dir_entry_to_dto(&user_path, entry))
+        .collect();
+    out.sort_by(|a, b| match (b.is_dir, a.is_dir) {
+        (true, false) => std::cmp::Ordering::Greater,
+        (false, true) => std::cmp::Ordering::Less,
+        _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+    });
+    Ok(out)
+}
+
+#[cfg(feature = "server")]
+fn dir_entry_to_dto(
+    parent: &crabcloud_fs::UserPath,
+    entry: crabcloud_storage::DirEntry,
+) -> FileEntry {
+    use std::time::UNIX_EPOCH;
+    let full_path = parent
+        .join(&entry.name)
+        .map(|p| p.as_str().to_string())
+        .unwrap_or_else(|_| entry.name.clone());
+    let mtime_ms = entry
+        .metadata
+        .mtime
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+    let is_dir = matches!(entry.metadata.kind, crabcloud_storage::FileKind::Directory);
+    FileEntry {
+        name: entry.name,
+        path: full_path,
+        is_dir,
+        size: entry.metadata.size,
+        mtime_ms,
+        mime: (!is_dir).then(|| entry.metadata.mimetype.as_str().to_string()),
+        etag: entry.metadata.etag.as_str().to_string(),
+    }
+}
+
+#[cfg(feature = "server")]
+fn map_fs_err(err: crabcloud_fs::FsError) -> ServerFnError {
+    use crabcloud_fs::FsError;
+    match err {
+        FsError::NotFound => ServerFnError::new("not_found"),
+        FsError::InvalidPath(m) => ServerFnError::new(format!("invalid_path: {m}")),
+        FsError::CrossMount => ServerFnError::new("cross_mount"),
+        FsError::MountNotFound => ServerFnError::new("mount_not_found"),
+        FsError::Storage(s) => ServerFnError::new(format!("storage: {s}")),
+        FsError::FileCache(c) => ServerFnError::new(format!("filecache: {c}")),
+        FsError::Upload(m) => ServerFnError::new(format!("upload: {m}")),
+    }
+}

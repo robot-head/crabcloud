@@ -26,4 +26,4 @@ pub mod server;
 
 pub use app::{App, Route};
 pub use context::RequestContext;
-pub use server_fns::{login, status, StatusInfo};
+pub use server_fns::{list_dir, login, status, FileEntry, StatusInfo};
