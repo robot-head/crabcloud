@@ -795,6 +795,86 @@ fn dir_entry_to_dto(
     }
 }
 
+/// One result row in the [`share_recipient_search`] response. `id` is the
+/// raw uid (for User candidates) or gid (for Group candidates); `kind`
+/// distinguishes the two for the UI; `share_type_int` is the value the
+/// caller must send back in the OCS `POST shares` `shareType` field
+/// (matches `crabcloud_sharing::ShareType` discriminants).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RecipientCandidate {
+    pub id: String,
+    pub display_name: String,
+    pub kind: String,
+    pub share_type_int: i16,
+}
+
+/// `POST /api/files/share_recipient_search` — autocomplete back-end for
+/// the Share modal's recipient picker. Returns up to 10 results unioned
+/// from the user + group stores (users first, groups appended), filtered
+/// by case-insensitive substring match against `uid|displayname` /
+/// `gid|displayname`. Empty / whitespace-only `q` returns an empty list
+/// without hitting the database. Authenticated callers only.
+#[server(endpoint = "api/files/share_recipient_search", prefix = "")]
+pub async fn share_recipient_search(q: String) -> Result<Vec<RecipientCandidate>, ServerFnError> {
+    use crabcloud_users::{GroupListFilter, UserListFilter};
+    let (state, _uid) = require_user().await?;
+    let trimmed = q.trim();
+    if trimmed.is_empty() {
+        return Ok(Vec::new());
+    }
+    let users = state
+        .users
+        .user_store()
+        .list_users(UserListFilter {
+            search: Some(trimmed),
+            limit: 10,
+            offset: 0,
+        })
+        .await
+        .map_err(|e| ServerFnError::new(format!("user search: {e}")))?;
+    let groups = state
+        .users
+        .group_store()
+        .list_groups(GroupListFilter {
+            search: Some(trimmed),
+            limit: 10,
+            offset: 0,
+        })
+        .await
+        .map_err(|e| ServerFnError::new(format!("group search: {e}")))?;
+    let mut out: Vec<RecipientCandidate> = users
+        .into_iter()
+        .map(|u| RecipientCandidate {
+            id: u.uid.as_str().to_string(),
+            display_name: u.display_name,
+            kind: "user".into(),
+            share_type_int: 0,
+        })
+        .collect();
+    out.extend(groups.into_iter().map(|g| RecipientCandidate {
+        id: g.gid.as_str().to_string(),
+        display_name: g.display_name,
+        kind: "group".into(),
+        share_type_int: 1,
+    }));
+    out.truncate(10);
+    Ok(out)
+}
+
+/// `POST /api/files/count_incoming_shares` — returns how many accepted
+/// incoming shares the caller is currently the recipient of. Used by
+/// the sidebar's "Shared with you" chip to grey itself out when zero.
+#[server(endpoint = "api/files/count_incoming_shares", prefix = "")]
+pub async fn count_incoming_shares() -> Result<i64, ServerFnError> {
+    let (state, uid) = require_user().await?;
+    let rows = state
+        .shares
+        .list_incoming(&uid)
+        .await
+        .map_err(|e| ServerFnError::new(format!("list_incoming: {e}")))?;
+    Ok(rows.len() as i64)
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct UploadBeginResponse {
     pub upload_id: String,
