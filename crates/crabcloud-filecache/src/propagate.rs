@@ -187,25 +187,31 @@ fn decode_sqlite_row(row: sqlx::sqlite::SqliteRow) -> FileCacheResult<FilecacheR
 }
 
 fn decode_mysql_row(row: sqlx::mysql::MySqlRow) -> FileCacheResult<FilecacheRowRaw> {
+    // The migrated mysql tables use `COLLATE=utf8mb4_bin`, which the wire
+    // protocol surfaces as VARBINARY instead of VARCHAR. `try_get_unchecked`
+    // bypasses the sqlx type check and decodes from raw bytes via the
+    // `MySqlValue` impl — which for `String` is `String::from_utf8_lossy`.
+    // No data-loss risk: storage IDs, paths, and names are written by the
+    // application and constrained to valid UTF-8 by `StoragePath::new`.
     Ok(FilecacheRowRaw {
         fileid: row
             .try_get::<u64, _>("fileid")
             .map_err(FileCacheError::Db)? as i64,
         storage_id: row
-            .try_get::<String, _>("storage_id")
+            .try_get_unchecked::<String, _>("storage_id")
             .map_err(FileCacheError::Db)?,
         path: row
-            .try_get::<String, _>("path")
+            .try_get_unchecked::<String, _>("path")
             .map_err(FileCacheError::Db)?,
         parent: row
             .try_get::<Option<u64>, _>("parent")
             .map_err(FileCacheError::Db)?
             .map(|v| v as i64),
         name: row
-            .try_get::<String, _>("name")
+            .try_get_unchecked::<String, _>("name")
             .map_err(FileCacheError::Db)?,
         mimetype: row
-            .try_get::<String, _>("mimetype")
+            .try_get_unchecked::<String, _>("mimetype")
             .map_err(FileCacheError::Db)?,
         size: row.try_get::<i64, _>("size").map_err(FileCacheError::Db)?,
         mtime: row.try_get::<u32, _>("mtime").map_err(FileCacheError::Db)? as i64,
@@ -213,7 +219,7 @@ fn decode_mysql_row(row: sqlx::mysql::MySqlRow) -> FileCacheResult<FilecacheRowR
             .try_get::<u32, _>("storage_mtime")
             .map_err(FileCacheError::Db)? as i64,
         etag: row
-            .try_get::<String, _>("etag")
+            .try_get_unchecked::<String, _>("etag")
             .map_err(FileCacheError::Db)?,
         permissions: row
             .try_get::<u32, _>("permissions")
