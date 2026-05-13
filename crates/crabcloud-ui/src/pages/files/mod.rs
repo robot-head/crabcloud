@@ -4,6 +4,7 @@
 
 pub mod breadcrumb;
 pub mod chrome;
+pub mod delete_modal;
 pub mod list;
 pub mod mkdir_row;
 pub mod path;
