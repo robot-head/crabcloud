@@ -43,11 +43,10 @@ fn ocs_status_for_http(code: u16) -> OcsStatus {
         400 => OcsStatus::BadRequest,
         401 => OcsStatus::Unauthorized,
         403 => OcsStatus::Forbidden,
-        // 404 *and* 501 (not-implemented) both surface as Nextcloud's
-        // `998` / `999` failure label — using 998 for missing matches the
-        // existing OCS surface; 501 is closer to a generic error in OCS
-        // semantics, but we keep the wire HTTP code distinct so clients
-        // can branch on `statuscode == 501`.
+        // 404 → Nextcloud's NotFound (998). Everything else we don't have
+        // a dedicated OcsStatus for (501, 5xx, anything custom) falls
+        // through to UnknownError (999); the HTTP code itself remains
+        // distinct on the response line so clients can branch on it.
         404 => OcsStatus::NotFound,
         _ => OcsStatus::UnknownError,
     }
@@ -85,10 +84,21 @@ async fn display_name_of(state: &AppState, raw_uid: &str) -> String {
     }
 }
 
+async fn group_display_name_of(state: &AppState, raw_gid: &str) -> String {
+    let Ok(gid) = crabcloud_users::GroupId::new(raw_gid) else {
+        return raw_gid.to_string();
+    };
+    match state.users.group_store().lookup(&gid).await {
+        Ok(Some(g)) if !g.display_name.is_empty() => g.display_name,
+        _ => raw_gid.to_string(),
+    }
+}
+
 async fn share_to_json(row: &ShareRow, state: &AppState) -> Value {
-    let share_with_displayname = match row.share_with.as_deref() {
-        Some(s) => display_name_of(state, s).await,
-        None => String::new(),
+    let share_with_displayname = match (row.share_type, row.share_with.as_deref()) {
+        (ShareType::Group, Some(gid)) => group_display_name_of(state, gid).await,
+        (_, Some(s)) => display_name_of(state, s).await,
+        (_, None) => String::new(),
     };
     let displayname_owner = display_name_of(state, &row.uid_owner).await;
     let storage_id = match UserId::new(&row.uid_owner) {
