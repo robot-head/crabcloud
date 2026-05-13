@@ -53,30 +53,14 @@ impl Shares {
 
         match req.share_type {
             ShareType::User => {
-                let uid = UserId::new(req.share_with.clone())
-                    .map_err(|_| ShareError::RecipientUnknown)?;
-                if self
-                    .users
-                    .user_store()
-                    .exists_in_storage(&uid)
-                    .await
-                    .map_err(map_users)?
-                    .not()
-                {
+                UserId::new(req.share_with.clone()).map_err(|_| ShareError::RecipientUnknown)?;
+                if !user_row_exists(&self.pool, &req.share_with).await? {
                     return Err(ShareError::RecipientUnknown);
                 }
             }
             ShareType::Group => {
-                let gid = GroupId::new(req.share_with.clone())
-                    .map_err(|_| ShareError::RecipientUnknown)?;
-                if self
-                    .users
-                    .group_store()
-                    .lookup(&gid)
-                    .await
-                    .map_err(map_users)?
-                    .is_none()
-                {
+                GroupId::new(req.share_with.clone()).map_err(|_| ShareError::RecipientUnknown)?;
+                if !group_row_exists(&self.pool, &req.share_with).await? {
                     return Err(ShareError::RecipientUnknown);
                 }
             }
@@ -279,11 +263,7 @@ impl Shares {
     }
 
     pub async fn list_incoming(&self, recipient: &UserId) -> Result<Vec<ShareRow>, ShareError> {
-        let groups = self
-            .users
-            .groups_of(recipient)
-            .await
-            .map_err(map_users)?;
+        let groups = self.users.groups_of(recipient).await.map_err(map_users)?;
         match self.pool.as_ref() {
             DbPool::Sqlite(p) => {
                 let q_text = sql::select_incoming(groups.len(), Dialect::Qm);
@@ -336,8 +316,7 @@ impl Shares {
             run_update_permissions(&self.pool, id, perms.as_u32() as i32).await?;
         }
         if let Some(date_opt) = fields.expire_date {
-            let naive: Option<NaiveDateTime> =
-                date_opt.and_then(|d| d.and_hms_opt(0, 0, 0));
+            let naive: Option<NaiveDateTime> = date_opt.and_then(|d| d.and_hms_opt(0, 0, 0));
             run_update_expiration(&self.pool, id, naive).await?;
         }
         self.get(id).await?.ok_or(ShareError::NotFound)
@@ -350,18 +329,17 @@ impl Shares {
             (&row.share_type, row.share_with.as_deref()),
             (ShareType::User, Some(s)) if s == requester.as_str()
         );
-        let is_group_recipient = if let (ShareType::Group, Some(gname)) =
-            (&row.share_type, row.share_with.as_deref())
-        {
-            self.users
-                .groups_of(requester)
-                .await
-                .map_err(map_users)?
-                .iter()
-                .any(|g| g.as_str() == gname)
-        } else {
-            false
-        };
+        let is_group_recipient =
+            if let (ShareType::Group, Some(gname)) = (&row.share_type, row.share_with.as_deref()) {
+                self.users
+                    .groups_of(requester)
+                    .await
+                    .map_err(map_users)?
+                    .iter()
+                    .any(|g| g.as_str() == gname)
+            } else {
+                false
+            };
 
         if is_owner {
             match self.pool.as_ref() {
@@ -416,11 +394,7 @@ impl Shares {
     }
 }
 
-async fn run_update_permissions(
-    pool: &DbPool,
-    id: i64,
-    perms_db: i32,
-) -> Result<(), ShareError> {
+async fn run_update_permissions(pool: &DbPool, id: i64, perms_db: i32) -> Result<(), ShareError> {
     match pool {
         DbPool::Sqlite(p) => {
             sqlx::query(sql::UPDATE_PERMISSIONS_QM)
@@ -494,6 +468,58 @@ fn map_filecache(_e: crabcloud_filecache::FileCacheError) -> ShareError {
     ShareError::PathNotOwned
 }
 
+async fn user_row_exists(pool: &DbPool, uid: &str) -> Result<bool, ShareError> {
+    match pool {
+        DbPool::Sqlite(p) => {
+            let row: Option<(i64,)> = sqlx::query_as("SELECT 1 FROM oc_users WHERE uid = ?")
+                .bind(uid)
+                .fetch_optional(p)
+                .await?;
+            Ok(row.is_some())
+        }
+        DbPool::MySql(p) => {
+            let row: Option<(i64,)> = sqlx::query_as("SELECT 1 FROM oc_users WHERE uid = ?")
+                .bind(uid)
+                .fetch_optional(p)
+                .await?;
+            Ok(row.is_some())
+        }
+        DbPool::Postgres(p) => {
+            let row: Option<(i32,)> = sqlx::query_as("SELECT 1 FROM oc_users WHERE uid = $1")
+                .bind(uid)
+                .fetch_optional(p)
+                .await?;
+            Ok(row.is_some())
+        }
+    }
+}
+
+async fn group_row_exists(pool: &DbPool, gid: &str) -> Result<bool, ShareError> {
+    match pool {
+        DbPool::Sqlite(p) => {
+            let row: Option<(i64,)> = sqlx::query_as("SELECT 1 FROM oc_groups WHERE gid = ?")
+                .bind(gid)
+                .fetch_optional(p)
+                .await?;
+            Ok(row.is_some())
+        }
+        DbPool::MySql(p) => {
+            let row: Option<(i64,)> = sqlx::query_as("SELECT 1 FROM oc_groups WHERE gid = ?")
+                .bind(gid)
+                .fetch_optional(p)
+                .await?;
+            Ok(row.is_some())
+        }
+        DbPool::Postgres(p) => {
+            let row: Option<(i32,)> = sqlx::query_as("SELECT 1 FROM oc_groups WHERE gid = $1")
+                .bind(gid)
+                .fetch_optional(p)
+                .await?;
+            Ok(row.is_some())
+        }
+    }
+}
+
 fn map_users(e: crabcloud_users::UsersError) -> ShareError {
     match e {
         crabcloud_users::UsersError::Db(crabcloud_db::DbError::Sqlx(inner)) => {
@@ -525,8 +551,8 @@ struct RowParts {
 }
 
 fn assemble_row(parts: RowParts) -> Result<ShareRow, ShareError> {
-    let share_type = ShareType::try_from(parts.share_type)
-        .map_err(|_| ShareError::InvalidShareType)?;
+    let share_type =
+        ShareType::try_from(parts.share_type).map_err(|_| ShareError::InvalidShareType)?;
     let item_type = ItemType::from_db_str(&parts.item_type).ok_or_else(|| {
         ShareError::DbError(sqlx::Error::Decode(
             format!("unknown item_type {:?}", parts.item_type).into(),
@@ -578,28 +604,32 @@ fn row_from_sqlite(row: sqlx::sqlite::SqliteRow) -> Result<ShareRow, ShareError>
 }
 
 fn row_from_mysql(row: sqlx::mysql::MySqlRow) -> Result<ShareRow, ShareError> {
-    let id_u64: u64 = row.try_get("id")?;
-    let parent_u64: Option<u64> = row.try_get("parent")?;
-    let item_source_u64: u64 = row.try_get("item_source")?;
-    let file_source_u64: u64 = row.try_get("file_source")?;
-    let permissions_u32: u32 = row.try_get("permissions")?;
+    // Schema notes: `id`, `parent`, `item_source`, `file_source`, `stime` are
+    // signed `BIGINT`. `permissions` is signed `INTEGER`. `share_type`,
+    // `accepted`, `mail_send` are `SMALLINT`. The table is created with
+    // `COLLATE=utf8mb4_bin`, which the mysql wire protocol reports as
+    // `VARBINARY` rather than `VARCHAR` — `try_get_unchecked::<String, _>`
+    // bypasses the runtime type check so the bytes round-trip into a String.
     assemble_row(RowParts {
-        id: id_u64 as i64,
+        id: row.try_get("id")?,
         share_type: row.try_get("share_type")?,
-        share_with: row.try_get("share_with")?,
-        uid_owner: row.try_get("uid_owner")?,
-        uid_initiator: row.try_get("uid_initiator")?,
-        parent: parent_u64.map(|v| v as i64),
-        item_type: row.try_get("item_type")?,
-        item_source: item_source_u64 as i64,
-        file_source: file_source_u64 as i64,
-        file_target: row.try_get("file_target")?,
-        permissions: permissions_u32 as i32,
+        share_with: row.try_get_unchecked("share_with")?,
+        uid_owner: row.try_get_unchecked("uid_owner")?,
+        uid_initiator: row.try_get_unchecked("uid_initiator")?,
+        parent: row.try_get("parent")?,
+        item_type: row.try_get_unchecked("item_type")?,
+        item_source: row.try_get("item_source")?,
+        file_source: row.try_get("file_source")?,
+        file_target: row.try_get_unchecked("file_target")?,
+        permissions: row.try_get("permissions")?,
         stime: row.try_get("stime")?,
         accepted: row.try_get("accepted")?,
-        expiration: row.try_get("expiration")?,
-        token: row.try_get("token")?,
-        password: row.try_get("password")?,
+        // `expiration TIMESTAMP NULL` decodes as `DATETIME` in mysql wire
+        // format; `try_get_unchecked` accepts both since the byte layout is
+        // identical.
+        expiration: row.try_get_unchecked("expiration")?,
+        token: row.try_get_unchecked("token")?,
+        password: row.try_get_unchecked("password")?,
     })
 }
 
@@ -622,13 +652,4 @@ fn row_from_postgres(row: sqlx::postgres::PgRow) -> Result<ShareRow, ShareError>
         token: row.try_get("token")?,
         password: row.try_get("password")?,
     })
-}
-
-trait BoolNot {
-    fn not(self) -> bool;
-}
-impl BoolNot for bool {
-    fn not(self) -> bool {
-        !self
-    }
 }

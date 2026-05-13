@@ -21,6 +21,8 @@ tracing.workspace = true
 [dev-dependencies]
 crabcloud-config = { workspace = true, features = ["test-support"] }
 crabcloud-core.workspace = true
+paste.workspace = true
+secrecy.workspace = true
 tempfile.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 

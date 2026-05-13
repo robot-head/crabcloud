@@ -65,15 +65,11 @@ pub(crate) const INSERT_PG: &str = "INSERT INTO oc_share \
     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) \
     RETURNING id";
 
-pub(crate) const UPDATE_PERMISSIONS_QM: &str =
-    "UPDATE oc_share SET permissions = ? WHERE id = ?";
-pub(crate) const UPDATE_PERMISSIONS_PG: &str =
-    "UPDATE oc_share SET permissions = $1 WHERE id = $2";
+pub(crate) const UPDATE_PERMISSIONS_QM: &str = "UPDATE oc_share SET permissions = ? WHERE id = ?";
+pub(crate) const UPDATE_PERMISSIONS_PG: &str = "UPDATE oc_share SET permissions = $1 WHERE id = $2";
 
-pub(crate) const UPDATE_EXPIRATION_QM: &str =
-    "UPDATE oc_share SET expiration = ? WHERE id = ?";
-pub(crate) const UPDATE_EXPIRATION_PG: &str =
-    "UPDATE oc_share SET expiration = $1 WHERE id = $2";
+pub(crate) const UPDATE_EXPIRATION_QM: &str = "UPDATE oc_share SET expiration = ? WHERE id = ?";
+pub(crate) const UPDATE_EXPIRATION_PG: &str = "UPDATE oc_share SET expiration = $1 WHERE id = $2";
 
 /// Reference each constant so unused-const warnings stay quiet across batches
 /// (some are only consumed once Batch B's CRUD impls land below).
