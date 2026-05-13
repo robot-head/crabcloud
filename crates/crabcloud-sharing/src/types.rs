@@ -79,10 +79,18 @@ pub struct ShareRow {
 #[derive(Debug, Clone)]
 pub struct CreateShareRequest {
     pub requester: String,
-    pub path: String, // absolute path inside requester's home
+    /// Path inside the requester's home, as received on the wire. A leading
+    /// `/` is tolerated and stripped during lookup.
+    pub path: String,
     pub share_type: ShareType,
     pub share_with: String,
-    pub permissions: u32, // raw bitmask from wire
+    /// Raw OCS bitmask. `Shares::create` strips bit 16 and enforces bit 1.
+    pub permissions: u32,
+    /// The storage id under which the requester's filecache rows live. The
+    /// service does not depend on `crabcloud-fs`; the caller (handler /
+    /// `AppState` wiring) resolves this via the home `StorageFactory` and
+    /// passes the resulting string in.
+    pub home_storage_id: String,
 }
 
 #[derive(Debug, Clone, Default)]
