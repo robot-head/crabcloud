@@ -170,7 +170,9 @@ fn ocs_delete(uri: &str, token: &str) -> Request<Body> {
 
 async fn decode(resp: axum::response::Response) -> (StatusCode, serde_json::Value) {
     let status = resp.status();
-    let body = axum::body::to_bytes(resp.into_body(), 64 * 1024).await.unwrap();
+    let body = axum::body::to_bytes(resp.into_body(), 64 * 1024)
+        .await
+        .unwrap();
     let v: serde_json::Value = serde_json::from_slice(&body).unwrap_or(serde_json::Value::Null);
     (status, v)
 }
@@ -581,10 +583,7 @@ async fn delete_shares_recipient_unaccepts_but_owner_still_sees() {
     // Owner's outgoing list still has it.
     let resp = app
         .clone()
-        .oneshot(ocs_get(
-            &format!("{BASE}/shares?format=json"),
-            &alice_token,
-        ))
+        .oneshot(ocs_get(&format!("{BASE}/shares?format=json"), &alice_token))
         .await
         .unwrap();
     let (_, v) = decode(resp).await;

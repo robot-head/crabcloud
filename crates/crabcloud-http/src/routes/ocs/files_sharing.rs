@@ -16,9 +16,7 @@ use axum::{Extension, Form};
 use chrono::NaiveDate;
 use crabcloud_core::AppState;
 use crabcloud_ocs::{render, Format, OcsResponse, OcsStatus, OcsVersion};
-use crabcloud_sharing::{
-    CreateShareRequest, ShareError, ShareRow, ShareType, UpdateShareFields,
-};
+use crabcloud_sharing::{CreateShareRequest, ShareError, ShareRow, ShareType, UpdateShareFields};
 use crabcloud_users::UserId;
 use serde::Deserialize;
 use serde_json::Value;
@@ -232,16 +230,15 @@ async fn get_handler(
         (&row.share_type, row.share_with.as_deref()),
         (ShareType::User, Some(s)) if s == requester
     );
-    let is_group_recipient = if let (ShareType::Group, Some(gname)) =
-        (&row.share_type, row.share_with.as_deref())
-    {
-        match state.users.groups_of(&ctx.user_id).await {
-            Ok(groups) => groups.iter().any(|g| g.as_str() == gname),
-            Err(_) => false,
-        }
-    } else {
-        false
-    };
+    let is_group_recipient =
+        if let (ShareType::Group, Some(gname)) = (&row.share_type, row.share_with.as_deref()) {
+            match state.users.groups_of(&ctx.user_id).await {
+                Ok(groups) => groups.iter().any(|g| g.as_str() == gname),
+                Err(_) => false,
+            }
+        } else {
+            false
+        };
     let is_admin = state.users.is_admin(&ctx.user_id).await.unwrap_or(false);
     // 404 (not 403) on unauthorized — Nextcloud avoids leaking existence.
     if !(is_owner || is_direct || is_group_recipient || is_admin) {

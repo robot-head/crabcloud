@@ -13,10 +13,7 @@ use crabcloud_core::AppState;
 
 pub fn router() -> Router<AppState> {
     Router::new()
-        .nest(
-            "/v2.php/apps/files_sharing/api/v1",
-            files_sharing::router(),
-        )
+        .nest("/v2.php/apps/files_sharing/api/v1", files_sharing::router())
         .route("/v2.php/cloud/capabilities", get(capabilities::handler))
         .route(
             "/v2.php/cloud/user",
