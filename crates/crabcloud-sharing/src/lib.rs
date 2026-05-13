@@ -12,3 +12,13 @@ mod types;
 pub use error::ShareError;
 pub use permissions::SharePermissions;
 // `Shares` and the request/row types are re-exported as their modules are populated below.
+
+// Anchors for crates whose first real call site lands in later tasks/batches
+// (e.g. `async-trait` traits in Batch B; `crabcloud-storage` integrations in
+// Batch C). Keeps the workspace-wide `unused_crate_dependencies` lint quiet
+// without losing the manifest entries.
+use anyhow as _;
+use async_trait as _;
+use crabcloud_storage as _;
+use tokio as _;
+use tracing as _;
