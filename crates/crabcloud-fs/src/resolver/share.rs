@@ -226,13 +226,15 @@ mod tests {
         }
     }
 
+    // (storage_id, fileid) -> Option<StoragePath>. Missing entry = None.
+    type FilecacheEntry = ((String, i64), Option<StoragePath>);
+
     struct FakeFilecache {
-        // (storage_id, fileid) -> Option<StoragePath>. Missing entry = None.
-        entries: Mutex<Vec<((String, i64), Option<StoragePath>)>>,
+        entries: Mutex<Vec<FilecacheEntry>>,
     }
 
     impl FakeFilecache {
-        fn new(entries: Vec<((String, i64), Option<StoragePath>)>) -> Self {
+        fn new(entries: Vec<FilecacheEntry>) -> Self {
             Self {
                 entries: Mutex::new(entries),
             }
@@ -284,7 +286,13 @@ mod tests {
         }
     }
 
-    fn share_row(id: i64, owner: &str, recipient: &str, file_target: &str, item_source: i64) -> ShareRow {
+    fn share_row(
+        id: i64,
+        owner: &str,
+        recipient: &str,
+        file_target: &str,
+        item_source: i64,
+    ) -> ShareRow {
         ShareRow {
             id,
             share_type: ShareType::User,

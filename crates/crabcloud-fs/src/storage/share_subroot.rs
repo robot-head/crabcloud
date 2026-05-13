@@ -202,7 +202,10 @@ mod tests {
     async fn seed_owner() -> Arc<dyn Storage> {
         let inner: Arc<dyn Storage> = Arc::new(MemoryStorage::new("alice"));
         inner
-            .mkdir(&StoragePath::new("Vacation Photos").unwrap(), &NoopEventSink)
+            .mkdir(
+                &StoragePath::new("Vacation Photos").unwrap(),
+                &NoopEventSink,
+            )
             .await
             .unwrap();
         inner
@@ -244,7 +247,10 @@ mod tests {
     async fn write_existing_with_update_bit_succeeds() {
         let s = wrap(seed_owner().await, 3);
         let p = StoragePath::new("x.jpg").unwrap();
-        let m = s.put_file(&p, body(b"newer"), &NoopEventSink).await.unwrap();
+        let m = s
+            .put_file(&p, body(b"newer"), &NoopEventSink)
+            .await
+            .unwrap();
         assert_eq!(m.size, 5);
     }
 
