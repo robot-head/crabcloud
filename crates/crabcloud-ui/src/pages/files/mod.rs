@@ -8,6 +8,7 @@ pub mod delete_modal;
 pub mod list;
 pub mod mkdir_row;
 pub mod path;
+pub mod progress_strip;
 pub mod row;
 pub mod states;
 pub mod toolbar;
