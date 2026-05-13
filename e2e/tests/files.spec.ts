@@ -41,7 +41,9 @@ async function gotoFiles(page: any, path: string = "/apps/files/") {
 test.describe("Files web UI", () => {
     test("anonymous /apps/files redirects to login with redirect_url", async ({ page }) => {
         const r = await page.goto("/apps/files/", { waitUntil: "domcontentloaded" });
-        expect(r!.url()).toContain("/index.php/login");
+        // Redirect target is the `/login` UI route, not `/index.php/login`
+        // (which is the POST-only server-fn endpoint and returns 405 on GET).
+        expect(r!.url()).toContain("/login");
         expect(r!.url()).toContain("redirect_url");
         // Server normalizes the root path: `/apps/files/` → `/apps/files`
         // (no trailing slash). The router serves both, so this is fine.
