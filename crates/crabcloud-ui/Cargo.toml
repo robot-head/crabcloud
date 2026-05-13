@@ -24,6 +24,7 @@ server = [
     "dep:axum",
     "dep:crabcloud-cache",
     "dep:crabcloud-core",
+    "dep:crabcloud-fs",
     "dep:crabcloud-http",
     "dep:crabcloud-i18n",
     "dep:crabcloud-users",
@@ -44,6 +45,7 @@ serde.workspace = true
 axum = { workspace = true, optional = true }
 crabcloud-cache = { workspace = true, optional = true }
 crabcloud-core = { workspace = true, optional = true }
+crabcloud-fs = { workspace = true, optional = true }
 crabcloud-http = { workspace = true, optional = true }
 crabcloud-i18n = { workspace = true, optional = true }
 crabcloud-users = { workspace = true, optional = true }
