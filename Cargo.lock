@@ -754,6 +754,7 @@ dependencies = [
  "crabcloud-fs",
  "crabcloud-i18n",
  "crabcloud-ocs",
+ "crabcloud-sharing",
  "crabcloud-storage",
  "crabcloud-users",
  "dashmap",

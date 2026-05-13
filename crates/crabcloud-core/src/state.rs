@@ -7,7 +7,10 @@ use crabcloud_cache::{Cache, MemoryCache};
 use crabcloud_config::FileConfig;
 use crabcloud_db::{core_set, DbPool, MigrationRunner};
 use crabcloud_filecache::{FileCache, Scanner};
-use crabcloud_fs::{HomeMountResolver, LocalStorageFactory, MountResolver, Uploads, View};
+use crabcloud_fs::{
+    HomeMountResolver, LocalStorageFactory, MountResolver, ShareMountResolver, StorageFactory,
+    Uploads, View,
+};
 use crabcloud_i18n::I18n;
 use crabcloud_ocs::CapabilityProvider;
 use crabcloud_storage::ChannelEventSink;
@@ -44,10 +47,17 @@ pub struct AppState {
     /// `AppStateBuilder::build` iff `config.filecache.enabled` is true;
     /// `register_storage` / `full_scan` work regardless.
     pub scanner: Arc<Scanner>,
-    /// Resolves per-user mounts. 4c default: `HomeMountResolver` over
-    /// `LocalStorageFactory` (which uses `config.datadirectory`). Later
-    /// sub-projects (sharing, external storage) layer additional resolvers.
+    /// Resolves per-user mounts. SP7 default: `ShareMountResolver` wrapping
+    /// `HomeMountResolver` over `LocalStorageFactory` so accepted incoming
+    /// shares show up as extra mounts alongside the user's home.
     pub mount_resolver: Arc<dyn MountResolver>,
+    /// Per-user home storage factory. Exposed so OCS / server-fn layers can
+    /// resolve `home_storage(uid).id()` for filecache lookups without
+    /// reconstructing the factory.
+    pub storage_factory: Arc<dyn StorageFactory>,
+    /// User + group sharing service. Reads / writes `oc_share` and resolves
+    /// recipient memberships via `users`.
+    pub shares: Arc<crabcloud_sharing::Shares>,
     /// In-process map from the client-chosen URL-segment `upload_id` (the
     /// `{upload_id}` path component in `/dav/uploads/{user}/{upload_id}/...`)
     /// to the server-encoded `upload_id` returned by `Uploads::begin`. Holds
@@ -253,9 +263,21 @@ impl AppStateBuilder {
             std::mem::drop(scanner.clone().spawn());
         }
 
-        // Mount resolver: 4c ships home-only via LocalStorageFactory.
-        let factory = Arc::new(LocalStorageFactory::new(self.config.datadirectory.clone()));
-        let mount_resolver: Arc<dyn MountResolver> = Arc::new(HomeMountResolver::new(factory));
+        // Mount resolver: SP7 wraps HomeMountResolver with ShareMountResolver
+        // so accepted incoming shares surface as extra mounts.
+        let storage_factory: Arc<dyn StorageFactory> =
+            Arc::new(LocalStorageFactory::new(self.config.datadirectory.clone()));
+        let shares = Arc::new(crabcloud_sharing::Shares::new(
+            Arc::new(pool.clone()),
+            Arc::new(users.clone()),
+            filecache.clone(),
+        ));
+        let mount_resolver: Arc<dyn MountResolver> = Arc::new(ShareMountResolver::new(
+            HomeMountResolver::new(storage_factory.clone()),
+            shares.clone(),
+            storage_factory.clone(),
+            filecache.clone(),
+        ));
 
         let upload_id_map = Arc::new(DashMap::new());
 
@@ -271,6 +293,8 @@ impl AppStateBuilder {
             filecache,
             scanner,
             mount_resolver,
+            storage_factory,
+            shares,
             upload_id_map,
         };
 
