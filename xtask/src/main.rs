@@ -70,11 +70,12 @@ fn build_all() -> Result<()> {
     // binary, the WASM client bundle, and the generated index.html. The
     // legacy two-step (dx → cargo) flow doesn't apply once SSR runs through
     // `dioxus::server::router(App)` instead of rust-embed.
-    run_in_dir(
-        "crates/crabcloud-ui",
-        "dx",
-        &["build", "--release", "--platform", "fullstack"],
-    )?;
+    //
+    // We omit `--platform` because the dx 0.7 CLI no longer accepts the old
+    // `fullstack` value; left empty it defaults to the platform inferred
+    // from `Dioxus.toml` / the crate's [[bin]] config, which for this crate
+    // produces the same dual output (server bin + web bundle).
+    run_in_dir("crates/crabcloud-ui", "dx", &["build", "--release"])?;
     // Server binary builds standalone too, for non-dx deploys (uses the
     // bundle dx produced above for asset serving at runtime).
     run("cargo", &["build", "--release", "-p", "crabcloud-server"])?;
