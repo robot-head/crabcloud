@@ -76,11 +76,11 @@ fn from_share_error(err: ShareError, fmt: Format) -> Response {
 
 async fn display_name_of(state: &AppState, raw_uid: &str) -> String {
     let Ok(uid) = UserId::new(raw_uid) else {
-        return String::new();
+        return raw_uid.to_string();
     };
     match state.users.user_store().lookup(&uid).await {
-        Ok(Some(u)) => u.display_name,
-        _ => String::new(),
+        Ok(Some(u)) if !u.display_name.is_empty() => u.display_name,
+        _ => raw_uid.to_string(),
     }
 }
 
