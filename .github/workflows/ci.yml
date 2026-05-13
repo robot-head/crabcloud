@@ -36,20 +36,13 @@ jobs:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
       - name: Install dioxus-cli
-        # `--force` so a Swatinem/rust-cache-cached older 0.7 binary doesn't
-        # win over the current 0.7 patch. The CLI's emitted bundle layout
-        # has shifted within 0.7 (hashed-in-assets vs. plain-in-wasm/) and
-        # the workflow below assumes the current behavior.
-        run: cargo install dioxus-cli --version "^0.7" --locked --force
+        run: cargo install dioxus-cli --version "^0.7" --locked
       - name: Build WASM bundle
-        # `crabcloud-ui` is a Dioxus 0.7 fullstack crate; we omit `--platform`
-        # because dx 0.7 no longer accepts `fullstack` (and `web` produces a
-        # hash-fingerprinted layout that we then had to symlink-patch). With
-        # no platform flag dx infers from Dioxus.toml / the crate's [[bin]]
-        # config and writes an unhashed `wasm/` subtree that the server
-        # serves verbatim — no rename workaround needed.
+        # `crabcloud-ui` is a Dioxus 0.7 fullstack crate; here we only need
+        # the browser bundle. The native side of the same source compiles to
+        # a no-op stub bin (the real server is `crabcloud-server`).
         working-directory: crates/crabcloud-ui
-        run: dx build --release
+        run: dx build --release --platform web
       - name: Upload built bundle
         uses: actions/upload-artifact@v7
         with:
@@ -126,6 +119,23 @@ jobs:
           path: target/dx/crabcloud-ui/release/web/public
       - name: Build release server
         run: cargo build --release -p crabcloud-server
+      - name: Workaround dx wasm-bundle mismatch
+        # `dx build --release` fingerprints both the JS bundle and the .wasm
+        # (`crabcloud-ui-<hash>.js`, `crabcloud-ui_bg-<hash>.wasm`), but the
+        # JS bundle still contains `new URL('./crabcloud-ui_bg.wasm',
+        # import.meta.url)` from wasm-bindgen's ESM glue — that import isn't
+        # rewritten to the hashed name. The dx-appended `__wbg_init(...)`
+        # override fetches the hashed path, but wasm-bindgen's own preload
+        # against the un-hashed name 404s first. Symlink the un-hashed name
+        # to the hashed payload so both code paths resolve.
+        run: |
+          set -e
+          pub=target/dx/crabcloud-ui/release/web/public/assets
+          hashed=$(find "$pub" -name 'crabcloud-ui_bg-*.wasm' -print -quit)
+          if [ -n "$hashed" ] && [ ! -e "$pub/crabcloud-ui_bg.wasm" ]; then
+            ln -sf "$(basename "$hashed")" "$pub/crabcloud-ui_bg.wasm"
+            echo "linked $pub/crabcloud-ui_bg.wasm -> $(basename "$hashed")"
+          fi
       - uses: actions/setup-node@v6
         with:
           node-version: "24"
