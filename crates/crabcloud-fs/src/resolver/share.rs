@@ -131,6 +131,9 @@ impl MountResolver for ShareMountResolver {
                 None => {
                     tracing::warn!(
                         share_id = row.id,
+                        fileid = row.item_source,
+                        owner_uid = %row.uid_owner,
+                        recipient_uid = %uid.as_str(),
                         "share source not in filecache; skipping mount"
                     );
                     continue;

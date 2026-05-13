@@ -358,6 +358,25 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn begin_multipart_new_without_create_bit_denied() {
+        // read|update (3) — same as the put_file new-path case.
+        let s = wrap(seed_owner().await, 3);
+        let r = s
+            .begin_multipart(&StoragePath::new("new.bin").unwrap(), &NoopEventSink)
+            .await;
+        assert!(matches!(r, Err(StorageError::PermissionDenied)));
+    }
+
+    #[tokio::test]
+    async fn begin_multipart_existing_without_update_bit_denied() {
+        let s = wrap(seed_owner().await, 1); // read only
+        let r = s
+            .begin_multipart(&StoragePath::new("x.jpg").unwrap(), &NoopEventSink)
+            .await;
+        assert!(matches!(r, Err(StorageError::PermissionDenied)));
+    }
+
+    #[tokio::test]
     async fn translate_does_not_leak_above_owner_path() {
         // Sanity check: a wrapped storage cannot reach sibling content.
         // Recipient asks to read at the root of their view; that's exactly
