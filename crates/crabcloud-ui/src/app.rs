@@ -113,11 +113,16 @@ const APP_CSS: Asset = asset!("/assets/app.css");
 /// issue by sending `ocs-apirequest: true`, but that bypasses CSRF rather
 /// than satisfying it — we want the real token on the standard server-fn
 /// path so protection stays in place.
+///
+/// Called from `main.rs` before `dioxus::launch` so the patch is in place
+/// before any component code runs (and well before list_dir fires its
+/// first request). The patched function reads the meta tag at call time,
+/// not at install time, so it doesn't matter that the App component hasn't
+/// rendered yet — the SSR'd HTML already has the tag in the document.
 #[cfg(target_arch = "wasm32")]
-fn install_csrf_fetch_interceptor() {
-    // The guard (`__crabcloud_fetch_patched`) makes the patch idempotent so
-    // a second call (e.g., from a re-render before the `use_hook` short-
-    // circuits) is a no-op.
+pub fn install_csrf_fetch_interceptor() {
+    // The guard makes the patch idempotent in case this is somehow called
+    // more than once over the WASM bundle's lifetime.
     const JS: &str = r#"
         (function() {
             if (window.__crabcloud_fetch_patched) return;
@@ -146,9 +151,17 @@ fn install_csrf_fetch_interceptor() {
                 }
                 return orig(input, init);
             };
+            try { console.log("[crabcloud] CSRF fetch interceptor installed"); } catch (e) {}
         })();
     "#;
-    let _ = js_sys::eval(JS);
+    match js_sys::eval(JS) {
+        Ok(_) => {}
+        Err(e) => {
+            web_sys::console::error_1(
+                &format!("[crabcloud] CSRF fetch interceptor install failed: {e:?}").into(),
+            );
+        }
+    }
 }
 
 /// Root component. Captures the per-request context on the server, replays it
@@ -168,14 +181,6 @@ pub fn App() -> Element {
         }
     });
     use_context_provider(|| ctx.clone());
-
-    // Install the CSRF fetch interceptor exactly once on the client.
-    // `use_hook` runs the closure on first render and caches the result,
-    // so subsequent renders skip the (idempotent) JS eval entirely.
-    #[cfg(target_arch = "wasm32")]
-    use_hook(|| {
-        install_csrf_fetch_interceptor();
-    });
 
     let mut hydrated = use_signal(|| false);
     use_effect(move || {
