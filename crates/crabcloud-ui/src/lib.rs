@@ -22,6 +22,20 @@ use crabcloud_fs as _;
 #[cfg(not(target_arch = "wasm32"))]
 use js_sys as _;
 
+// Web-platform deps used by the chunked-upload state machine in
+// `pages::files::upload`. They're only referenced under
+// `#[cfg(target_arch = "wasm32")]` so the native (server) build doesn't
+// actually touch them — anchor them here to silence
+// `unused_crate_dependencies` on the server.
+#[cfg(not(target_arch = "wasm32"))]
+use gloo_net as _;
+#[cfg(not(target_arch = "wasm32"))]
+use wasm_bindgen as _;
+#[cfg(not(target_arch = "wasm32"))]
+use wasm_bindgen_futures as _;
+#[cfg(not(target_arch = "wasm32"))]
+use web_sys as _;
+
 mod app;
 mod context;
 pub mod pages;

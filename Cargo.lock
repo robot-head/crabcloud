@@ -929,6 +929,7 @@ dependencies = [
  "crabcloud-storage",
  "crabcloud-users",
  "dioxus",
+ "gloo-net",
  "hex",
  "js-sys",
  "rand 0.10.1",
@@ -938,6 +939,9 @@ dependencies = [
  "tokio",
  "tower",
  "tracing",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
 ]
 
 [[package]]

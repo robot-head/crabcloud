@@ -106,3 +106,14 @@ form button { margin-top: 1rem; padding: 0.5rem 1rem; font: inherit; cursor: poi
 .files-chip-danger { color: #d33; }
 .files-chip-close { background: none; border: 0; padding: 2px 6px; cursor: pointer; color: inherit; opacity: 0.6; }
 .files-chip-close:hover { opacity: 1; }
+
+/* ---- Upload drop overlay (Batch E) ----
+ * The overlay covers `.files-main` while a drag is in flight. pointer-events
+ * are off so the underlying drop handler on `.files-main` still fires; the
+ * drop target inside is decorative.
+ */
+.files-main { position: relative; }
+.files-drop-overlay { position: absolute; inset: 0; background: rgba(0,130,201,0.08); display: flex; align-items: center; justify-content: center; pointer-events: none; z-index: 5; }
+.files-drop-target { border: 3px dashed #0082c9; border-radius: 8px; padding: 32px 48px; color: #0082c9; background: white; text-align: center; }
+.files-drop-icon { font-size: 32px; }
+.files-drop-title { font-weight: 600; margin-top: 8px; }

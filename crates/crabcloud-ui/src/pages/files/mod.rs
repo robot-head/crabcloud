@@ -11,6 +11,7 @@ pub mod path;
 pub mod row;
 pub mod states;
 pub mod toolbar;
+pub mod upload;
 
 #[cfg(feature = "server")]
 pub mod ssr;
