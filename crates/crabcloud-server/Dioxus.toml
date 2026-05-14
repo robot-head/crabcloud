@@ -1,0 +1,5 @@
+[application]
+name = "crabcloud-server"
+
+[web.app]
+default_platform = "web"

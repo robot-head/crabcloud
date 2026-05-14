@@ -17,7 +17,7 @@ crabcloud-core.workspace = true
 crabcloud-http.workspace = true
 crabcloud-ui = { workspace = true, features = ["server"] }
 crabcloud-users.workspace = true
-dioxus = { workspace = true, features = ["server"] }
+dioxus = { workspace = true, features = ["fullstack"] }
 rpassword.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal"] }
 tracing.workspace = true
