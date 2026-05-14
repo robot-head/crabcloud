@@ -54,14 +54,30 @@ impl Shares {
 
         match req.share_type {
             ShareType::User => {
-                UserId::new(req.share_with.clone()).map_err(|_| ShareError::RecipientUnknown)?;
-                if !user_row_exists(&self.pool, &req.share_with).await? {
+                let uid = UserId::new(req.share_with.clone())
+                    .map_err(|_| ShareError::RecipientUnknown)?;
+                if self
+                    .users
+                    .user_store()
+                    .lookup(&uid)
+                    .await
+                    .map_err(map_users)?
+                    .is_none()
+                {
                     return Err(ShareError::RecipientUnknown);
                 }
             }
             ShareType::Group => {
-                GroupId::new(req.share_with.clone()).map_err(|_| ShareError::RecipientUnknown)?;
-                if !group_row_exists(&self.pool, &req.share_with).await? {
+                let gid = GroupId::new(req.share_with.clone())
+                    .map_err(|_| ShareError::RecipientUnknown)?;
+                if self
+                    .users
+                    .group_store()
+                    .lookup(&gid)
+                    .await
+                    .map_err(map_users)?
+                    .is_none()
+                {
                     return Err(ShareError::RecipientUnknown);
                 }
             }
@@ -536,63 +552,6 @@ fn map_filecache(e: crabcloud_filecache::FileCacheError) -> ShareError {
         FE::Db(err) => ShareError::DbError(err),
         FE::NotFound | FE::AncestorMissing(_) | FE::Storage(_) | FE::Invalid(_) => {
             ShareError::PathNotOwned
-        }
-    }
-}
-
-// Direct `SELECT 1 FROM oc_users / oc_groups WHERE …` instead of going
-// through `UsersService::lookup` because `SqlUserStore::lookup` decodes
-// `enabled SMALLINT` as `i64`, which only matches sqlite's storage class
-// — it fails on mysql (`TINYINT`) and postgres (`INT2`). Unwind this
-// workaround when the upstream bug in `crabcloud-users` is fixed.
-async fn user_row_exists(pool: &DbPool, uid: &str) -> Result<bool, ShareError> {
-    match pool {
-        DbPool::Sqlite(p) => {
-            let row: Option<(i64,)> = sqlx::query_as("SELECT 1 FROM oc_users WHERE uid = ?")
-                .bind(uid)
-                .fetch_optional(p)
-                .await?;
-            Ok(row.is_some())
-        }
-        DbPool::MySql(p) => {
-            let row: Option<(i64,)> = sqlx::query_as("SELECT 1 FROM oc_users WHERE uid = ?")
-                .bind(uid)
-                .fetch_optional(p)
-                .await?;
-            Ok(row.is_some())
-        }
-        DbPool::Postgres(p) => {
-            let row: Option<(i32,)> = sqlx::query_as("SELECT 1 FROM oc_users WHERE uid = $1")
-                .bind(uid)
-                .fetch_optional(p)
-                .await?;
-            Ok(row.is_some())
-        }
-    }
-}
-
-async fn group_row_exists(pool: &DbPool, gid: &str) -> Result<bool, ShareError> {
-    match pool {
-        DbPool::Sqlite(p) => {
-            let row: Option<(i64,)> = sqlx::query_as("SELECT 1 FROM oc_groups WHERE gid = ?")
-                .bind(gid)
-                .fetch_optional(p)
-                .await?;
-            Ok(row.is_some())
-        }
-        DbPool::MySql(p) => {
-            let row: Option<(i64,)> = sqlx::query_as("SELECT 1 FROM oc_groups WHERE gid = ?")
-                .bind(gid)
-                .fetch_optional(p)
-                .await?;
-            Ok(row.is_some())
-        }
-        DbPool::Postgres(p) => {
-            let row: Option<(i32,)> = sqlx::query_as("SELECT 1 FROM oc_groups WHERE gid = $1")
-                .bind(gid)
-                .fetch_optional(p)
-                .await?;
-            Ok(row.is_some())
         }
     }
 }
