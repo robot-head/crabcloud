@@ -54,7 +54,7 @@ impl UserStore for SqlUserStore {
         let row: Option<(String, Option<String>, Option<String>, i64, i64)> = match &self.pool {
             DbPool::Sqlite(p) => map_sqlx(
                 sqlx::query_as(
-                    "SELECT uid, displayname, email, last_seen, enabled FROM oc_users WHERE uid = ?",
+                    "SELECT uid, displayname, email, last_seen, CAST(enabled AS BIGINT) FROM oc_users WHERE uid = ?",
                 )
                 .bind(uid.as_str())
                 .fetch_optional(p)
@@ -62,7 +62,7 @@ impl UserStore for SqlUserStore {
             )?,
             DbPool::MySql(p) => map_sqlx(
                 sqlx::query_as(
-                    "SELECT uid, displayname, email, last_seen, enabled FROM oc_users WHERE uid = ?",
+                    "SELECT uid, displayname, email, last_seen, CAST(enabled AS SIGNED) FROM oc_users WHERE uid = ?",
                 )
                 .bind(uid.as_str())
                 .fetch_optional(p)
@@ -70,7 +70,7 @@ impl UserStore for SqlUserStore {
             )?,
             DbPool::Postgres(p) => map_sqlx(
                 sqlx::query_as(
-                    "SELECT uid, displayname, email, last_seen, enabled FROM oc_users WHERE uid = $1",
+                    "SELECT uid, displayname, email, last_seen, CAST(enabled AS BIGINT) FROM oc_users WHERE uid = $1",
                 )
                 .bind(uid.as_str())
                 .fetch_optional(p)
@@ -95,7 +95,7 @@ impl UserStore for SqlUserStore {
             let row: Option<(String, Option<String>, Option<String>, i64, i64)> = match &self.pool {
                 DbPool::Sqlite(p) => map_sqlx(
                     sqlx::query_as(
-                        "SELECT uid, displayname, email, last_seen, enabled FROM oc_users WHERE LOWER(email) = ?",
+                        "SELECT uid, displayname, email, last_seen, CAST(enabled AS BIGINT) FROM oc_users WHERE LOWER(email) = ?",
                     )
                     .bind(&lower)
                     .fetch_optional(p)
@@ -103,7 +103,7 @@ impl UserStore for SqlUserStore {
                 )?,
                 DbPool::MySql(p) => map_sqlx(
                     sqlx::query_as(
-                        "SELECT uid, displayname, email, last_seen, enabled FROM oc_users WHERE LOWER(email) = ?",
+                        "SELECT uid, displayname, email, last_seen, CAST(enabled AS SIGNED) FROM oc_users WHERE LOWER(email) = ?",
                     )
                     .bind(&lower)
                     .fetch_optional(p)
@@ -111,7 +111,7 @@ impl UserStore for SqlUserStore {
                 )?,
                 DbPool::Postgres(p) => map_sqlx(
                     sqlx::query_as(
-                        "SELECT uid, displayname, email, last_seen, enabled FROM oc_users WHERE LOWER(email) = $1",
+                        "SELECT uid, displayname, email, last_seen, CAST(enabled AS BIGINT) FROM oc_users WHERE LOWER(email) = $1",
                     )
                     .bind(&lower)
                     .fetch_optional(p)
@@ -130,7 +130,7 @@ impl UserStore for SqlUserStore {
             match &self.pool {
                 DbPool::Sqlite(p) => map_sqlx(
                     sqlx::query_as(
-                        "SELECT uid, displayname, email, password, last_seen, enabled FROM oc_users WHERE uid = ? OR LOWER(email) = ?",
+                        "SELECT uid, displayname, email, password, last_seen, CAST(enabled AS BIGINT) FROM oc_users WHERE uid = ? OR LOWER(email) = ?",
                     )
                     .bind(login)
                     .bind(login.to_ascii_lowercase())
@@ -139,7 +139,7 @@ impl UserStore for SqlUserStore {
                 )?,
                 DbPool::MySql(p) => map_sqlx(
                     sqlx::query_as(
-                        "SELECT uid, displayname, email, password, last_seen, enabled FROM oc_users WHERE uid = ? OR LOWER(email) = ?",
+                        "SELECT uid, displayname, email, password, last_seen, CAST(enabled AS SIGNED) FROM oc_users WHERE uid = ? OR LOWER(email) = ?",
                     )
                     .bind(login)
                     .bind(login.to_ascii_lowercase())
@@ -148,7 +148,7 @@ impl UserStore for SqlUserStore {
                 )?,
                 DbPool::Postgres(p) => map_sqlx(
                     sqlx::query_as(
-                        "SELECT uid, displayname, email, password, last_seen, enabled FROM oc_users WHERE uid = $1 OR LOWER(email) = $2",
+                        "SELECT uid, displayname, email, password, last_seen, CAST(enabled AS BIGINT) FROM oc_users WHERE uid = $1 OR LOWER(email) = $2",
                     )
                     .bind(login)
                     .bind(login.to_ascii_lowercase())
@@ -518,7 +518,7 @@ impl UserStore for SqlUserStore {
             match (&self.pool, pattern) {
                 (DbPool::Sqlite(p), Some(pat)) => map_sqlx(
                     sqlx::query_as(
-                        "SELECT uid, displayname, email, last_seen, enabled FROM oc_users \
+                        "SELECT uid, displayname, email, last_seen, CAST(enabled AS BIGINT) FROM oc_users \
                      WHERE LOWER(uid) LIKE ? \
                         OR LOWER(COALESCE(displayname, '')) LIKE ? \
                         OR LOWER(COALESCE(email, '')) LIKE ? \
@@ -534,7 +534,7 @@ impl UserStore for SqlUserStore {
                 )?,
                 (DbPool::Sqlite(p), None) => map_sqlx(
                     sqlx::query_as(
-                        "SELECT uid, displayname, email, last_seen, enabled FROM oc_users \
+                        "SELECT uid, displayname, email, last_seen, CAST(enabled AS BIGINT) FROM oc_users \
                      ORDER BY uid ASC LIMIT ? OFFSET ?",
                     )
                     .bind(limit_i)
@@ -544,7 +544,7 @@ impl UserStore for SqlUserStore {
                 )?,
                 (DbPool::MySql(p), Some(pat)) => map_sqlx(
                     sqlx::query_as(
-                        "SELECT uid, displayname, email, last_seen, enabled FROM oc_users \
+                        "SELECT uid, displayname, email, last_seen, CAST(enabled AS SIGNED) FROM oc_users \
                      WHERE LOWER(uid) LIKE ? \
                         OR LOWER(COALESCE(displayname, '')) LIKE ? \
                         OR LOWER(COALESCE(email, '')) LIKE ? \
@@ -560,7 +560,7 @@ impl UserStore for SqlUserStore {
                 )?,
                 (DbPool::MySql(p), None) => map_sqlx(
                     sqlx::query_as(
-                        "SELECT uid, displayname, email, last_seen, enabled FROM oc_users \
+                        "SELECT uid, displayname, email, last_seen, CAST(enabled AS SIGNED) FROM oc_users \
                      ORDER BY uid ASC LIMIT ? OFFSET ?",
                     )
                     .bind(limit_i)
@@ -570,7 +570,7 @@ impl UserStore for SqlUserStore {
                 )?,
                 (DbPool::Postgres(p), Some(pat)) => map_sqlx(
                     sqlx::query_as(
-                        "SELECT uid, displayname, email, last_seen, enabled FROM oc_users \
+                        "SELECT uid, displayname, email, last_seen, CAST(enabled AS BIGINT) FROM oc_users \
                      WHERE LOWER(uid) LIKE $1 \
                         OR LOWER(COALESCE(displayname, '')) LIKE $1 \
                         OR LOWER(COALESCE(email, '')) LIKE $1 \
@@ -584,7 +584,7 @@ impl UserStore for SqlUserStore {
                 )?,
                 (DbPool::Postgres(p), None) => map_sqlx(
                     sqlx::query_as(
-                        "SELECT uid, displayname, email, last_seen, enabled FROM oc_users \
+                        "SELECT uid, displayname, email, last_seen, CAST(enabled AS BIGINT) FROM oc_users \
                      ORDER BY uid ASC LIMIT $1 OFFSET $2",
                     )
                     .bind(limit_i)
