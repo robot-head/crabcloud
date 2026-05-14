@@ -16,6 +16,22 @@ use crabcloud_cache as _;
 #[cfg(feature = "server")]
 use crabcloud_fs as _;
 
+// Native-target binary deps. `main.rs` (CLI + serve) consumes these directly,
+// but the lib doesn't — anchor them here on non-wasm so the workspace's
+// `unused_crate_dependencies = warn` lint stays quiet.
+#[cfg(not(target_arch = "wasm32"))]
+use anyhow as _;
+#[cfg(not(target_arch = "wasm32"))]
+use clap as _;
+#[cfg(not(target_arch = "wasm32"))]
+use crabcloud_config as _;
+#[cfg(not(target_arch = "wasm32"))]
+use rpassword as _;
+#[cfg(not(target_arch = "wasm32"))]
+use tokio as _;
+#[cfg(not(target_arch = "wasm32"))]
+use tracing_subscriber as _;
+
 // `js-sys` is consumed only by the wasm32 `current_time_ms` helper in
 // `pages::files::row`. The dependency must still be declared for the WASM
 // build, so silence the unused-crate lint on native targets.

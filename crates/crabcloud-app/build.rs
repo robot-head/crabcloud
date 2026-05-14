@@ -1,4 +1,4 @@
-//! Build script for `crabcloud-server`. Captures git SHA via `git rev-parse HEAD`
+//! Build script for `crabcloud-app`. Captures git SHA via `git rev-parse HEAD`
 //! and emits it as a `cargo:rustc-env=CRABCLOUD_GIT_SHA=...` line so
 //! `option_env!()` in main.rs can read it.
 //!

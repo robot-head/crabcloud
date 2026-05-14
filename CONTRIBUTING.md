@@ -43,7 +43,7 @@ cargo xtask down
 cargo xtask build
 
 # Run the server
-cargo run --release -p crabcloud-server -- --config config/config.toml serve
+cargo run --release -p crabcloud-app -- --config config/config.toml serve
 
 # Playwright E2E (requires server already running on :18765)
 cd e2e

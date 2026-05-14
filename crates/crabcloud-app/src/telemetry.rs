@@ -1,3 +1,5 @@
+#![cfg(not(target_arch = "wasm32"))]
+
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 /// Initialize the global tracing subscriber.

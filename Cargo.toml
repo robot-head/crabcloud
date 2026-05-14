@@ -10,7 +10,6 @@ members = [
     "crates/crabcloud-http",
     "crates/crabcloud-i18n",
     "crates/crabcloud-ocs",
-    "crates/crabcloud-server",
     "crates/crabcloud-sharing",
     "crates/crabcloud-storage",
     "crates/crabcloud-users",
