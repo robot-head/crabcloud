@@ -132,12 +132,13 @@ async fn list_dir_returns_entries() {
     let body = axum::body::to_bytes(resp.into_body(), 64 * 1024)
         .await
         .unwrap();
-    let entries: Vec<crabcloud_ui::FileEntry> = serde_json::from_slice(&body).unwrap_or_else(|e| {
-        panic!(
-            "decode entries: {e} body={:?}",
-            String::from_utf8_lossy(&body)
-        )
-    });
+    let entries: Vec<crabcloud_app::FileEntry> =
+        serde_json::from_slice(&body).unwrap_or_else(|e| {
+            panic!(
+                "decode entries: {e} body={:?}",
+                String::from_utf8_lossy(&body)
+            )
+        });
     assert!(
         entries.iter().any(|e| e.name == "hello.txt" && !e.is_dir),
         "expected hello.txt in {:?}",
@@ -349,7 +350,7 @@ async fn upload_begin_returns_opaque_id() {
     let body = axum::body::to_bytes(resp.into_body(), 8 * 1024)
         .await
         .unwrap();
-    let parsed: crabcloud_ui::UploadBeginResponse = serde_json::from_slice(&body).unwrap();
+    let parsed: crabcloud_app::UploadBeginResponse = serde_json::from_slice(&body).unwrap();
     assert!(parsed.upload_id.contains(':'));
 }
 
@@ -419,7 +420,7 @@ async fn list_dir_decorates_shared_by_for_recipient_and_share_count_for_owner() 
     let body = axum::body::to_bytes(resp.into_body(), 64 * 1024)
         .await
         .unwrap();
-    let entries: Vec<crabcloud_ui::FileEntry> = serde_json::from_slice(&body).unwrap();
+    let entries: Vec<crabcloud_app::FileEntry> = serde_json::from_slice(&body).unwrap();
     let photos = entries
         .iter()
         .find(|e| e.name == "Photos")
@@ -438,7 +439,7 @@ async fn list_dir_decorates_shared_by_for_recipient_and_share_count_for_owner() 
     let body = axum::body::to_bytes(resp.into_body(), 64 * 1024)
         .await
         .unwrap();
-    let entries: Vec<crabcloud_ui::FileEntry> = serde_json::from_slice(&body).unwrap();
+    let entries: Vec<crabcloud_app::FileEntry> = serde_json::from_slice(&body).unwrap();
     let photos = entries
         .iter()
         .find(|e| e.name == "Photos")

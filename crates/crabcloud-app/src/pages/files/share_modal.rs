@@ -8,7 +8,7 @@
 //! share row driving permission-bitmask `PUT`s, and `✕` issuing a
 //! `DELETE /shares/{id}` followed by a list refresh. Modal chrome
 //! follows `DeleteModal`'s backdrop + panel idiom; CSS classes live in
-//! `crates/crabcloud-ui/assets/app.css` under `.share-modal*`.
+//! `crates/crabcloud-app/assets/app.css` under `.share-modal*`.
 
 use crate::server_fns::{share_recipient_search, RecipientCandidate};
 use dioxus::prelude::*;

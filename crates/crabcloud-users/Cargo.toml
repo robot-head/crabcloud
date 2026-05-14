@@ -25,10 +25,10 @@ tracing.workspace = true
 
 [dev-dependencies]
 axum.workspace = true
+crabcloud-app = { workspace = true, features = ["server"] }
 crabcloud-config = { workspace = true, features = ["test-support"] }
 crabcloud-core.workspace = true
 crabcloud-http.workspace = true
-crabcloud-ui = { workspace = true, features = ["server"] }
 dioxus.workspace = true
 secrecy = { workspace = true, features = ["serde"] }
 serde_json.workspace = true

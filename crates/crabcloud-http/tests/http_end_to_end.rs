@@ -1,7 +1,7 @@
 //! End-to-end HTTP flow for the OCS surface and the shared middleware stack.
 //!
 //! `/status.php` and `/index.php/login` migrated to Dioxus `#[server]`
-//! functions in `crabcloud-ui` and are now exercised by the Playwright suite;
+//! functions in `crabcloud-app` and are now exercised by the Playwright suite;
 //! this test focuses on what `build_router` still serves directly (the OCS
 //! REST routes) plus the shared headers/security stack.
 

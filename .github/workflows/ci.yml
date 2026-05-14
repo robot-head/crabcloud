@@ -38,16 +38,16 @@ jobs:
       - name: Install dioxus-cli
         run: cargo install dioxus-cli --version "^0.7" --locked
       - name: Build WASM bundle
-        # `crabcloud-ui` is a Dioxus 0.7 fullstack crate; here we only need
+        # `crabcloud-app` is a Dioxus 0.7 fullstack crate; here we only need
         # the browser bundle. The native side of the same source compiles to
         # a no-op stub bin (the real server is `crabcloud-server`).
-        working-directory: crates/crabcloud-ui
+        working-directory: crates/crabcloud-app
         run: dx build --release --platform web
       - name: Upload built bundle
         uses: actions/upload-artifact@v7
         with:
           name: dx-public
-          path: target/dx/crabcloud-ui/release/web/public
+          path: target/dx/crabcloud-app/release/web/public
           if-no-files-found: error
 
   test-sqlite:
@@ -116,13 +116,13 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           name: dx-public
-          path: target/dx/crabcloud-ui/release/web/public
+          path: target/dx/crabcloud-app/release/web/public
       - name: Build release server
         run: cargo build --release -p crabcloud-server
       - name: Workaround dx wasm-bundle mismatch
         # `dx build --release` fingerprints both the JS bundle and the .wasm
-        # (`crabcloud-ui-<hash>.js`, `crabcloud-ui_bg-<hash>.wasm`), but the
-        # JS bundle still contains `new URL('./crabcloud-ui_bg.wasm',
+        # (`crabcloud-app-<hash>.js`, `crabcloud-app_bg-<hash>.wasm`), but the
+        # JS bundle still contains `new URL('./crabcloud-app_bg.wasm',
         # import.meta.url)` from wasm-bindgen's ESM glue — that import isn't
         # rewritten to the hashed name. The dx-appended `__wbg_init(...)`
         # override fetches the hashed path, but wasm-bindgen's own preload
@@ -130,11 +130,11 @@ jobs:
         # to the hashed payload so both code paths resolve.
         run: |
           set -e
-          pub=target/dx/crabcloud-ui/release/web/public/assets
-          hashed=$(find "$pub" -name 'crabcloud-ui_bg-*.wasm' -print -quit)
-          if [ -n "$hashed" ] && [ ! -e "$pub/crabcloud-ui_bg.wasm" ]; then
-            ln -sf "$(basename "$hashed")" "$pub/crabcloud-ui_bg.wasm"
-            echo "linked $pub/crabcloud-ui_bg.wasm -> $(basename "$hashed")"
+          pub=target/dx/crabcloud-app/release/web/public/assets
+          hashed=$(find "$pub" -name 'crabcloud-app_bg-*.wasm' -print -quit)
+          if [ -n "$hashed" ] && [ ! -e "$pub/crabcloud-app_bg.wasm" ]; then
+            ln -sf "$(basename "$hashed")" "$pub/crabcloud-app_bg.wasm"
+            echo "linked $pub/crabcloud-app_bg.wasm -> $(basename "$hashed")"
           fi
       - uses: actions/setup-node@v6
         with:
@@ -202,7 +202,7 @@ jobs:
         # `DIOXUS_PUBLIC_PATH` overrides the default
         # `<exe-dir>/public` lookup performed by `dioxus::server::router`.
         env:
-          DIOXUS_PUBLIC_PATH: ${{ github.workspace }}/target/dx/crabcloud-ui/release/web/public
+          DIOXUS_PUBLIC_PATH: ${{ github.workspace }}/target/dx/crabcloud-app/release/web/public
         run: |
           ./target/release/crabcloud-server --config config/e2e.toml serve &
           echo "SERVER_PID=$!" >> "$GITHUB_ENV"

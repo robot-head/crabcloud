@@ -1,7 +1,7 @@
 //! End-to-end flow against the OCS surface of the HTTP router exercising
 //! spec acceptance criteria for the users sub-project.
 //!
-//! Login itself moved to a Dioxus `#[server]` function in `crabcloud-ui` as
+//! Login itself moved to a Dioxus `#[server]` function in `crabcloud-app` as
 //! part of the fullstack migration, so it's not reachable from `build_router`
 //! alone; verification is covered by the Playwright suite. These tests mint
 //! a real session-kind `AuthToken` directly to focus on the `/cloud/user`
@@ -67,10 +67,10 @@ async fn build_app() -> (axum::Router, String) {
     let app_router = axum::Router::new()
         .register_server_functions()
         .with_state(FullstackState::headless());
-    // Silence the `crabcloud-ui` dev-dep unused-crate-dependencies warning —
+    // Silence the `crabcloud-app` dev-dep unused-crate-dependencies warning —
     // the dep is pulled in so `cargo test` triggers compilation of the
     // `#[server]` declarations that register themselves via inventory.
-    let _ = crabcloud_ui::App;
+    let _ = crabcloud_app::App;
     (build_router(state, app_router), cookie)
 }
 

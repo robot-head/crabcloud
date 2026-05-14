@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "crates/crabcloud-app",
     "crates/crabcloud-cache",
     "crates/crabcloud-config",
     "crates/crabcloud-core",
@@ -12,7 +13,6 @@ members = [
     "crates/crabcloud-server",
     "crates/crabcloud-sharing",
     "crates/crabcloud-storage",
-    "crates/crabcloud-ui",
     "crates/crabcloud-users",
     "xtask",
 ]
@@ -89,6 +89,7 @@ accept-language = "3.1"
 quick-xml = { version = "0.40", features = ["serialize"] }
 
 # Internal workspace deps. Entries are added by subsequent tasks when their crate exists.
+crabcloud-app = { path = "crates/crabcloud-app" }
 crabcloud-cache = { path = "crates/crabcloud-cache" }
 crabcloud-config = { path = "crates/crabcloud-config" }
 crabcloud-core = { path = "crates/crabcloud-core" }
@@ -100,7 +101,6 @@ crabcloud-i18n = { path = "crates/crabcloud-i18n" }
 crabcloud-ocs = { path = "crates/crabcloud-ocs" }
 crabcloud-sharing = { path = "crates/crabcloud-sharing" }
 crabcloud-storage = { path = "crates/crabcloud-storage" }
-crabcloud-ui = { path = "crates/crabcloud-ui" }
 crabcloud-users = { path = "crates/crabcloud-users" }
 email_address = "0.2"
 rpassword = "7"

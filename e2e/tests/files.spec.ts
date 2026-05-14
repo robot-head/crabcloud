@@ -27,7 +27,7 @@ async function loginInBrowser(page: any) {
 // owned by the client-side WASM bundle: SSR emits the chrome but `list_dir`
 // is only invoked after hydration, and onclick handlers aren't attached
 // until then either. Tests that interact with the page must wait for
-// `data-hydrated="true"` first (set by `App` in crabcloud-ui/src/app.rs).
+// `data-hydrated="true"` first (set by `App` in crabcloud-app/src/app.rs).
 async function gotoFiles(page: any, path: string = "/apps/files/") {
     const r = await page.goto(path);
     await expect(page.locator("#app-root")).toHaveAttribute(
