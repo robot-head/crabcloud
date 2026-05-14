@@ -90,18 +90,17 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Install dioxus-cli
         run: cargo install dioxus-cli --version "^0.7" --locked
-      - name: dx build --release --fullstack
-        # `--fullstack` triggers dx's combined client + server build:
-        # WASM bundle produced at `public/assets/<name>-<hash>.wasm` (the
-        # release layout used by the index.html template), server binary
-        # at `web/server` with dx's link-time asset substitution applied.
-        # The earlier two-call approach (`--web` then `--server`) put the
-        # WASM at `public/wasm/<name>_bg.wasm` (dev layout, unhashed) and
-        # didn't produce a public/index.html — the server fell back to a
-        # default index that doesn't reference the actual WASM, and the
-        # browser couldn't hydrate.
+      - name: dx build --release (fullstack)
+        # `--target wasm32-unknown-unknown` tells dx the CLIENT target;
+        # the `fullstack` feature on the `dioxus` dep then automatically
+        # adds a server build for the host triple. Matches the documented
+        # `dx serve --target wasm32-unknown-unknown --fullstack` form (see
+        # dx-cli 0.7's `cli/build.rs:89`). Without `--target`, dx defaults
+        # the client target to host, which is what made the earlier
+        # `--fullstack` attempt produce only a server build (no WASM /
+        # `index.html`).
         working-directory: crates/crabcloud-app
-        run: dx build --release --fullstack
+        run: dx build --release --target wasm32-unknown-unknown --fullstack
       - uses: actions/setup-node@v6
         with:
           node-version: "24"
