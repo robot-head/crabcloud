@@ -5,7 +5,8 @@
 use crabcloud_config::test_support::minimal_sqlite_config;
 use crabcloud_db::{core_set, DbPool, MigrationRunner};
 use crabcloud_filecache::FileCache;
-use crabcloud_fs::{Mount, View};
+use crabcloud_fs::{Mount, MountKind, MountMetadata, SharedSubrootStorage, View};
+use crabcloud_sharing::SharePermissions;
 use crabcloud_storage::{memory::MemoryStorage, ChannelEventSink, Storage, StoragePath};
 use crabcloud_users::UserId;
 use std::sync::Arc;
@@ -68,6 +69,44 @@ pub fn view_with_two_mounts(h: &Harness) -> View {
                 path_prefix: StoragePath::new("Shared").unwrap(),
                 storage: shared,
                 metadata: None,
+            },
+        ],
+        h.filecache.clone(),
+        h.sink.clone(),
+    )
+}
+
+/// Build a View for bob with bob's home plus one share-mount whose
+/// owner is alice (her storage pinned at `owner_subroot`, surfaced at
+/// `mount_name` in bob's view). Used by the share-enumeration tests.
+pub fn view_with_share_mount(
+    h: &Harness,
+    bob_home: Arc<dyn Storage>,
+    alice_home: Arc<dyn Storage>,
+    owner_subroot: &str,
+    mount_name: &str,
+) -> View {
+    let wrapped: Arc<dyn Storage> = Arc::new(SharedSubrootStorage::new(
+        alice_home,
+        StoragePath::new(owner_subroot).unwrap(),
+        SharePermissions::from_wire(1 | 2),
+    ));
+    View::new(
+        UserId::new("bob").unwrap(),
+        vec![
+            Mount {
+                path_prefix: StoragePath::root(),
+                storage: bob_home,
+                metadata: None,
+            },
+            Mount {
+                path_prefix: StoragePath::new(mount_name).unwrap(),
+                storage: wrapped,
+                metadata: Some(MountMetadata {
+                    kind: MountKind::Share,
+                    owner_uid: Some("alice".to_string()),
+                    permissions: Some(SharePermissions::from_wire(1 | 2)),
+                }),
             },
         ],
         h.filecache.clone(),

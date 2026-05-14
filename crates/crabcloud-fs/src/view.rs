@@ -4,7 +4,7 @@
 //! shared `ChannelEventSink`.
 
 use crate::error::{FsError, FsResult};
-use crate::mount::Mount;
+use crate::mount::{Mount, MountMetadata};
 use crate::path::UserPath;
 use crabcloud_filecache::FileCache;
 use crabcloud_storage::{ChannelEventSink, DirEntry, FileMetadata, StoragePath};
@@ -13,6 +13,20 @@ use std::ops::Range;
 use std::pin::Pin;
 use std::sync::Arc;
 use tokio::io::AsyncRead;
+
+/// One entry returned by [`View::list_with_meta`]. Pairs the raw
+/// [`DirEntry`] with the [`MountMetadata`] of the mount the entry was
+/// surfaced from when that entry is a share-mount root (so the caller
+/// can decorate the row with `shared_by` etc.). `None` for entries
+/// served from the longest-prefix mount itself (i.e. ordinary children
+/// of the listed directory) — they live under the same mount as the
+/// parent so there is no per-entry mount metadata distinct from the
+/// resolver's view of the world.
+#[derive(Debug, Clone)]
+pub struct ListedEntry {
+    pub entry: DirEntry,
+    pub mount_metadata: Option<MountMetadata>,
+}
 
 pub struct View {
     pub(crate) uid: UserId,
@@ -84,11 +98,113 @@ impl View {
         Ok(meta)
     }
 
-    /// Cached directory listing.
+    /// Cached directory listing. Returns just the [`DirEntry`]s; share-
+    /// mount children at the listed level ARE included (so PROPFIND on
+    /// bob's root sees the share folder), but their mount metadata is
+    /// dropped — callers that need `shared_by` / `share_count` should
+    /// reach for [`Self::list_with_meta`] instead.
     pub async fn list(&self, user_path: &UserPath) -> FsResult<Vec<DirEntry>> {
+        Ok(self
+            .list_with_meta(user_path)
+            .await?
+            .into_iter()
+            .map(|le| le.entry)
+            .collect())
+    }
+
+    /// Like [`Self::list`] but also surfaces, for each share-mount whose
+    /// `path_prefix` lives one level below `user_path`, the share's
+    /// [`MountMetadata`] alongside its synthetic [`DirEntry`]. The
+    /// synthetic entry's size / mtime / fileid come from `stat`-ing the
+    /// share-mount's storage at its root — which routes through the
+    /// [`SharedSubrootStorage`] wrapper to the OWNER's filecache row, so
+    /// the file_id stays stable across recipients (spec §3.2).
+    pub async fn list_with_meta(&self, user_path: &UserPath) -> FsResult<Vec<ListedEntry>> {
         let (mount, storage_path) = self.resolve(user_path)?;
-        let entries = self.filecache.list(&mount.storage, &storage_path).await?;
-        Ok(entries)
+        // Storage-path-formatted version of the listed directory, used to
+        // match child-mount candidates by `path_prefix.parent()`. The
+        // longest-prefix resolver guarantees `storage_path` is RELATIVE to
+        // `mount.path_prefix`, so to compare against other mounts' absolute
+        // prefixes we re-prepend it here.
+        let listed_abs = if mount.path_prefix.is_root() {
+            storage_path.clone()
+        } else if storage_path.is_root() {
+            mount.path_prefix.clone()
+        } else {
+            mount.path_prefix.join(storage_path.as_str())?
+        };
+
+        // For the storage root we tolerate `NotFound` — some backends
+        // (e.g. `MemoryStorage`) don't materialize a root entry until
+        // something is written into them. The cache-backed `list` calls
+        // `stat` first, which fails on those backends; we fall back to
+        // `storage.list(root)` directly so the listing still surfaces
+        // children (plus any synthetic share-mount entries below). Non-
+        // root paths route through the cache unconditionally.
+        let base_entries = if storage_path.is_root() {
+            match self.filecache.list(&mount.storage, &storage_path).await {
+                Ok(es) => es,
+                Err(crabcloud_filecache::FileCacheError::NotFound)
+                | Err(crabcloud_filecache::FileCacheError::Storage(
+                    crabcloud_storage::StorageError::NotFound,
+                )) => mount.storage.list(&storage_path).await?,
+                Err(e) => return Err(e.into()),
+            }
+        } else {
+            self.filecache.list(&mount.storage, &storage_path).await?
+        };
+        let resolved_prefix = mount.path_prefix.clone();
+        let mut out: Vec<ListedEntry> = base_entries
+            .into_iter()
+            .map(|e| ListedEntry {
+                entry: e,
+                mount_metadata: None,
+            })
+            .collect();
+
+        // Surface share-mount children one level below the listed path.
+        // Skip the mount whose prefix IS `listed_abs` itself (that's the
+        // resolved mount; we'd otherwise list it as its own entry).
+        for child in &self.mounts {
+            if child.path_prefix.is_root() {
+                continue;
+            }
+            if child.path_prefix == resolved_prefix {
+                continue;
+            }
+            let Some(parent) = child.path_prefix.parent() else {
+                continue;
+            };
+            if parent != listed_abs {
+                continue;
+            }
+            // Stat directly through the wrapped storage (bypassing the
+            // filecache populate path). The wrapper translates root →
+            // `owner_path` and hits the owner's backing storage, so the
+            // returned metadata is the OWNER's view of the shared dir.
+            // We deliberately skip `FileCache::stat` here: that call
+            // would key the resulting cache row by `(wrapper.id(), root)`
+            // (alice's storage_id, recipient-relative root), which would
+            // poison alice's actual `/` row with Photos-shaped metadata.
+            // The fileid invariant the spec calls out lives in the
+            // owner's existing filecache row at `(alice_id, owner_path)`,
+            // which is unaffected here.
+            let meta = child.storage.stat(&StoragePath::root()).await?;
+            // The synthetic entry's display name is the LAST segment of
+            // the mount's `path_prefix`. That's how the recipient sees
+            // it; the owner's source basename (which may differ after a
+            // rename) is not exposed at this layer.
+            let name = child.path_prefix.basename().to_string();
+            out.push(ListedEntry {
+                entry: DirEntry {
+                    name,
+                    metadata: meta,
+                },
+                mount_metadata: child.metadata.clone(),
+            });
+        }
+
+        Ok(out)
     }
 
     pub async fn read(&self, user_path: &UserPath) -> FsResult<Pin<Box<dyn AsyncRead + Send>>> {

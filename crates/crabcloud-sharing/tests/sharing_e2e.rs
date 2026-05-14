@@ -502,6 +502,83 @@ async fn delete_recipient_flips_accepted(fx: &Fixture) {
     assert!(matches!(err, ShareError::NotFound), "got {err:?}");
 }
 
+async fn share_counts_for_returns_owner_counts(fx: &Fixture) {
+    // alice has two outgoing shares on /X, one on /Y, none on /Z; bob
+    // has one outgoing share unrelated to alice. share_counts_for for
+    // alice returns a map with X→2, Y→1; Z is absent (the caller
+    // defaults missing keys to 0).
+    seed_user(fx, "alice").await;
+    seed_user(fx, "bob").await;
+    seed_user(fx, "carol").await;
+    seed_user(fx, "dave").await;
+    let fid_x = seed_file(fx, "alice", "/X", false).await;
+    let fid_y = seed_file(fx, "alice", "/Y", false).await;
+    let fid_z = seed_file(fx, "alice", "/Z", false).await;
+    let sid_alice = fx.home_storage_id("alice");
+    for recipient in ["bob", "carol"] {
+        fx.shares
+            .create(share_request(
+                "alice",
+                &sid_alice,
+                "/X",
+                ShareType::User,
+                recipient,
+                3,
+            ))
+            .await
+            .unwrap();
+    }
+    fx.shares
+        .create(share_request(
+            "alice",
+            &sid_alice,
+            "/Y",
+            ShareType::User,
+            "bob",
+            3,
+        ))
+        .await
+        .unwrap();
+    // bob also shares one of his own files with carol — must NOT appear
+    // in alice's count.
+    let fid_bob = seed_file(fx, "bob", "/MyFile", false).await;
+    let sid_bob = fx.home_storage_id("bob");
+    fx.shares
+        .create(share_request(
+            "bob",
+            &sid_bob,
+            "/MyFile",
+            ShareType::User,
+            "carol",
+            3,
+        ))
+        .await
+        .unwrap();
+
+    let counts = fx
+        .shares
+        .share_counts_for(
+            &UserId::new("alice").unwrap(),
+            &[fid_x, fid_y, fid_z, fid_bob],
+        )
+        .await
+        .unwrap();
+    assert_eq!(counts.get(&fid_x).copied(), Some(2));
+    assert_eq!(counts.get(&fid_y).copied(), Some(1));
+    assert!(!counts.contains_key(&fid_z));
+    assert!(!counts.contains_key(&fid_bob));
+}
+
+async fn share_counts_for_empty_input_is_empty(fx: &Fixture) {
+    seed_user(fx, "alice").await;
+    let counts = fx
+        .shares
+        .share_counts_for(&UserId::new("alice").unwrap(), &[])
+        .await
+        .unwrap();
+    assert!(counts.is_empty());
+}
+
 async fn delete_third_party_forbidden(fx: &Fixture) {
     seed_user(fx, "alice").await;
     seed_user(fx, "bob").await;
@@ -577,3 +654,6 @@ per_dialect!(update_expire_date_round_trips);
 per_dialect!(delete_owner_removes_row);
 per_dialect!(delete_recipient_flips_accepted);
 per_dialect!(delete_third_party_forbidden);
+
+per_dialect!(share_counts_for_returns_owner_counts);
+per_dialect!(share_counts_for_empty_input_is_empty);

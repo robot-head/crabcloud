@@ -10,6 +10,7 @@ pub mod mkdir_row;
 pub mod path;
 pub mod progress_strip;
 pub mod row;
+pub mod share_modal;
 pub mod states;
 pub mod toolbar;
 pub mod upload;
@@ -23,6 +24,7 @@ use crate::pages::files::delete_modal::DeleteModal;
 use crate::pages::files::list::FileList;
 use crate::pages::files::mkdir_row::MkdirRow;
 use crate::pages::files::progress_strip::UploadProgressStrip;
+use crate::pages::files::share_modal::ShareModal;
 use crate::pages::files::toolbar::Toolbar;
 use crate::pages::files::upload::{DropOverlay, JobState, UploadQueue};
 use crate::server_fns::{delete, list_dir, mkdir, move_paths, rename, FileEntry};
@@ -99,6 +101,9 @@ pub fn Files(ctx: RequestContext, path: String) -> Element {
     let mut rename_target: Signal<Option<String>> = use_signal(|| None);
     let mut delete_target: Signal<Option<Vec<String>>> = use_signal(|| None);
     let mut mkdir_active = use_signal(|| false);
+    // Share-modal target — SP7 E2/E3. When `Some(path)`, `ShareModal` is
+    // mounted at the bottom of the page DOM (similar to `DeleteModal`).
+    let mut share_path: Signal<Option<String>> = use_signal(|| None);
 
     // Cut/paste state — D3. The clipboard intentionally outlives a single
     // folder view so the user can navigate from source to destination
@@ -132,6 +137,7 @@ pub fn Files(ctx: RequestContext, path: String) -> Element {
         });
     };
     let on_delete = move |p: String| delete_target.set(Some(vec![p]));
+    let on_share = move |p: String| share_path.set(Some(p));
     let on_delete_confirm = move |_| {
         if let Some(paths) = delete_target() {
             spawn(async move {
@@ -384,6 +390,7 @@ pub fn Files(ctx: RequestContext, path: String) -> Element {
                         on_rename_commit,
                         on_rename_cancel,
                         on_delete,
+                        on_share,
                         on_retry,
                     }
                     DropOverlay { visible: drag_active(), current_folder: path_sig() }
@@ -394,6 +401,12 @@ pub fn Files(ctx: RequestContext, path: String) -> Element {
                     paths,
                     on_cancel: on_delete_cancel,
                     on_confirm: on_delete_confirm,
+                }
+            }
+            if let Some(p) = share_path() {
+                ShareModal {
+                    path: p,
+                    on_close: move |_| share_path.set(None),
                 }
             }
         }

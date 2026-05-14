@@ -76,6 +76,44 @@ pub(crate) const UPDATE_EXPIRATION_PG: &str = "UPDATE oc_share SET expiration = 
 const _: &str = SELECT_COLUMNS;
 const _: &str = INSERT_BIND_LIST;
 
+/// Build the dynamic `share_counts_for` query for an owner with `fileid_count`
+/// candidate fileids. Returns `(file_source, count)` rows for every fileid in
+/// the input list that has at least one outgoing share owned by the requester.
+/// Caller must guarantee `fileid_count > 0`; empty input short-circuits before
+/// reaching the DB. Placeholder layout: owner uid is the first bind; the
+/// remaining `fileid_count` binds fill the `IN (…)` list in order.
+pub(crate) fn share_counts_for(fileid_count: usize, dialect: Dialect) -> String {
+    debug_assert!(fileid_count > 0);
+    let mut q = String::with_capacity(160 + fileid_count * 4);
+    q.push_str("SELECT file_source, COUNT(*) AS cnt FROM oc_share WHERE uid_owner = ");
+    match dialect {
+        Dialect::Qm => q.push('?'),
+        Dialect::Pg => q.push_str("$1"),
+    }
+    q.push_str(" AND file_source IN (");
+    match dialect {
+        Dialect::Qm => {
+            for i in 0..fileid_count {
+                if i > 0 {
+                    q.push_str(", ");
+                }
+                q.push('?');
+            }
+        }
+        Dialect::Pg => {
+            for i in 0..fileid_count {
+                if i > 0 {
+                    q.push_str(", ");
+                }
+                q.push('$');
+                q.push_str(&(i + 2).to_string());
+            }
+        }
+    }
+    q.push_str(") GROUP BY file_source");
+    q
+}
+
 /// Build the dynamic `list_incoming` query for a recipient with `group_count`
 /// group memberships. Placeholder style follows `dialect`: `qm` (sqlite + mysql)
 /// uses `?`, `pg` uses `$N` numbering starting at `$1` for the recipient uid
@@ -164,5 +202,32 @@ mod tests {
         let q = select_incoming(2, Dialect::Pg);
         assert!(q.contains("share_with = $1"));
         assert!(q.contains("share_with IN ($2, $3)"));
+    }
+
+    #[test]
+    fn share_counts_for_qm_single() {
+        let q = share_counts_for(1, Dialect::Qm);
+        assert!(q.contains("uid_owner = ?"));
+        assert!(q.contains("file_source IN (?)"));
+        assert!(q.ends_with("GROUP BY file_source"));
+    }
+
+    #[test]
+    fn share_counts_for_qm_many() {
+        let q = share_counts_for(3, Dialect::Qm);
+        assert!(q.contains("file_source IN (?, ?, ?)"));
+    }
+
+    #[test]
+    fn share_counts_for_pg_single() {
+        let q = share_counts_for(1, Dialect::Pg);
+        assert!(q.contains("uid_owner = $1"));
+        assert!(q.contains("file_source IN ($2)"));
+    }
+
+    #[test]
+    fn share_counts_for_pg_many() {
+        let q = share_counts_for(3, Dialect::Pg);
+        assert!(q.contains("file_source IN ($2, $3, $4)"));
     }
 }
