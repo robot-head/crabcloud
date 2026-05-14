@@ -98,7 +98,15 @@ async fn main() -> Result<()> {
             return Ok(());
         }
         Cmd::Serve => {
-            let config = crabcloud_config::load(&cli.config, &[])?;
+            let mut config = crabcloud_config::load(&cli.config, &[])?;
+            // `dx serve` (and similar dev tooling) sets `IP` + `PORT` env vars
+            // on the child process. Honor them when present so HMR ws + asset
+            // reload reach the right address. Otherwise stick with the
+            // config-file `bind_address` — production environments don't set
+            // these.
+            if std::env::var("PORT").is_ok() || std::env::var("IP").is_ok() {
+                config.bind_address = dioxus_cli_config::fullstack_address_or_localhost();
+            }
             let bind = config.bind_address;
             info!(
                 dbtype = %config.dbtype.as_str(),

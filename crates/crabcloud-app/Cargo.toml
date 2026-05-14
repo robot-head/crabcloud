@@ -78,6 +78,11 @@ crabcloud-http = { workspace = true }
 crabcloud-i18n = { workspace = true }
 crabcloud-storage = { workspace = true }
 crabcloud-users = { workspace = true }
+# `dx serve` sets `IP` + `PORT` env vars on the spawned server. We read them
+# via `fullstack_address_or_localhost()` so the dev-server `Cmd::Serve` binds
+# where dx expects. Already a transitive of `dioxus`; declared direct so we
+# can reference the module name without leaning on the dep-graph quirk.
+dioxus-cli-config = { version = "0.7" }
 hex = { workspace = true }
 rand = { workspace = true }
 rpassword = { workspace = true }

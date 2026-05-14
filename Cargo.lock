@@ -735,6 +735,7 @@ dependencies = [
  "crabcloud-storage",
  "crabcloud-users",
  "dioxus",
+ "dioxus-cli-config",
  "gloo-net 0.7.0",
  "gloo-timers 0.4.0",
  "hex",
