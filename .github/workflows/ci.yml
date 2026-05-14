@@ -186,6 +186,15 @@ jobs:
           python3 -c "import os, pathlib; p = pathlib.Path('config/e2e.toml'); p.write_text(p.read_text().replace('__HASH__', os.environ['BCRYPT_HASH']))"
       - name: Migrate
         run: cargo run --release -p crabcloud-server -- --config config/e2e.toml migrate
+      - name: Bootstrap test users (alice + bob)
+        # Sharing scenarios need a second + third user. `user-add` reads
+        # the password from stdin via rpassword, which falls back to the
+        # stdin reader when no TTY is present — exactly the CI situation.
+        # Pipe `password\npassword\n` twice for the prompt + confirm.
+        run: |
+          for u in alice bob; do
+            printf 'hunter2\nhunter2\n' | ./target/release/crabcloud-server --config config/e2e.toml user-add "$u"
+          done
       - name: Start server
         # `DIOXUS_PUBLIC_PATH` overrides the default
         # `<exe-dir>/public` lookup performed by `dioxus::server::router`.
