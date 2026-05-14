@@ -17,6 +17,14 @@ use cookie as _;
 use quick_xml as _;
 use uuid as _;
 
+// `dioxus` and `regex` are dev-dependencies used only by
+// `tests/asset_render_regression.rs`. Anchor them under `cfg(test)` so the
+// `unused_crate_dependencies` lint stays quiet on the lib's test target.
+#[cfg(test)]
+use dioxus as _;
+#[cfg(test)]
+use regex as _;
+
 mod auth_context;
 mod csrf;
 mod error;
