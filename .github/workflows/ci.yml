@@ -90,17 +90,31 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Install dioxus-cli
         run: cargo install dioxus-cli --version "^0.7" --locked
-      - name: dx build --release (fullstack)
-        # `--target wasm32-unknown-unknown` tells dx the CLIENT target;
-        # the `fullstack` feature on the `dioxus` dep then automatically
-        # adds a server build for the host triple. Matches the documented
-        # `dx serve --target wasm32-unknown-unknown --fullstack` form (see
-        # dx-cli 0.7's `cli/build.rs:89`). Without `--target`, dx defaults
-        # the client target to host, which is what made the earlier
-        # `--fullstack` attempt produce only a server build (no WASM /
-        # `index.html`).
+      - name: dx build --release (fullstack via @client / @server)
+        # The `@client` / `@server` subcommand syntax (dx 0.7 cli/build.rs)
+        # is the only invocation that produces a *correctly-hashed*
+        # fullstack layout: `public/assets/<hash>.{css,js,wasm}` referenced
+        # by a proper `public/index.html` AND a `server` binary whose
+        # link-time asset substitution matches those hashes.
+        #
+        # `@client` builds the wasm32 target with `--features web` (no
+        # default features → no server-stack deps in the wasm graph).
+        # `@server` builds the host target with `--features server` (the
+        # native stack — sqlx, axum, tower, hyper). Without explicit
+        # per-target features the wasm build pulls in server-only deps
+        # that don't compile for wasm32; without explicit per-target
+        # targets the server build inherits the wasm32 target from the
+        # shared args and fails.
+        #
+        # The `--target x86_64-unknown-linux-gnu` on @server is the CI
+        # runner's host triple. Verified locally via the same Linux Docker
+        # image; produces every expected artifact, server binary boots,
+        # SSR HTML references the hashed paths, no `index.html` warning.
         working-directory: crates/crabcloud-app
-        run: dx build --release --target wasm32-unknown-unknown --fullstack
+        run: |
+          dx build --release \
+            @client --no-default-features --features web --target wasm32-unknown-unknown \
+            @server --no-default-features --features server --target x86_64-unknown-linux-gnu
       - uses: actions/setup-node@v6
         with:
           node-version: "24"
