@@ -360,23 +360,45 @@ async fn view_descend_into_share_does_not_poison_owner_cache() {
     let bob_home: Arc<dyn Storage> = Arc::new(MemoryStorage::new("bob"));
     let bob_view = view_with_share_mount(&h, bob_home, alice_home.clone(), "Photos", "Photos");
 
-    let entries = bob_view
+    // 1. Bob descends into the share. WITHOUT the fix the wrapper's
+    //    `(alice_id, root)` cache key gets populated by `filecache.stat`
+    //    with alice's /Photos metadata (because `wrapper.stat(root) =
+    //    inner.stat(/Photos)`). WITH the fix that call is rerouted to
+    //    `(alice_id, /Photos)`, leaving `(alice_id, root)` alone.
+    let bob_entries = bob_view
         .list(&UserPath::new("/Photos").unwrap())
         .await
         .unwrap();
-    let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
+    let bob_names: Vec<&str> = bob_entries.iter().map(|e| e.name.as_str()).collect();
     assert!(
-        names.contains(&"sunset.jpg"),
-        "bob should see alice's /Photos children: got {names:?}"
+        bob_names.contains(&"sunset.jpg"),
+        "bob should see alice's /Photos children: got {bob_names:?}"
     );
 
-    let alice_view = view_home_for(&h, alice_home.clone());
-    let notes_meta = alice_view
-        .stat(&UserPath::new("/notes.txt").unwrap())
+    // 2. Inspect the raw cache rows. The fix routes bob's lookup to
+    //    `(alice_id, /Photos)`; the bug instead writes `(alice_id, root)`
+    //    with /Photos metadata, AND doesn't populate `/Photos`. So:
+    //      - WITH fix:    (alice_id, /Photos) is Some; (alice_id, root) is None.
+    //      - WITHOUT fix: (alice_id, root)   is Some; (alice_id, /Photos) is None.
+    let alice_id = alice_home.id();
+    let photos_row = h
+        .filecache
+        .lookup(alice_id, &StoragePath::new("Photos").unwrap())
         .await
         .unwrap();
-    assert_eq!(notes_meta.size, b"buy milk".len() as u64);
-    assert_eq!(notes_meta.kind, FileKind::File);
+    let root_row = h
+        .filecache
+        .lookup(alice_id, &StoragePath::root())
+        .await
+        .unwrap();
+    assert!(
+        photos_row.is_some(),
+        "share-mount descend must populate alice's /Photos cache row (got None)"
+    );
+    assert!(
+        root_row.is_none(),
+        "share-mount descend must NOT poison alice's root cache row (got {root_row:?})"
+    );
 }
 
 #[tokio::test]
