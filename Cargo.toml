@@ -40,7 +40,7 @@ dashmap = "6"
 figment = { version = "0.10", features = ["toml", "env"] }
 futures = "0.3"
 gloo-net = "0.7"
-gloo-timers = { version = "0.3", features = ["futures"] }
+gloo-timers = { version = "0.4", features = ["futures"] }
 hex = "0.4"
 hmac = "0.13"
 httpdate = "1"
