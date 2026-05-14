@@ -40,6 +40,8 @@ uuid = { workspace = true, features = ["v4"] }
 
 [dev-dependencies]
 crabcloud-config = { workspace = true, features = ["test-support"] }
+dioxus = { workspace = true, features = ["server"] }
+regex = "1"
 tempfile.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 tower = { workspace = true, features = ["util"] }
