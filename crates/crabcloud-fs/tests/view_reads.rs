@@ -358,13 +358,7 @@ async fn view_descend_into_share_does_not_poison_owner_cache() {
         .unwrap();
 
     let bob_home: Arc<dyn Storage> = Arc::new(MemoryStorage::new("bob"));
-    let bob_view = view_with_share_mount(
-        &h,
-        bob_home,
-        alice_home.clone(),
-        "Photos",
-        "Photos",
-    );
+    let bob_view = view_with_share_mount(&h, bob_home, alice_home.clone(), "Photos", "Photos");
 
     let entries = bob_view
         .list(&UserPath::new("/Photos").unwrap())
@@ -414,13 +408,7 @@ async fn view_share_mount_preserves_file_id_continuity() {
         .unwrap();
 
     let bob_home: Arc<dyn Storage> = Arc::new(MemoryStorage::new("bob"));
-    let bob_view = view_with_share_mount(
-        &h,
-        bob_home,
-        alice_home,
-        "Photos",
-        "Photos",
-    );
+    let bob_view = view_with_share_mount(&h, bob_home, alice_home, "Photos", "Photos");
     let bob_meta = bob_view
         .stat(&UserPath::new("/Photos/sunset.jpg").unwrap())
         .await
