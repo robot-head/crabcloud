@@ -187,13 +187,12 @@ jobs:
       - name: Migrate
         run: cargo run --release -p crabcloud-server -- --config config/e2e.toml migrate
       - name: Bootstrap test users (alice + bob)
-        # Sharing scenarios need a second + third user. `user-add` reads
-        # the password from stdin via rpassword, which falls back to the
-        # stdin reader when no TTY is present — exactly the CI situation.
-        # Pipe `password\npassword\n` twice for the prompt + confirm.
+        # `user-add` defaults to an interactive prompt via rpassword, which
+        # reads /dev/tty directly and fails on a CI runner without a TTY.
+        # `--password-stdin` reads one line of password from stdin instead.
         run: |
           for u in alice bob; do
-            printf 'hunter2\nhunter2\n' | ./target/release/crabcloud-server --config config/e2e.toml user-add "$u"
+            echo 'hunter2' | ./target/release/crabcloud-server --config config/e2e.toml user-add "$u" --password-stdin
           done
       - name: Start server
         # `DIOXUS_PUBLIC_PATH` overrides the default
