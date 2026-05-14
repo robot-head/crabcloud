@@ -3,14 +3,17 @@
 // `playwright.screenshots.config.ts`) against a running server at
 // CRABCLOUD_E2E_URL (default 127.0.0.1:18765).
 //
-// Captures four PNGs into docs/screenshots/:
+// Captures five PNGs into docs/screenshots/:
 //   files-empty.png        — empty home folder
 //   files-list.png         — folder with a few items
 //   files-selection.png    — multi-select chip visible
 //   files-delete-modal.png — delete confirmation modal
+//   share-modal.png        — share modal with recipient autocomplete open
 //
 // Pre-populates a few dummy files/folders via WebDAV PUT/MKCOL before each
-// shot, then deletes them on teardown.
+// shot, then deletes them on teardown. The share-modal shot also needs a
+// real recipient candidate to surface in the autocomplete — see the
+// per-test setup at the bottom of this file.
 
 import { test, expect } from "@playwright/test";
 import * as path from "path";
@@ -134,6 +137,63 @@ test("delete modal", async ({ page, request }) => {
     await expect(page.locator(".files-modal")).toBeVisible();
     await page.screenshot({ path: path.join(OUT_DIR, "files-delete-modal.png"), fullPage: false });
     await page.click(".files-modal-cancel"); // dismiss so cleanup hooks find a clean state
+});
+
+// Share modal — opens from the ⋯ menu of a folder row, then a recipient
+// is typed to surface the autocomplete dropdown. The screenshots fixture
+// only seeds `admin` via `bootstrap_admin`, so the autocomplete needs at
+// least one matching candidate. We mint `bob` via the OCS provisioning
+// API (admin can create users on the screenshots config) before opening
+// the modal. The fixture itself isn't part of the regular e2e suite so
+// the extra user is harmless.
+test("share modal", async ({ page, request }) => {
+    const cookie = await setBrowserCookie(page);
+    await cleanHome(request, cookie);
+    await seed(request, cookie);
+
+    // Best-effort: provision `bob` so the autocomplete has a hit on
+    // "bo". The OCS users endpoint is admin-only and returns 200 on
+    // success / 102-ish-or-409 if the user already exists; we don't
+    // assert because either outcome is fine for the screenshot.
+    await request
+        .post("/ocs/v2.php/cloud/users?format=json", {
+            headers: {
+                cookie,
+                "ocs-apirequest": "true",
+                "content-type": "application/x-www-form-urlencoded",
+            },
+            data: "userid=bob&password=hunter2",
+        })
+        .catch(() => {});
+
+    await gotoFiles(page);
+    // Open the ⋯ menu on a folder row and click Share. The Share item
+    // renders as "🔗  Share"; match the trailing word to avoid colliding
+    // with the chip-bar's "Cut/Paste/etc" actions (which sit elsewhere
+    // in the DOM but Playwright's `:has-text` is substring-y).
+    await page.click('.files-row:has-text("photos") .files-overflow-btn');
+    // Wait for the menu to be open before clicking inside it.
+    await expect(page.locator(".files-overflow-menu")).toBeVisible();
+    await page.locator(".files-overflow-item", { hasText: "Share" }).click();
+    await expect(page.locator(".share-modal")).toBeVisible({ timeout: 5_000 });
+
+    // Type "bo" → triggers the 250ms-debounced autocomplete.
+    await page.fill(".share-modal-recipient-input", "bo");
+    // Wait for the candidates list to materialize. `share_recipient_search`
+    // runs server-side, returns up to 10 hits; the list element renders
+    // only when `candidates_now` is non-empty so its presence implies
+    // the autocomplete fired.
+    await expect(page.locator(".share-modal-candidates")).toBeVisible({
+        timeout: 5_000,
+    });
+
+    await page.screenshot({
+        path: path.join(OUT_DIR, "share-modal.png"),
+        fullPage: false,
+    });
+
+    // Dismiss so the cleanup hook finds a clean state.
+    await page.click(".share-modal-close-btn");
 });
 
 test.afterAll(async ({ request }) => {

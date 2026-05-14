@@ -25,7 +25,9 @@ pub enum Cmd {
     Migrate,
     /// Print version information.
     Version,
-    /// Create a user (prompts for password on stdin).
+    /// Create a user. Reads the password interactively from the TTY by
+    /// default; pass `--password-stdin` to read a single line of password
+    /// from stdin instead (suitable for automation / CI).
     UserAdd {
         uid: String,
         #[arg(long)]
@@ -34,6 +36,11 @@ pub enum Cmd {
         email: Option<String>,
         #[arg(long = "display-name")]
         display_name: Option<String>,
+        /// Read the password as one line from stdin (no confirmation prompt).
+        /// Required for non-interactive use; rpassword's TTY-only read fails
+        /// when piped.
+        #[arg(long = "password-stdin")]
+        password_stdin: bool,
     },
     /// Reset a user's password (prompts on stdin).
     UserSetPassword { uid: String },
@@ -121,14 +128,28 @@ mod tests {
                 admin,
                 email,
                 display_name,
+                password_stdin,
             } => {
                 assert_eq!(uid, "alice");
                 assert!(admin);
                 assert_eq!(email.as_deref(), Some("alice@example.com"));
                 assert!(display_name.is_none());
+                assert!(!password_stdin);
             }
             _ => panic!("expected UserAdd"),
         }
+    }
+
+    #[test]
+    fn user_add_password_stdin_flag_parses() {
+        let cli = Cli::parse_from(["crabcloud-server", "user-add", "alice", "--password-stdin"]);
+        assert!(matches!(
+            cli.selected(),
+            Cmd::UserAdd {
+                password_stdin: true,
+                ..
+            }
+        ));
     }
 
     #[test]

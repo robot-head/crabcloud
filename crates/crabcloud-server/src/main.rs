@@ -10,6 +10,18 @@ use tracing::info;
 
 use crate::cli::{Cli, Cmd, FilesCmd};
 
+fn read_password_from_stdin() -> anyhow::Result<String> {
+    use std::io::BufRead;
+    let stdin = std::io::stdin();
+    let mut line = String::new();
+    stdin.lock().read_line(&mut line)?;
+    let pw = line.trim_end_matches(['\r', '\n']).to_string();
+    if pw.is_empty() {
+        anyhow::bail!("empty password");
+    }
+    Ok(pw)
+}
+
 fn prompt_password(prompt: &str) -> anyhow::Result<String> {
     let pw = rpassword::prompt_password(prompt)?;
     if pw.is_empty() {
@@ -122,13 +134,19 @@ async fn main() -> Result<()> {
             admin,
             email,
             display_name,
+            password_stdin,
         } => {
             let config = crabcloud_config::load(&cli.config, &[])?;
-            let pw = prompt_password("New password: ")?;
-            let confirm = prompt_password("Confirm: ")?;
-            if pw != confirm {
-                anyhow::bail!("passwords didn't match");
-            }
+            let pw = if password_stdin {
+                read_password_from_stdin()?
+            } else {
+                let pw = prompt_password("New password: ")?;
+                let confirm = prompt_password("Confirm: ")?;
+                if pw != confirm {
+                    anyhow::bail!("passwords didn't match");
+                }
+                pw
+            };
             let state = crabcloud_core::AppStateBuilder::new(config).build().await?;
             crabcloud_users::cli::user_add(
                 &state.users,

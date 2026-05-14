@@ -422,6 +422,44 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn all_shares_missing_filecache_rows_returns_home_only() {
+        // Spec §10 carry-forward #6: a `ShareRow` whose `item_source`
+        // does NOT correspond to any filecache entry must be dropped
+        // silently (with a warn) rather than erroring the whole login.
+        // Distinct from `missing_filecache_row_skips_mount` below: that
+        // case mixes one present and one absent row; this one exercises
+        // the all-absent path so the resulting list collapses to just
+        // the home mount.
+        let factory = Arc::new(MemoryFactory::new());
+        let alice_home = seeded_alice_home().await;
+        factory.install("alice", alice_home.clone());
+        factory.install("bob", Arc::new(MemoryStorage::new("bob")));
+
+        let shares = Arc::new(FakeShares::new(vec![share_row(
+            1, "alice", "bob", "/Photos", 100,
+        )]));
+        // Faker returns None for every (storage_id, fileid) lookup — the
+        // share row stands but its source can't be located.
+        let filecache = Arc::new(FakeFilecache::new(vec![]));
+
+        let resolver = ShareMountResolver::new(
+            HomeMountResolver::new(factory.clone()),
+            shares,
+            factory,
+            filecache,
+        );
+        let bob = UserId::new("bob").unwrap();
+        let mounts = resolver.mounts_for(&bob).await.unwrap();
+        assert_eq!(
+            mounts.len(),
+            1,
+            "share with missing filecache row must be skipped"
+        );
+        assert!(mounts[0].path_prefix.is_root());
+        assert!(mounts[0].metadata.is_none());
+    }
+
+    #[tokio::test]
     async fn missing_filecache_row_skips_mount() {
         let factory = Arc::new(MemoryFactory::new());
         let alice_home = seeded_alice_home().await;
