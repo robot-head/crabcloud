@@ -26,30 +26,6 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
 
-  build-wasm:
-    runs-on: ubuntu-latest
-    needs: fmt-and-clippy
-    steps:
-      - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
-      - uses: Swatinem/rust-cache@v2
-      - name: Install dioxus-cli
-        run: cargo install dioxus-cli --version "^0.7" --locked
-      - name: Build WASM bundle
-        # `crabcloud-app` is a Dioxus 0.7 fullstack crate; here we only need
-        # the browser bundle. The native side of the same source compiles to
-        # the full axum server binary (CLI + serve).
-        working-directory: crates/crabcloud-app
-        run: dx build --release --platform web
-      - name: Upload built bundle
-        uses: actions/upload-artifact@v7
-        with:
-          name: dx-public
-          path: target/dx/crabcloud-app/release/web/public
-          if-no-files-found: error
-
   test-sqlite:
     runs-on: ubuntu-latest
     needs: fmt-and-clippy
@@ -104,38 +80,41 @@ jobs:
 
   e2e:
     runs-on: ubuntu-latest
-    needs: build-wasm
-    timeout-minutes: 25
+    needs: fmt-and-clippy
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
-      - name: Download WASM bundle
-        uses: actions/download-artifact@v8
-        with:
-          name: dx-public
-          path: target/dx/crabcloud-app/release/web/public
-      - name: Build release server
-        run: cargo build --release -p crabcloud-app
-      - name: Workaround dx wasm-bundle mismatch
-        # `dx build --release` fingerprints both the JS bundle and the .wasm
-        # (`crabcloud-app-<hash>.js`, `crabcloud-app_bg-<hash>.wasm`), but the
-        # JS bundle still contains `new URL('./crabcloud-app_bg.wasm',
-        # import.meta.url)` from wasm-bindgen's ESM glue — that import isn't
-        # rewritten to the hashed name. The dx-appended `__wbg_init(...)`
-        # override fetches the hashed path, but wasm-bindgen's own preload
-        # against the un-hashed name 404s first. Symlink the un-hashed name
-        # to the hashed payload so both code paths resolve.
+      - name: Install dioxus-cli
+        run: cargo install dioxus-cli --version "^0.7" --locked
+      - name: dx build --release (fullstack via @client / @server)
+        # The `@client` / `@server` subcommand syntax (dx 0.7 cli/build.rs)
+        # is the only invocation that produces a *correctly-hashed*
+        # fullstack layout: `public/assets/<hash>.{css,js,wasm}` referenced
+        # by a proper `public/index.html` AND a `server` binary whose
+        # link-time asset substitution matches those hashes.
+        #
+        # `@client` builds the wasm32 target with `--features web` (no
+        # default features → no server-stack deps in the wasm graph).
+        # `@server` builds the host target with `--features server` (the
+        # native stack — sqlx, axum, tower, hyper). Without explicit
+        # per-target features the wasm build pulls in server-only deps
+        # that don't compile for wasm32; without explicit per-target
+        # targets the server build inherits the wasm32 target from the
+        # shared args and fails.
+        #
+        # The `--target x86_64-unknown-linux-gnu` on @server is the CI
+        # runner's host triple. Verified locally via the same Linux Docker
+        # image; produces every expected artifact, server binary boots,
+        # SSR HTML references the hashed paths, no `index.html` warning.
+        working-directory: crates/crabcloud-app
         run: |
-          set -e
-          pub=target/dx/crabcloud-app/release/web/public/assets
-          hashed=$(find "$pub" -name 'crabcloud-app_bg-*.wasm' -print -quit)
-          if [ -n "$hashed" ] && [ ! -e "$pub/crabcloud-app_bg.wasm" ]; then
-            ln -sf "$(basename "$hashed")" "$pub/crabcloud-app_bg.wasm"
-            echo "linked $pub/crabcloud-app_bg.wasm -> $(basename "$hashed")"
-          fi
+          dx build --release \
+            @client --no-default-features --features web --target wasm32-unknown-unknown \
+            @server --no-default-features --features server --target x86_64-unknown-linux-gnu
       - uses: actions/setup-node@v6
         with:
           node-version: "24"
@@ -185,7 +164,7 @@ jobs:
           # Use python (already available + has bcrypt installed) so we don't have to escape $ for sed.
           python3 -c "import os, pathlib; p = pathlib.Path('config/e2e.toml'); p.write_text(p.read_text().replace('__HASH__', os.environ['BCRYPT_HASH']))"
       - name: Migrate
-        run: cargo run --release -p crabcloud-app -- --config config/e2e.toml migrate
+        run: ./target/dx/crabcloud-app/release/web/server --config config/e2e.toml migrate
       - name: Bootstrap sharing-test users
         # `user-add` defaults to an interactive prompt via rpassword, which
         # reads /dev/tty directly and fails on a CI runner without a TTY.
@@ -196,15 +175,13 @@ jobs:
         # a user literally named `bob` as part of its CRUD test.
         run: |
           for u in sharealice sharebob; do
-            echo 'hunter2' | ./target/release/crabcloud-app --config config/e2e.toml user-add "$u" --password-stdin
+            echo 'hunter2' | ./target/dx/crabcloud-app/release/web/server --config config/e2e.toml user-add "$u" --password-stdin
           done
       - name: Start server
-        # `DIOXUS_PUBLIC_PATH` overrides the default
-        # `<exe-dir>/public` lookup performed by `dioxus::server::router`.
-        env:
-          DIOXUS_PUBLIC_PATH: ${{ github.workspace }}/target/dx/crabcloud-app/release/web/public
+        # The dx-built binary knows where its sibling `public/` lives, so
+        # we no longer need to set `DIOXUS_PUBLIC_PATH`.
         run: |
-          ./target/release/crabcloud-app --config config/e2e.toml serve &
+          ./target/dx/crabcloud-app/release/web/server --config config/e2e.toml serve &
           echo "SERVER_PID=$!" >> "$GITHUB_ENV"
           # Wait for the server to become ready.
           for i in $(seq 1 30); do
@@ -221,6 +198,28 @@ jobs:
         env:
           CRABCLOUD_E2E_URL: http://127.0.0.1:18765
         run: npm test
+      - name: Assert SSR stylesheet href is a hashed URL
+        # Regression guard for the dx 0.7.9 placeholder-leak bug. After
+        # consolidation the SSR'd `<link rel="stylesheet">` href must be a
+        # real hashed `/assets/<hash>.css` path produced by dx's link-time
+        # substitution — never the manganis placeholder ("This should be
+        # replaced by dx as part of the build process. …"). We check the
+        # running server's `/login` response directly; that's the actual
+        # production code path.
+        run: |
+          body=$(curl -sf http://127.0.0.1:18765/login)
+          if echo "$body" | grep -q "This should be replaced by dx"; then
+            echo "FAIL: SSR HTML contains the manganis placeholder. Body:"
+            echo "$body" | head -100
+            exit 1
+          fi
+          if ! echo "$body" | grep -qE '<link rel="stylesheet" href="/assets/[A-Za-z0-9._-]+\.css"'; then
+            echo "FAIL: no hashed stylesheet href in SSR HTML. Body:"
+            echo "$body" | head -100
+            exit 1
+          fi
+          echo "OK: SSR stylesheet href is a hashed URL."
+          echo "$body" | grep -oE '<link rel="stylesheet" href="[^"]*"' | head -1
       - name: Stop server
         if: always()
         run: |

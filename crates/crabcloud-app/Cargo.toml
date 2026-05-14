@@ -26,8 +26,14 @@ server = ["dioxus/server"]
 web = ["dioxus/web"]
 
 [dependencies]
-# Shared (both wasm + native) deps.
-dioxus = { workspace = true }
+# Shared (both wasm + native) deps. The explicit `features = ["fullstack"]`
+# at the crate level is what dx 0.7 reads to detect fullstack mode (it
+# inspects Cargo.toml's literal feature list, not the resolved workspace
+# inheritance). The workspace dep already includes `fullstack` in its
+# features, so this is redundant for the build graph but load-bearing for
+# `dx build --release` — without it, dx builds only the server side and
+# never produces the WASM client bundle / `index.html`.
+dioxus = { workspace = true, features = ["fullstack"] }
 serde.workspace = true
 serde_json = { workspace = true }
 
