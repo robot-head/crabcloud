@@ -53,6 +53,22 @@ pub fn view_home(h: &Harness) -> View {
     )
 }
 
+/// Build a View for any user with the given storage at root. Used when
+/// tests need to act as a non-default user (e.g., alice while bob has a
+/// share mount on the same harness).
+pub fn view_home_for(h: &Harness, storage: Arc<dyn Storage>) -> View {
+    View::new(
+        UserId::new("alice").unwrap(),
+        vec![Mount {
+            path_prefix: StoragePath::root(),
+            storage,
+            metadata: None,
+        }],
+        h.filecache.clone(),
+        h.sink.clone(),
+    )
+}
+
 /// Build a 2-mount view: home at `/` + a synthetic mount at `/Shared`.
 /// Used to exercise the cross-mount error path in Batch C tests.
 pub fn view_with_two_mounts(h: &Harness) -> View {
