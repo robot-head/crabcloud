@@ -810,10 +810,17 @@ pub struct RecipientCandidate {
 
 /// `POST /api/files/share_recipient_search` — autocomplete back-end for
 /// the Share modal's recipient picker. Returns up to 10 results unioned
-/// from the user + group stores (users first, groups appended), filtered
-/// by case-insensitive substring match against `uid|displayname` /
-/// `gid|displayname`. Empty / whitespace-only `q` returns an empty list
-/// without hitting the database. Authenticated callers only.
+/// from the user + group stores, filtered by case-insensitive substring
+/// match against `uid|displayname` / `gid|displayname`. Empty /
+/// whitespace-only `q` returns an empty list without hitting the
+/// database. Authenticated callers only.
+///
+/// We over-fetch on each side (8 users + 8 groups), interleave them as
+/// users-first, then truncate to 10. The over-fetch guarantees that even
+/// when one side has many matches, the other side still gets to surface
+/// at least a few hits — a single-side `limit: 10` followed by `truncate(10)`
+/// would have produced a users-only list whenever the user search
+/// returned >= 10 hits.
 #[server(endpoint = "api/files/share_recipient_search", prefix = "")]
 pub async fn share_recipient_search(q: String) -> Result<Vec<RecipientCandidate>, ServerFnError> {
     use crabcloud_users::{GroupListFilter, UserListFilter};
@@ -822,12 +829,14 @@ pub async fn share_recipient_search(q: String) -> Result<Vec<RecipientCandidate>
     if trimmed.is_empty() {
         return Ok(Vec::new());
     }
+    const TOTAL: usize = 10;
+    const PER_SIDE: u32 = 8;
     let users = state
         .users
         .user_store()
         .list_users(UserListFilter {
             search: Some(trimmed),
-            limit: 10,
+            limit: PER_SIDE,
             offset: 0,
         })
         .await
@@ -837,7 +846,7 @@ pub async fn share_recipient_search(q: String) -> Result<Vec<RecipientCandidate>
         .group_store()
         .list_groups(GroupListFilter {
             search: Some(trimmed),
-            limit: 10,
+            limit: PER_SIDE,
             offset: 0,
         })
         .await
@@ -857,7 +866,7 @@ pub async fn share_recipient_search(q: String) -> Result<Vec<RecipientCandidate>
         kind: "group".into(),
         share_type_int: 1,
     }));
-    out.truncate(10);
+    out.truncate(TOTAL);
     Ok(out)
 }
 
