@@ -7,41 +7,38 @@ rust-version.workspace = true
 [lib]
 crate-type = ["rlib"]
 
-# `dx build --platform web` compiles this against `wasm32-unknown-unknown` to
-# produce the browser bundle. The native build is a no-op stub (the real
-# server binary is `crabcloud-server`).
+# `dx build --release` (with the web platform set in `Dioxus.toml`) compiles
+# this against `wasm32-unknown-unknown` to produce the browser bundle. The
+# native build IS the server binary — full axum stack + CLI subcommands.
 [[bin]]
 name = "crabcloud-app"
 path = "src/main.rs"
 
 [features]
 # Sub-features are mutually exclusive and selected by the consumer:
-# - `dx` (or `cargo build --target wasm32-...`) enables `web` for the WASM client.
-# - Native server binaries that link `crabcloud-app` enable `server`.
-default = []
-server = [
-    "dioxus/server",
-    "dep:axum",
-    "dep:crabcloud-cache",
-    "dep:crabcloud-core",
-    "dep:crabcloud-fs",
-    "dep:crabcloud-http",
-    "dep:crabcloud-i18n",
-    "dep:crabcloud-storage",
-    "dep:crabcloud-users",
-    "dep:hex",
-    "dep:rand",
-    "dep:tracing",
-]
+# - `dx build --platform web` enables `web` for the WASM client. dx invokes
+#   cargo with `--no-default-features --features web`, so the native-only
+#   `server` default is dropped on that build.
+# - Native `cargo build -p crabcloud-app` uses the default `server` feature,
+#   pulling in the dioxus fullstack runtime needed by `#[server]` endpoints.
+default = ["server"]
+server = ["dioxus/server"]
 web = ["dioxus/web"]
 
 [dependencies]
+# Shared (both wasm + native) deps.
 dioxus = { workspace = true }
+serde.workspace = true
+serde_json = { workspace = true }
+
+# Web-platform deps used by the chunked-upload state machine in
+# `pages::files::upload` and the CSRF fetch interceptor in `app.rs`. They're
+# referenced under `#[cfg(target_arch = "wasm32")]` so the native (server)
+# build doesn't actually link them — anchor with `use … as _;` in lib.rs to
+# silence `unused_crate_dependencies` on the server.
 gloo-net = { workspace = true }
 gloo-timers = { workspace = true }
 js-sys = { workspace = true }
-serde.workspace = true
-serde_json = { workspace = true }
 wasm-bindgen = { workspace = true }
 wasm-bindgen-futures = { workspace = true }
 web-sys = { workspace = true, features = [
@@ -59,20 +56,28 @@ web-sys = { workspace = true, features = [
     "Window",
 ] }
 
-# Server-only deps used inside `#[server]` function bodies and the server-side
-# context bridge. Gated behind the `server` feature so the WASM build never
-# sees them.
-axum = { workspace = true, optional = true }
-crabcloud-cache = { workspace = true, optional = true }
-crabcloud-core = { workspace = true, optional = true }
-crabcloud-fs = { workspace = true, optional = true }
-crabcloud-http = { workspace = true, optional = true }
-crabcloud-i18n = { workspace = true, optional = true }
-crabcloud-storage = { workspace = true, optional = true }
-crabcloud-users = { workspace = true, optional = true }
-hex = { workspace = true, optional = true }
-rand = { workspace = true, optional = true }
-tracing = { workspace = true, optional = true }
+# Native-only deps. The CLI binary (main.rs, cli.rs, telemetry.rs) and the
+# server-side bodies of `#[server]` functions consume these directly. Cargo's
+# target-cfg deps are not resolved at all on the wasm32 build, so none of the
+# server stack (sqlx, axum, hyper, …) tries to compile for wasm.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+anyhow = { workspace = true }
+axum = { workspace = true }
+clap = { workspace = true }
+crabcloud-cache = { workspace = true }
+crabcloud-config = { workspace = true }
+crabcloud-core = { workspace = true }
+crabcloud-fs = { workspace = true }
+crabcloud-http = { workspace = true }
+crabcloud-i18n = { workspace = true }
+crabcloud-storage = { workspace = true }
+crabcloud-users = { workspace = true }
+hex = { workspace = true }
+rand = { workspace = true }
+rpassword = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
 
 [dev-dependencies]
 axum = { workspace = true }

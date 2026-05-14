@@ -1,8 +1,8 @@
 [application]
 name = "crabcloud-app"
 # `dx build --platform web` produces just the WASM client bundle that the
-# fullstack server (crabcloud-server) loads from disk at runtime. We don't
-# use `dx serve` (the entire stack runs through crabcloud-server's axum
+# fullstack server (crabcloud-app, native target) loads from disk at runtime.
+# We don't use `dx serve` (the entire stack runs through crabcloud-app's axum
 # binary), so `default_platform` stays `web` — only the build is needed.
 default_platform = "web"
 out_dir = "public"

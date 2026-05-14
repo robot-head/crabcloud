@@ -22,8 +22,8 @@ python3 -c "import bcrypt; print(bcrypt.hashpw(b'hunter2', bcrypt.gensalt(12)).d
 # and a [bootstrap_admin] section using the hash above.
 
 cargo xtask build
-cargo run --release -p crabcloud-server -- --config fixture.toml migrate
-cargo run --release -p crabcloud-server -- --config fixture.toml serve
+cargo run --release -p crabcloud-app -- --config fixture.toml migrate
+cargo run --release -p crabcloud-app -- --config fixture.toml serve
 ```
 
 In another terminal:
@@ -51,8 +51,8 @@ Quick run (with the server already up at `127.0.0.1:18765`):
 # From the repo root, in another terminal — start the server with the
 # dedicated screenshots fixture (datadirectory is gitignored as
 # screenshots-work/).
-cargo run --release -p crabcloud-server -- --config config/screenshots.toml migrate
-cargo run --release -p crabcloud-server -- --config config/screenshots.toml serve
+cargo run --release -p crabcloud-app -- --config config/screenshots.toml migrate
+cargo run --release -p crabcloud-app -- --config config/screenshots.toml serve
 
 # In e2e/:
 npm run screenshots

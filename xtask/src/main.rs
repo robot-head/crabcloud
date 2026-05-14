@@ -78,7 +78,7 @@ fn build_all() -> Result<()> {
     run_in_dir("crates/crabcloud-app", "dx", &["build", "--release"])?;
     // Server binary builds standalone too, for non-dx deploys (uses the
     // bundle dx produced above for asset serving at runtime).
-    run("cargo", &["build", "--release", "-p", "crabcloud-server"])?;
+    run("cargo", &["build", "--release", "-p", "crabcloud-app"])?;
     Ok(())
 }
 

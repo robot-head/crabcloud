@@ -23,11 +23,11 @@ cp config/config.toml.example config/config.toml
 cargo xtask build
 
 # 3. Run migrations + serve.
-cargo run --release -p crabcloud-server -- migrate
-cargo run --release -p crabcloud-server -- serve
+cargo run --release -p crabcloud-app -- migrate
+cargo run --release -p crabcloud-app -- serve
 
 # 3a. Create your first admin user (interactive password prompt).
-cargo run -p crabcloud-server -- user-add admin --admin
+cargo run -p crabcloud-app -- user-add admin --admin
 
 # 3b. (or, for the fresh-install bootstrap path)
 #     Add [bootstrap_admin] to config.toml with a bcrypt hash;
@@ -64,8 +64,7 @@ cargo run -p crabcloud-server -- user-add admin --admin
 - `crates/crabcloud-http` — axum router, middleware, session, CSRF, auth extractors, API handlers (including the Nextcloud-compatible admin OCS surface at `/ocs/v2.php/cloud/{users,groups}` and the WebDAV files API at `/dav/files/{user}/...` plus the legacy `/remote.php/dav/files/{user}/...` alias, with chunked uploads under `/dav/uploads/{user}/{upload_id}/...`).
 - `crates/crabcloud-storage` — `Storage` async trait + `MemoryStorage` and `LocalStorage` backends, `StoragePath` newtype, `EventSink` for cache/scanner consumers.
 - `crates/crabcloud-users` — user/group/preference stores, password verifier, `UsersService` façade, bootstrap-admin shim, `AppPasswordService` + `TokenStore` (auth tokens + Bearer/Basic).
-- `crates/crabcloud-app` — Dioxus 0.7 Fullstack (SSR + WASM hydration + `#[server]` functions). Includes the Files web app at `/apps/files/<path>`: browse, download (via the existing `/dav/files/...` WebDAV GET), mkdir/rename/delete, multi-select cut/paste move, upload (single-PUT + chunked via `/dav/uploads/...`). Metadata server fns live at `POST /api/files/{list,mkdir,rename,delete,move,upload_begin}`.
-- `crates/crabcloud-server` — the binary; CLI, tracing, lifecycle.
+- `crates/crabcloud-app` — Dioxus 0.7 Fullstack (SSR + WASM hydration + `#[server]` functions) AND the binary entrypoint (CLI, tracing, lifecycle). Includes the Files web app at `/apps/files/<path>`: browse, download (via the existing `/dav/files/...` WebDAV GET), mkdir/rename/delete, multi-select cut/paste move, upload (single-PUT + chunked via `/dav/uploads/...`). Metadata server fns live at `POST /api/files/{list,mkdir,rename,delete,move,upload_begin}`.
 - `xtask/` — project automation.
 - `e2e/` — Playwright tests (real-browser SSR + hydration verification).
 - `migrations/core/` — core SQL migrations, per-dialect.

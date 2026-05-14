@@ -722,7 +722,9 @@ dependencies = [
 name = "crabcloud-app"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "axum",
+ "clap",
  "crabcloud-cache",
  "crabcloud-config",
  "crabcloud-core",
@@ -738,12 +740,14 @@ dependencies = [
  "hex",
  "js-sys",
  "rand 0.10.1",
+ "rpassword",
  "serde",
  "serde_json",
  "tempfile",
  "tokio",
  "tower",
  "tracing",
+ "tracing-subscriber",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
@@ -910,25 +914,6 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tracing",
-]
-
-[[package]]
-name = "crabcloud-server"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "axum",
- "clap",
- "crabcloud-app",
- "crabcloud-config",
- "crabcloud-core",
- "crabcloud-http",
- "crabcloud-users",
- "dioxus",
- "rpassword",
- "tokio",
- "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]

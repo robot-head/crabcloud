@@ -53,9 +53,9 @@ pub fn load(base: &Path, cli_overrides: &[(&str, &str)]) -> Result<FileConfig, L
     // Some CRABCLOUD_* vars are NOT config fields and must be ignored, otherwise
     // figment fails under deny_unknown_fields:
     //   CONFIG    — reserved for the clap config-path flag
-    //   GIT_SHA   — emitted by crabcloud-server's build.rs via cargo:rustc-env;
+    //   GIT_SHA   — emitted by crabcloud-app's build.rs via cargo:rustc-env;
     //               propagates into the runtime env when launched via `cargo run`
-    //               (e.g. our CI's `cargo run --release -p crabcloud-server -- migrate`).
+    //               (e.g. our CI's `cargo run --release -p crabcloud-app -- migrate`).
     //   TEST_MYSQL_URL, TEST_POSTGRES_URL, E2E_URL — reserved for test/CI tooling.
     fig = fig.merge(Env::prefixed("CRABCLOUD_").split("__").ignore(&[
         "CONFIG",
@@ -170,7 +170,7 @@ trusted_domains = ["localhost"]
 
     #[test]
     fn build_script_env_vars_are_ignored_by_loader() {
-        // crabcloud-server's build.rs emits cargo:rustc-env=CRABCLOUD_GIT_SHA=...
+        // crabcloud-app's build.rs emits cargo:rustc-env=CRABCLOUD_GIT_SHA=...
         // which propagates into the runtime env under `cargo run` (CI's e2e path).
         // Figment would reject it under deny_unknown_fields without the ignore list.
         for (k, v) in [

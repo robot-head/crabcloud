@@ -1,8 +1,10 @@
+#![cfg(not(target_arch = "wasm32"))]
+
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
-#[command(name = "crabcloud-server", version, about = "Crabcloud server")]
+#[command(name = "crabcloud-app", version, about = "Crabcloud server")]
 pub struct Cli {
     /// Path to the main config file.
     #[arg(
@@ -61,7 +63,7 @@ pub enum Cmd {
     Files(FilesCmd),
 }
 
-/// Subcommands under `crabcloud-server files …`.
+/// Subcommands under `crabcloud-app files …`.
 #[derive(Subcommand, Debug, Clone)]
 pub enum FilesCmd {
     /// Walk a registered storage from root, reconciling cache state.
@@ -91,31 +93,26 @@ mod tests {
 
     #[test]
     fn default_subcommand_is_serve() {
-        let cli = Cli::parse_from(["crabcloud-server"]);
+        let cli = Cli::parse_from(["crabcloud-app"]);
         assert!(matches!(cli.selected(), Cmd::Serve));
     }
 
     #[test]
     fn version_subcommand_parses() {
-        let cli = Cli::parse_from(["crabcloud-server", "version"]);
+        let cli = Cli::parse_from(["crabcloud-app", "version"]);
         assert!(matches!(cli.selected(), Cmd::Version));
     }
 
     #[test]
     fn config_flag_overrides_default() {
-        let cli = Cli::parse_from([
-            "crabcloud-server",
-            "--config",
-            "/tmp/custom.toml",
-            "version",
-        ]);
+        let cli = Cli::parse_from(["crabcloud-app", "--config", "/tmp/custom.toml", "version"]);
         assert_eq!(cli.config, std::path::PathBuf::from("/tmp/custom.toml"));
     }
 
     #[test]
     fn user_add_subcommand_parses() {
         let cli = Cli::parse_from([
-            "crabcloud-server",
+            "crabcloud-app",
             "user-add",
             "alice",
             "--admin",
@@ -142,7 +139,7 @@ mod tests {
 
     #[test]
     fn user_add_password_stdin_flag_parses() {
-        let cli = Cli::parse_from(["crabcloud-server", "user-add", "alice", "--password-stdin"]);
+        let cli = Cli::parse_from(["crabcloud-app", "user-add", "alice", "--password-stdin"]);
         assert!(matches!(
             cli.selected(),
             Cmd::UserAdd {
@@ -154,7 +151,7 @@ mod tests {
 
     #[test]
     fn app_password_add_parses() {
-        let cli = Cli::parse_from(["crabcloud-server", "app-password-add", "alice", "DAV"]);
+        let cli = Cli::parse_from(["crabcloud-app", "app-password-add", "alice", "DAV"]);
         match cli.selected() {
             Cmd::AppPasswordAdd { uid, name } => {
                 assert_eq!(uid, "alice");
@@ -166,7 +163,7 @@ mod tests {
 
     #[test]
     fn app_password_revoke_parses() {
-        let cli = Cli::parse_from(["crabcloud-server", "app-password-revoke", "42"]);
+        let cli = Cli::parse_from(["crabcloud-app", "app-password-revoke", "42"]);
         match cli.selected() {
             Cmd::AppPasswordRevoke { id } => assert_eq!(id, 42),
             _ => panic!("expected AppPasswordRevoke"),
@@ -175,7 +172,7 @@ mod tests {
 
     #[test]
     fn app_password_list_parses() {
-        let cli = Cli::parse_from(["crabcloud-server", "app-password-list", "alice"]);
+        let cli = Cli::parse_from(["crabcloud-app", "app-password-list", "alice"]);
         match cli.selected() {
             Cmd::AppPasswordList { uid } => assert_eq!(uid, "alice"),
             _ => panic!("expected AppPasswordList"),
@@ -184,7 +181,7 @@ mod tests {
 
     #[test]
     fn files_scan_subcommand_parses() {
-        let cli = Cli::parse_from(["crabcloud-server", "files", "scan", "local::/srv/data"]);
+        let cli = Cli::parse_from(["crabcloud-app", "files", "scan", "local::/srv/data"]);
         match cli.selected() {
             Cmd::Files(FilesCmd::Scan { storage_id }) => {
                 assert_eq!(storage_id, "local::/srv/data");
@@ -195,7 +192,7 @@ mod tests {
 
     #[test]
     fn group_add_member_subcommand_parses() {
-        let cli = Cli::parse_from(["crabcloud-server", "group-add-member", "admin", "bob"]);
+        let cli = Cli::parse_from(["crabcloud-app", "group-add-member", "admin", "bob"]);
         match cli.selected() {
             Cmd::GroupAddMember { gid, uid } => {
                 assert_eq!(gid, "admin");
