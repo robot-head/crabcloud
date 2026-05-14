@@ -7,12 +7,36 @@ use crate::error::{FsError, FsResult};
 use crate::mount::{Mount, MountMetadata};
 use crate::path::UserPath;
 use crabcloud_filecache::FileCache;
-use crabcloud_storage::{ChannelEventSink, DirEntry, FileMetadata, StoragePath};
+use crabcloud_storage::{ChannelEventSink, DirEntry, FileMetadata, Storage, StoragePath};
 use crabcloud_users::UserId;
 use std::ops::Range;
 use std::pin::Pin;
 use std::sync::Arc;
 use tokio::io::AsyncRead;
+
+/// Translate a `(storage, path)` pair before filecache lookup, so that
+/// `Storage` wrappers (e.g. `SharedSubrootStorage`) route cache rows
+/// through the underlying owner storage and owner-side path instead of
+/// the recipient-relative path. See spec
+/// `docs/superpowers/specs/2026-05-14-filecache-share-mount-translation-design.md`.
+fn cache_key_for(
+    storage: &Arc<dyn Storage>,
+    path: &StoragePath,
+) -> FsResult<(Arc<dyn Storage>, StoragePath)> {
+    match storage.inner_storage() {
+        Some((inner, prefix)) => {
+            let translated = if path.is_root() {
+                prefix.clone()
+            } else if prefix.is_root() {
+                path.clone()
+            } else {
+                prefix.join(path.as_str())?
+            };
+            Ok((inner.clone(), translated))
+        }
+        None => Ok((storage.clone(), path.clone())),
+    }
+}
 
 /// One entry returned by [`View::list_with_meta`]. Pairs the raw
 /// [`DirEntry`] with the [`MountMetadata`] of the mount the entry was
@@ -94,7 +118,8 @@ impl View {
     /// miss via the backing storage.
     pub async fn stat(&self, user_path: &UserPath) -> FsResult<FileMetadata> {
         let (mount, storage_path) = self.resolve(user_path)?;
-        let meta = self.filecache.stat(&mount.storage, &storage_path).await?;
+        let (cache_storage, cache_path) = cache_key_for(&mount.storage, &storage_path)?;
+        let meta = self.filecache.stat(&cache_storage, &cache_path).await?;
         Ok(meta)
     }
 
@@ -141,8 +166,9 @@ impl View {
         // `storage.list(root)` directly so the listing still surfaces
         // children (plus any synthetic share-mount entries below). Non-
         // root paths route through the cache unconditionally.
+        let (cache_storage, cache_path) = cache_key_for(&mount.storage, &storage_path)?;
         let base_entries = if storage_path.is_root() {
-            match self.filecache.list(&mount.storage, &storage_path).await {
+            match self.filecache.list(&cache_storage, &cache_path).await {
                 Ok(es) => es,
                 Err(crabcloud_filecache::FileCacheError::NotFound)
                 | Err(crabcloud_filecache::FileCacheError::Storage(
@@ -151,7 +177,7 @@ impl View {
                 Err(e) => return Err(e.into()),
             }
         } else {
-            self.filecache.list(&mount.storage, &storage_path).await?
+            self.filecache.list(&cache_storage, &cache_path).await?
         };
         let resolved_prefix = mount.path_prefix.clone();
         let mut out: Vec<ListedEntry> = base_entries
@@ -178,18 +204,16 @@ impl View {
             if parent != listed_abs {
                 continue;
             }
-            // Stat directly through the wrapped storage (bypassing the
-            // filecache populate path). The wrapper translates root →
-            // `owner_path` and hits the owner's backing storage, so the
-            // returned metadata is the OWNER's view of the shared dir.
-            // We deliberately skip `FileCache::stat` here: that call
-            // would key the resulting cache row by `(wrapper.id(), root)`
-            // (alice's storage_id, recipient-relative root), which would
-            // poison alice's actual `/` row with Photos-shaped metadata.
-            // The fileid invariant the spec calls out lives in the
-            // owner's existing filecache row at `(alice_id, owner_path)`,
-            // which is unaffected here.
-            let meta = child.storage.stat(&StoragePath::root()).await?;
+            // Stat through the filecache with the share-mount wrapper translated to
+            // (owner_storage, owner_path) — keeps cache rows in the owner's
+            // namespace. See `cache_key_for` and the spec at
+            // `docs/superpowers/specs/2026-05-14-filecache-share-mount-translation-design.md`.
+            let (child_cache_storage, child_cache_path) =
+                cache_key_for(&child.storage, &StoragePath::root())?;
+            let meta = self
+                .filecache
+                .stat(&child_cache_storage, &child_cache_path)
+                .await?;
             // The synthetic entry's display name is the LAST segment of
             // the mount's `path_prefix`. That's how the recipient sees
             // it; the owner's source basename (which may differ after a
