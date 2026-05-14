@@ -79,6 +79,7 @@ axum = { workspace = true }
 crabcloud-config = { workspace = true, features = ["test-support"] }
 crabcloud-core = { workspace = true }
 crabcloud-http = { workspace = true }
+crabcloud-sharing = { workspace = true }
 crabcloud-users = { workspace = true }
 dioxus = { workspace = true, features = ["server"] }
 serde_json.workspace = true

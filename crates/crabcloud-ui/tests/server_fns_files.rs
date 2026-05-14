@@ -11,6 +11,7 @@ use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use crabcloud_config::test_support::minimal_sqlite_config;
 use crabcloud_core::{AppState, AppStateBuilder};
+use crabcloud_sharing::{CreateShareRequest, ShareType};
 use crabcloud_users::{AuthTokenType, BcryptVerifier, PasswordVerifier, User, UserId};
 use dioxus::server::{DioxusRouterExt, FullstackState};
 use tempfile::tempdir;
@@ -44,11 +45,15 @@ async fn make_state_with_user(db: std::path::PathBuf, data: std::path::PathBuf) 
 }
 
 async fn alice_bearer(state: &AppState) -> String {
+    bearer_for(state, "alice").await
+}
+
+async fn bearer_for(state: &AppState, uid: &str) -> String {
     let ap = state.users.app_passwords().unwrap().clone();
     let (_row, raw) = ap
         .mint(
-            &UserId::new("alice").unwrap(),
-            "alice",
+            &UserId::new(uid).unwrap(),
+            uid,
             "UI",
             AuthTokenType::Session,
             false,
@@ -56,6 +61,25 @@ async fn alice_bearer(state: &AppState) -> String {
         .await
         .unwrap();
     raw.expose().to_string()
+}
+
+async fn add_user(state: &AppState, uid: &str, display: &str) {
+    let hash = BcryptVerifier::new().hash("hunter2").unwrap();
+    state
+        .users
+        .user_store()
+        .create(
+            &User {
+                uid: UserId::new(uid).unwrap(),
+                display_name: display.into(),
+                email: None,
+                enabled: true,
+                last_seen: 0,
+            },
+            Some(&hash),
+        )
+        .await
+        .unwrap();
 }
 
 /// Build the axum app: register Dioxus server functions, then layer the
@@ -327,4 +351,101 @@ async fn upload_begin_returns_opaque_id() {
         .unwrap();
     let parsed: crabcloud_ui::UploadBeginResponse = serde_json::from_slice(&body).unwrap();
     assert!(parsed.upload_id.contains(':'));
+}
+
+#[tokio::test]
+async fn list_dir_decorates_shared_by_for_recipient_and_share_count_for_owner() {
+    // End-to-end check that the Batch E E1 wiring closes the loop:
+    //   - alice creates a share of /Photos with bob
+    //   - bob lists / and sees a "Photos" entry with shared_by == "alice"
+    //   - alice lists / and sees /Photos with share_count == 1
+    let dir = tempdir().unwrap();
+    let data = tempdir().unwrap();
+    let state = make_state_with_user(dir.path().join("sh.db"), data.path().to_path_buf()).await;
+    add_user(&state, "bob", "Bob").await;
+    let alice_token = alice_bearer(&state).await;
+    let bob_token = bearer_for(&state, "bob").await;
+    let app = build_app(state.clone());
+
+    // Seed /Photos in alice's home so the filecache has the row Shares::create needs.
+    let _ = post_json(
+        &app,
+        &alice_token,
+        "/api/files/mkdir",
+        serde_json::json!({ "path": "/Photos" }),
+    )
+    .await;
+
+    // Populate the filecache row directly — this test runs with the scanner
+    // disabled (see make_state_with_user), so storage-event propagation
+    // doesn't reach the cache automatically. Shares::create reads from the
+    // cache, so the row needs to exist before we get there.
+    let alice_storage = state
+        .storage_factory
+        .home_storage(&UserId::new("alice").unwrap())
+        .await
+        .unwrap();
+    let alice_home_sid = alice_storage.id().to_string();
+    state
+        .filecache
+        .stat(
+            &alice_storage,
+            &crabcloud_storage::StoragePath::new("Photos").unwrap(),
+        )
+        .await
+        .unwrap();
+    state
+        .shares
+        .create(CreateShareRequest {
+            requester: "alice".into(),
+            home_storage_id: alice_home_sid,
+            path: "/Photos".into(),
+            share_type: ShareType::User,
+            share_with: "bob".into(),
+            permissions: 3,
+        })
+        .await
+        .expect("share creation");
+
+    // Bob lists his root -> the synthetic share entry carries shared_by = alice.
+    let resp = post_json(
+        &app,
+        &bob_token,
+        "/api/files/list",
+        serde_json::json!({ "path": "/" }),
+    )
+    .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(resp.into_body(), 64 * 1024)
+        .await
+        .unwrap();
+    let entries: Vec<crabcloud_ui::FileEntry> = serde_json::from_slice(&body).unwrap();
+    let photos = entries
+        .iter()
+        .find(|e| e.name == "Photos")
+        .expect("share mount entry");
+    assert_eq!(photos.shared_by.as_deref(), Some("alice"));
+
+    // Alice lists her root -> the /Photos row carries share_count = 1.
+    let resp = post_json(
+        &app,
+        &alice_token,
+        "/api/files/list",
+        serde_json::json!({ "path": "/" }),
+    )
+    .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(resp.into_body(), 64 * 1024)
+        .await
+        .unwrap();
+    let entries: Vec<crabcloud_ui::FileEntry> = serde_json::from_slice(&body).unwrap();
+    let photos = entries
+        .iter()
+        .find(|e| e.name == "Photos")
+        .expect("alice's Photos");
+    assert_eq!(photos.share_count, 1);
+    assert!(
+        photos.shared_by.is_none(),
+        "alice's row shouldn't have shared_by set"
+    );
 }

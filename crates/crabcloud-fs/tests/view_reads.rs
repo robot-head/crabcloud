@@ -267,6 +267,47 @@ async fn view_list_share_mount_entry_carries_owners_metadata() {
 }
 
 #[tokio::test]
+async fn view_list_inside_share_mount_returns_owners_children() {
+    // Bob descends into `/Photos` (the share mount). View resolves to the
+    // share mount, storage_path = root. The wrapper translates root →
+    // alice's `/Photos`, so bob must see alice's actual /Photos contents.
+    //
+    // Regression guard for the read-correctness side of the documented
+    // filecache-poisoning issue: even if the cache rows are written with
+    // recipient-relative paths (Batch F / SP8 follow-up), the immediate
+    // entries returned to bob must be the owner's children.
+    let h = harness().await;
+    let bob_home: Arc<dyn Storage> = Arc::new(MemoryStorage::new("bob"));
+    let alice_home: Arc<dyn Storage> = Arc::new(MemoryStorage::new("alice"));
+    alice_home
+        .mkdir(&StoragePath::new("Photos").unwrap(), &NoopEventSink)
+        .await
+        .unwrap();
+    alice_home
+        .put_file(
+            &StoragePath::new("Photos/sunset.jpg").unwrap(),
+            body(b"jpeg".to_vec()),
+            &NoopEventSink,
+        )
+        .await
+        .unwrap();
+    alice_home
+        .put_file(
+            &StoragePath::new("Photos/note.txt").unwrap(),
+            body(b"hi".to_vec()),
+            &NoopEventSink,
+        )
+        .await
+        .unwrap();
+
+    let view = view_with_share_mount(&h, bob_home, alice_home, "Photos", "Photos");
+    let entries = view.list(&UserPath::new("/Photos").unwrap()).await.unwrap();
+    let mut names: Vec<_> = entries.iter().map(|e| e.name.as_str()).collect();
+    names.sort();
+    assert_eq!(names, vec!["note.txt", "sunset.jpg"]);
+}
+
+#[tokio::test]
 async fn view_read_range_returns_slice() {
     let h = harness().await;
     let view = view_home(&h);
