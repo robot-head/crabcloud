@@ -181,12 +181,28 @@ jobs:
         env:
           CRABCLOUD_E2E_URL: http://127.0.0.1:18765
         run: npm test
-      - name: Run dx-built regression tests
-        # The asset-href regression test is `#[ignore]`'d by default because
-        # it only holds when the crate went through dx's linker pass. The
-        # `dx build --release --server` above populates that link section,
-        # so we run the test explicitly with `--ignored` here.
-        run: cargo test -p crabcloud-http --test asset_render_regression -- --ignored
+      - name: Assert SSR stylesheet href is a hashed URL
+        # Regression guard for the dx 0.7.9 placeholder-leak bug. After
+        # consolidation the SSR'd `<link rel="stylesheet">` href must be a
+        # real hashed `/assets/<hash>.css` path produced by dx's link-time
+        # substitution — never the manganis placeholder ("This should be
+        # replaced by dx as part of the build process. …"). We check the
+        # running server's `/login` response directly; that's the actual
+        # production code path.
+        run: |
+          body=$(curl -sf http://127.0.0.1:18765/login)
+          if echo "$body" | grep -q "This should be replaced by dx"; then
+            echo "FAIL: SSR HTML contains the manganis placeholder. Body:"
+            echo "$body" | head -100
+            exit 1
+          fi
+          if ! echo "$body" | grep -qE '<link rel="stylesheet" href="/assets/[A-Za-z0-9._-]+\.css"'; then
+            echo "FAIL: no hashed stylesheet href in SSR HTML. Body:"
+            echo "$body" | head -100
+            exit 1
+          fi
+          echo "OK: SSR stylesheet href is a hashed URL."
+          echo "$body" | grep -oE '<link rel="stylesheet" href="[^"]*"' | head -1
       - name: Stop server
         if: always()
         run: |
