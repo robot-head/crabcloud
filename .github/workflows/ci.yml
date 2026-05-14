@@ -90,14 +90,17 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Install dioxus-cli
         run: cargo install dioxus-cli --version "^0.7" --locked
-      - name: dx build --release --server
-        # Produces both the WASM browser bundle and the native `server`
-        # binary at `target/dx/crabcloud-app/release/web/`, with dx's
-        # link-time asset substitution applied to the server binary. This
-        # replaces the legacy split between `build-wasm` (artifact) and
-        # `cargo build --release -p crabcloud-app` (server).
+      - name: dx build (web + server)
+        # Two invocations: `--web` produces the WASM browser bundle into
+        # `public/`; `--server` produces the native `server` binary with
+        # dx's link-time asset substitution applied. Both populate the
+        # same `target/dx/crabcloud-app/release/web/` directory. The
+        # smoke-test in Batch A confirmed `--server` only builds the
+        # server side; the WASM client must be built separately.
         working-directory: crates/crabcloud-app
-        run: dx build --release --server
+        run: |
+          dx build --release --web
+          dx build --release --server
       - uses: actions/setup-node@v6
         with:
           node-version: "24"
