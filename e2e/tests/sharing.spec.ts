@@ -166,27 +166,27 @@ test.describe("Sharing", () => {
         const aliceCtx = await browser.newContext();
         const bobCtx = await browser.newContext();
         try {
-            const aliceLogin = await loginCookie(aliceCtx.request, "alice", "hunter2");
-            const bobLogin = await loginCookie(bobCtx.request, "bob", "hunter2");
+            const aliceLogin = await loginCookie(aliceCtx.request, "sharealice", "hunter2");
+            const bobLogin = await loginCookie(bobCtx.request, "sharebob", "hunter2");
 
-            await reset(aliceCtx.request, aliceLogin.cookie, "alice");
+            await reset(aliceCtx.request, aliceLogin.cookie, "sharealice");
 
             // Alice creates `/SharedFolder` via WebDAV (drives the same
             // storage stack the UI would use; pre-share content is
             // optional for the visibility assertion).
-            await mkcol(aliceCtx.request, aliceLogin.cookie, "alice", "/SharedFolder");
+            await mkcol(aliceCtx.request, aliceLogin.cookie, "sharealice", "/SharedFolder");
 
             // Create the share. Permissions = 3 (read | update).
             await createShare(
                 aliceCtx.request,
                 aliceLogin.cookie,
                 "/SharedFolder",
-                "bob",
+                "sharebob",
                 3,
             );
 
             // Bob logs in and lists his root. The share mount surfaces
-            // a `SharedFolder` row decorated with `(shared by alice)`.
+            // a `SharedFolder` row decorated with `(shared by sharealice)`.
             const bobPage = await bobCtx.newPage();
             await bobPage.context().addCookies([
                 {
@@ -201,10 +201,10 @@ test.describe("Sharing", () => {
             ).toBeVisible({ timeout: 10_000 });
             await expect(
                 bobPage.locator('.files-row:has-text("SharedFolder") .row-shared-by'),
-            ).toContainText("shared by alice");
+            ).toContainText("shared by sharealice");
 
             // Cleanup.
-            await reset(aliceCtx.request, aliceLogin.cookie, "alice");
+            await reset(aliceCtx.request, aliceLogin.cookie, "sharealice");
         } finally {
             await aliceCtx.close();
             await bobCtx.close();
@@ -215,19 +215,19 @@ test.describe("Sharing", () => {
         const aliceCtx = await browser.newContext();
         const bobCtx = await browser.newContext();
         try {
-            const aliceLogin = await loginCookie(aliceCtx.request, "alice", "hunter2");
-            const bobLogin = await loginCookie(bobCtx.request, "bob", "hunter2");
+            const aliceLogin = await loginCookie(aliceCtx.request, "sharealice", "hunter2");
+            const bobLogin = await loginCookie(bobCtx.request, "sharebob", "hunter2");
 
-            await reset(aliceCtx.request, aliceLogin.cookie, "alice");
+            await reset(aliceCtx.request, aliceLogin.cookie, "sharealice");
 
-            await mkcol(aliceCtx.request, aliceLogin.cookie, "alice", "/ReadOnlyShare");
+            await mkcol(aliceCtx.request, aliceLogin.cookie, "sharealice", "/ReadOnlyShare");
 
             // permissions=1 → read-only.
             await createShare(
                 aliceCtx.request,
                 aliceLogin.cookie,
                 "/ReadOnlyShare",
-                "bob",
+                "sharebob",
                 1,
             );
 
@@ -238,13 +238,13 @@ test.describe("Sharing", () => {
             const status = await davPut(
                 bobCtx.request,
                 bobLogin.cookie,
-                "bob",
+                "sharebob",
                 "/ReadOnlyShare/forbidden.txt",
                 "should be rejected",
             );
             expect(status).toBe(403);
 
-            await reset(aliceCtx.request, aliceLogin.cookie, "alice");
+            await reset(aliceCtx.request, aliceLogin.cookie, "sharealice");
         } finally {
             await aliceCtx.close();
             await bobCtx.close();
@@ -257,17 +257,17 @@ test.describe("Sharing", () => {
         const aliceCtx = await browser.newContext();
         const bobCtx = await browser.newContext();
         try {
-            const aliceLogin = await loginCookie(aliceCtx.request, "alice", "hunter2");
-            const bobLogin = await loginCookie(bobCtx.request, "bob", "hunter2");
+            const aliceLogin = await loginCookie(aliceCtx.request, "sharealice", "hunter2");
+            const bobLogin = await loginCookie(bobCtx.request, "sharebob", "hunter2");
 
-            await reset(aliceCtx.request, aliceLogin.cookie, "alice");
+            await reset(aliceCtx.request, aliceLogin.cookie, "sharealice");
 
-            await mkcol(aliceCtx.request, aliceLogin.cookie, "alice", "/RevokeShare");
+            await mkcol(aliceCtx.request, aliceLogin.cookie, "sharealice", "/RevokeShare");
             const share = await createShare(
                 aliceCtx.request,
                 aliceLogin.cookie,
                 "/RevokeShare",
-                "bob",
+                "sharebob",
                 3,
             );
 
@@ -299,7 +299,7 @@ test.describe("Sharing", () => {
                 bobPage.locator('.files-row:has-text("RevokeShare")'),
             ).toHaveCount(0, { timeout: 10_000 });
 
-            await reset(aliceCtx.request, aliceLogin.cookie, "alice");
+            await reset(aliceCtx.request, aliceLogin.cookie, "sharealice");
         } finally {
             await aliceCtx.close();
             await bobCtx.close();

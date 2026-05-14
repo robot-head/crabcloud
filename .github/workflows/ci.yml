@@ -186,12 +186,16 @@ jobs:
           python3 -c "import os, pathlib; p = pathlib.Path('config/e2e.toml'); p.write_text(p.read_text().replace('__HASH__', os.environ['BCRYPT_HASH']))"
       - name: Migrate
         run: cargo run --release -p crabcloud-server -- --config config/e2e.toml migrate
-      - name: Bootstrap test users (alice + bob)
+      - name: Bootstrap sharing-test users
         # `user-add` defaults to an interactive prompt via rpassword, which
         # reads /dev/tty directly and fails on a CI runner without a TTY.
         # `--password-stdin` reads one line of password from stdin instead.
+        #
+        # Uses dedicated `sharealice` / `sharebob` uids so the bootstrap
+        # doesn't collide with `admin_ocs.spec.ts`, which creates+deletes
+        # a user literally named `bob` as part of its CRUD test.
         run: |
-          for u in alice bob; do
+          for u in sharealice sharebob; do
             echo 'hunter2' | ./target/release/crabcloud-server --config config/e2e.toml user-add "$u" --password-stdin
           done
       - name: Start server
