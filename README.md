@@ -11,7 +11,7 @@ See `docs/superpowers/specs/` for design specs, `docs/superpowers/plans/` for im
 ```bash
 # 0. One-time tooling
 rustup target add wasm32-unknown-unknown
-cargo install dioxus-cli --version "^0.6"
+cargo install dioxus-cli --version "^0.7"
 
 # 1. Copy and edit the example config.
 cp config/config.toml.example config/config.toml
@@ -19,14 +19,20 @@ cp config/config.toml.example config/config.toml
 #  - Pick a dbtype (sqlite is easiest).
 #  - For login, add a [bootstrap_admin] section with a bcrypt password hash.
 
-# 2. Build UI + server.
-cargo xtask build
+# 2. Build UI + server (one dx invocation produces both WASM client + server
+#    binary with hashed asset paths substituted into SSR HTML). Replace
+#    <host-triple> with x86_64-unknown-linux-gnu / x86_64-pc-windows-msvc /
+#    aarch64-apple-darwin as appropriate.
+( cd crates/crabcloud-app && dx build --release \
+    @client --no-default-features --features web --target wasm32-unknown-unknown \
+    @server --no-default-features --features server --target <host-triple> )
 
-# 3. Run migrations + serve.
-cargo run --release -p crabcloud-app -- migrate
-cargo run --release -p crabcloud-app -- serve
+# 3. Run migrations, then serve via the dx-built binary.
+./target/dx/crabcloud-app/release/web/server --config config/config.toml migrate
+./target/dx/crabcloud-app/release/web/server --config config/config.toml serve
 
-# 3a. Create your first admin user (interactive password prompt).
+# 3a. Create your first admin user (interactive password prompt). The CLI
+#     subcommands work via cargo too — no dx asset pass needed.
 cargo run -p crabcloud-app -- user-add admin --admin
 
 # 3b. (or, for the fresh-install bootstrap path)
@@ -50,6 +56,67 @@ cargo run -p crabcloud-app -- user-add admin --admin
 
 # 4. Visit http://127.0.0.1:8080/ in a browser.
 ```
+
+## Development
+
+The Dioxus 0.7 fullstack model means a single `dx` invocation drives both the
+WASM client and the native server binary. dx performs link-time substitution of
+`manganis` asset placeholders into hashed `/assets/<…>.ext` paths in the SSR
+HTML, so any code path that needs the rendered page to match the served
+bundle (e.g. Playwright E2E) must go through a dx-built binary.
+
+### Hot-reload dev server
+
+From `crates/crabcloud-app/`:
+
+```bash
+dx serve --release \
+  @client --no-default-features --features web --target wasm32-unknown-unknown \
+  @server --no-default-features --features server
+```
+
+`dx serve` spawns the server binary with `IP` + `PORT` env vars set; the
+binary's `Cmd::Serve` honors these (overriding `bind_address` in
+`config.toml`) so HMR ws + asset reload reach the right address. The dev
+URL is printed on startup (typically `http://localhost:8080`).
+
+### Release build
+
+From `crates/crabcloud-app/`:
+
+```bash
+dx build --release \
+  @client --no-default-features --features web --target wasm32-unknown-unknown \
+  @server --no-default-features --features server --target <host-triple>
+```
+
+Replace `<host-triple>` with `x86_64-unknown-linux-gnu` on Linux,
+`x86_64-pc-windows-msvc` on Windows, or `aarch64-apple-darwin` on Apple
+silicon. Output lives under `target/dx/crabcloud-app/release/web/`:
+
+- `server` (Linux/macOS) or `server.exe` (Windows) — the server binary.
+- `public/assets/` — hashed CSS / JS / image / WASM bundles.
+- `public/index.html` — generated shell.
+
+Run it via:
+
+```bash
+./target/dx/crabcloud-app/release/web/server --config config/config.toml serve
+```
+
+### Cargo-only fallback (CLI subcommands)
+
+For CLI subcommands (`migrate`, `user-add`, `files scan`, etc.) and
+scripted server runs that don't need the rendered UI, plain `cargo` works:
+
+```bash
+cargo run --release -p crabcloud-app -- migrate
+cargo run --release -p crabcloud-app -- user-add admin --admin
+```
+
+The cargo-built server binary's SSR HTML will contain `manganis` placeholder
+strings for stylesheet/script hrefs (a known artifact of building without
+dx's linker pass) — production / E2E use the dx-built binary above.
 
 ## Workspace layout
 

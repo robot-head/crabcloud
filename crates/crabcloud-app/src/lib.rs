@@ -25,6 +25,11 @@ use anyhow as _;
 use clap as _;
 #[cfg(not(target_arch = "wasm32"))]
 use crabcloud_config as _;
+// Native-only: `main.rs` reads `IP` + `PORT` via
+// `dioxus_cli_config::fullstack_address_or_localhost()` when bound under
+// `dx serve`. Anchored here so lib-only `cargo check` keeps the lint quiet.
+#[cfg(not(target_arch = "wasm32"))]
+use dioxus_cli_config as _;
 #[cfg(not(target_arch = "wasm32"))]
 use rpassword as _;
 #[cfg(not(target_arch = "wasm32"))]
