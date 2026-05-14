@@ -75,7 +75,7 @@ fn build_all() -> Result<()> {
     // `fullstack` value; left empty it defaults to the platform inferred
     // from `Dioxus.toml` / the crate's [[bin]] config, which for this crate
     // produces the same dual output (server bin + web bundle).
-    run_in_dir("crates/crabcloud-ui", "dx", &["build", "--release"])?;
+    run_in_dir("crates/crabcloud-app", "dx", &["build", "--release"])?;
     // Server binary builds standalone too, for non-dx deploys (uses the
     // bundle dx produced above for asset serving at runtime).
     run("cargo", &["build", "--release", "-p", "crabcloud-server"])?;

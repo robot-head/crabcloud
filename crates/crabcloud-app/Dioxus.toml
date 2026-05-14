@@ -1,5 +1,5 @@
 [application]
-name = "crabcloud-ui"
+name = "crabcloud-app"
 # `dx build --platform web` produces just the WASM client bundle that the
 # fullstack server (crabcloud-server) loads from disk at runtime. We don't
 # use `dx serve` (the entire stack runs through crabcloud-server's axum

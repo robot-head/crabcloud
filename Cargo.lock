@@ -719,6 +719,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "crabcloud-app"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "crabcloud-cache",
+ "crabcloud-config",
+ "crabcloud-core",
+ "crabcloud-fs",
+ "crabcloud-http",
+ "crabcloud-i18n",
+ "crabcloud-sharing",
+ "crabcloud-storage",
+ "crabcloud-users",
+ "dioxus",
+ "gloo-net 0.7.0",
+ "gloo-timers 0.4.0",
+ "hex",
+ "js-sys",
+ "rand 0.10.1",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tower",
+ "tracing",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+]
+
+[[package]]
 name = "crabcloud-cache"
 version = "0.1.0"
 dependencies = [
@@ -888,10 +919,10 @@ dependencies = [
  "anyhow",
  "axum",
  "clap",
+ "crabcloud-app",
  "crabcloud-config",
  "crabcloud-core",
  "crabcloud-http",
- "crabcloud-ui",
  "crabcloud-users",
  "dioxus",
  "rpassword",
@@ -944,37 +975,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "crabcloud-ui"
-version = "0.1.0"
-dependencies = [
- "axum",
- "crabcloud-cache",
- "crabcloud-config",
- "crabcloud-core",
- "crabcloud-fs",
- "crabcloud-http",
- "crabcloud-i18n",
- "crabcloud-sharing",
- "crabcloud-storage",
- "crabcloud-users",
- "dioxus",
- "gloo-net 0.7.0",
- "gloo-timers 0.4.0",
- "hex",
- "js-sys",
- "rand 0.10.1",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
- "tower",
- "tracing",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "web-sys",
-]
-
-[[package]]
 name = "crabcloud-users"
 version = "0.1.0"
 dependencies = [
@@ -983,12 +983,12 @@ dependencies = [
  "axum",
  "base64",
  "bcrypt",
+ "crabcloud-app",
  "crabcloud-cache",
  "crabcloud-config",
  "crabcloud-core",
  "crabcloud-db",
  "crabcloud-http",
- "crabcloud-ui",
  "dioxus",
  "email_address",
  "hex",

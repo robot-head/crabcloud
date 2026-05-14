@@ -12,10 +12,10 @@ path = "src/main.rs"
 anyhow.workspace = true
 axum.workspace = true
 clap.workspace = true
+crabcloud-app = { workspace = true, features = ["server"] }
 crabcloud-config.workspace = true
 crabcloud-core.workspace = true
 crabcloud-http.workspace = true
-crabcloud-ui = { workspace = true, features = ["server"] }
 crabcloud-users.workspace = true
 dioxus = { workspace = true, features = ["server"] }
 rpassword.workspace = true

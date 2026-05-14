@@ -10,13 +10,13 @@ fn main() {
     // Patch window.fetch to inject the CSRF requesttoken header on outgoing
     // /api/ calls. Must run before dioxus::launch so the patch is in place
     // before any server-fn future is polled. See app.rs for rationale.
-    crabcloud_ui::install_csrf_fetch_interceptor();
-    dioxus::launch(crabcloud_ui::App);
+    crabcloud_app::install_csrf_fetch_interceptor();
+    dioxus::launch(crabcloud_app::App);
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 fn main() {
     eprintln!(
-        "crabcloud-ui is a WASM-only entry point; run `crabcloud-server` for the native binary."
+        "crabcloud-app is a WASM-only entry point; run `crabcloud-server` for the native binary."
     );
 }

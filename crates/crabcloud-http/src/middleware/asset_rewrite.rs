@@ -4,10 +4,10 @@
 //! Background: when dx builds the wasm bundle it scans the binary and
 //! substitutes each `asset!()` token in-place with the hashed bundled URL
 //! (e.g. `/assets/app-dxh<hash>.css`). Our native server binary
-//! (`crabcloud-server`) links the same `crabcloud-ui` rlib but is built by
+//! (`crabcloud-server`) links the same `crabcloud-app` rlib but is built by
 //! plain `cargo build`, so it never goes through that substitution pass.
 //! The result: the SSR'd HTML carries the original absolute source path
-//! (e.g. `C:\Users\…\crabcloud-ui\assets\app.css`) as the `<link>` href,
+//! (e.g. `C:\Users\…\crabcloud-app\assets\app.css`) as the `<link>` href,
 //! which the browser can't load and CSP refuses to apply as a stylesheet.
 //!
 //! Fix: at startup we read dx's `.manifest.json` (sibling of the `public/`

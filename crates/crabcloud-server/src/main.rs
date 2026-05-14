@@ -90,9 +90,9 @@ async fn main() -> Result<()> {
 
             // Dioxus fullstack: `dioxus::server::router(App)` wires the SSR
             // fallback, generated index.html, static assets, and the
-            // `#[server]` function endpoints declared in `crabcloud-ui`.
+            // `#[server]` function endpoints declared in `crabcloud-app`.
             // We merge OCS routes + shared middleware on top via `build_router`.
-            let app_router = dioxus::server::router(crabcloud_ui::App);
+            let app_router = dioxus::server::router(crabcloud_app::App);
             let router = crabcloud_http::build_router(state.clone(), app_router);
 
             let listener = tokio::net::TcpListener::bind(bind).await?;

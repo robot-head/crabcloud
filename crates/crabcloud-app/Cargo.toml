@@ -1,5 +1,5 @@
 [package]
-name = "crabcloud-ui"
+name = "crabcloud-app"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -11,13 +11,13 @@ crate-type = ["rlib"]
 # produce the browser bundle. The native build is a no-op stub (the real
 # server binary is `crabcloud-server`).
 [[bin]]
-name = "crabcloud-ui"
+name = "crabcloud-app"
 path = "src/main.rs"
 
 [features]
 # Sub-features are mutually exclusive and selected by the consumer:
 # - `dx` (or `cargo build --target wasm32-...`) enables `web` for the WASM client.
-# - Native server binaries that link `crabcloud-ui` enable `server`.
+# - Native server binaries that link `crabcloud-app` enable `server`.
 default = []
 server = [
     "dioxus/server",
