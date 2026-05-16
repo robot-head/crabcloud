@@ -3,6 +3,7 @@
 //! Matches Nextcloud's token format byte-for-byte so existing desktop/mobile
 //! clients accept the URLs without modification.
 
+use async_trait::async_trait;
 use rand::Rng;
 use std::fmt;
 
@@ -65,6 +66,44 @@ impl Default for Tokens {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Minimal projection of a public-link share row, decoupled from the sharing
+/// crate's `ShareRow`. The auth layer needs only these fields; keeping the
+/// trait small lets us implement it from a stub in tests and from
+/// `crabcloud-core::SharesTokenLookup` in production.
+#[derive(Debug, Clone)]
+pub struct LinkRow {
+    /// `oc_share.id` for the link.
+    pub share_id: i64,
+    /// Owner of the linked subtree (`oc_share.uid_owner`).
+    pub owner_uid: String,
+    /// Full path inside the owner's home (`oc_share.file_target` for link
+    /// rows, per Batch B). Includes a leading `/`; the auth layer strips it
+    /// before constructing a `StoragePath`.
+    pub owner_path: String,
+    /// Stored permission bits. Caller-side wrappers normalise via
+    /// `SharePermissions::from_wire` so the re-share bit is dropped.
+    pub permissions: u32,
+    /// Bcrypt hash from `oc_share.password`, or `None` for unprotected links.
+    pub password_hash: Option<String>,
+    /// Hard expiration; the auth layer treats past-expiration as 404
+    /// (indistinguishable from a missing token).
+    pub expiration: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+/// What the auth layer needs from the sharing service. Implemented in
+/// production by `crabcloud-core::SharesTokenLookup` (a thin adapter over
+/// `crabcloud-sharing::Shares::resolve_by_token`) and in tests by a stub.
+/// Keeping this trait in `crabcloud-publiclinks` is what lets the crate
+/// stay free of any direct dep on the sharing service in its public API.
+#[async_trait]
+pub trait TokenLookup: Send + Sync {
+    /// Resolve a public-link token to its row, or `Ok(None)` if the token is
+    /// unknown. The trait returns `std::io::Error` so adapters can flatten
+    /// any backend-specific error type into a single shape without dragging
+    /// their error enum into this crate.
+    async fn lookup(&self, token: &str) -> Result<Option<LinkRow>, std::io::Error>;
 }
 
 #[cfg(test)]

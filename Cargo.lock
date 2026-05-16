@@ -783,6 +783,7 @@ name = "crabcloud-core"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "crabcloud-cache",
  "crabcloud-config",
  "crabcloud-db",
@@ -790,10 +791,12 @@ dependencies = [
  "crabcloud-fs",
  "crabcloud-i18n",
  "crabcloud-ocs",
+ "crabcloud-publiclinks",
  "crabcloud-sharing",
  "crabcloud-storage",
  "crabcloud-users",
  "dashmap",
+ "secrecy",
  "sqlx",
  "tempfile",
  "thiserror 2.0.18",
@@ -921,14 +924,21 @@ dependencies = [
 name = "crabcloud-publiclinks"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
+ "axum",
  "base64",
  "bcrypt",
+ "chrono",
+ "crabcloud-storage",
  "crabcloud-users",
  "dashmap",
  "hmac 0.13.0",
  "rand 0.10.1",
  "sha2 0.11.0",
  "thiserror 2.0.18",
+ "tokio",
+ "tower",
+ "tracing",
 ]
 
 [[package]]

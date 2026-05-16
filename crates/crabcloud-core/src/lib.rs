@@ -7,9 +7,11 @@
 mod appconfig;
 mod bootstrap;
 mod error;
+mod publiclinks;
 mod state;
 
 pub use appconfig::AppConfigService;
 pub use bootstrap::{boxed_hook, BootstrapHook, BootstrapRegistry};
 pub use error::{CoreResult, Error};
+pub use publiclinks::SharesTokenLookup;
 pub use state::{AppState, AppStateBuilder};
