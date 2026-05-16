@@ -54,6 +54,19 @@ pub const CORE_MIGRATIONS: &[Migration] = &[
         mysql: include_str!("../../../migrations/core/0006_shares/mysql.sql"),
         postgres: include_str!("../../../migrations/core/0006_shares/postgres.sql"),
     },
+    Migration {
+        version: 7,
+        name: "mail_queue_and_notification_prefs",
+        sqlite: include_str!(
+            "../../../migrations/core/0007_mail_queue_and_notification_prefs/sqlite.sql"
+        ),
+        mysql: include_str!(
+            "../../../migrations/core/0007_mail_queue_and_notification_prefs/mysql.sql"
+        ),
+        postgres: include_str!(
+            "../../../migrations/core/0007_mail_queue_and_notification_prefs/postgres.sql"
+        ),
+    },
 ];
 
 /// Returns the `core` migration set ready to be registered with a
@@ -81,7 +94,7 @@ mod tests {
         let mut runner = MigrationRunner::new(&pool, &cfg.dbtableprefix);
         runner.register(core_set());
         let applied = runner.run().await.unwrap();
-        assert_eq!(applied, 6);
+        assert_eq!(applied, 7);
 
         // Verify oc_appconfig exists and accepts a row.
         match &pool {
