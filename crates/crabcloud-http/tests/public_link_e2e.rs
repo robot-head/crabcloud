@@ -428,6 +428,61 @@ async fn upload_collision_appends_suffix() {
         .unwrap());
 }
 
+/// Regression test for double URL-decoding in the upload handler. axum's
+/// `Path<String>` extractor already percent-decodes captured segments once;
+/// the handler used to call `urlencoding::decode` again, which mangled any
+/// filename containing a literal `%`. A client uploading `foo%20bar.txt`
+/// percent-escapes the `%` and sends `/s/<token>/upload/foo%2520bar.txt` —
+/// axum decodes to `foo%20bar.txt`, and the handler must keep it intact
+/// (pre-fix it decoded again to `foo bar.txt`).
+#[tokio::test]
+async fn upload_filename_with_percent_preserves_percent() {
+    let dir = tempdir().unwrap();
+    let data = tempdir().unwrap();
+    let state = make_state(dir.path().join("pct.db"), data.path().to_path_buf()).await;
+    seed_user(&state, "alice").await;
+    seed_folder(&state, "alice", "Drop").await;
+    let token = create_link(&state, "alice", "/Drop", 5, None).await;
+    let app = crabcloud_http::build_router(state.clone(), axum::Router::new());
+
+    // Send `foo%2520bar.txt` — axum decodes once to `foo%20bar.txt`.
+    let req = Request::builder()
+        .method("POST")
+        .uri(format!("/s/{token}/upload/foo%2520bar.txt"))
+        .body(Body::from("payload"))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::CREATED);
+
+    let bytes = axum::body::to_bytes(resp.into_body(), 1024).await.unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(
+        v["name"].as_str().unwrap(),
+        "foo%20bar.txt",
+        "handler must preserve the literal `%` (pre-fix it double-decoded to `foo bar.txt`)"
+    );
+
+    let storage = state
+        .storage_factory
+        .home_storage(&UserId::new("alice").unwrap())
+        .await
+        .unwrap();
+    assert!(
+        storage
+            .exists(&StoragePath::new("Drop/foo%20bar.txt").unwrap())
+            .await
+            .unwrap(),
+        "file must land on disk with literal `%20` in the name"
+    );
+    assert!(
+        !storage
+            .exists(&StoragePath::new("Drop/foo bar.txt").unwrap())
+            .await
+            .unwrap(),
+        "the double-decoded form must NOT exist on disk"
+    );
+}
+
 #[tokio::test]
 async fn unknown_token_returns_404() {
     let dir = tempdir().unwrap();

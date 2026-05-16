@@ -274,13 +274,12 @@ async fn upload_handler(
     if !perms.allows_create() {
         return (StatusCode::FORBIDDEN, "create_not_permitted").into_response();
     }
-    // URL-decode the captured filename segment so percent-encoded names
-    // (e.g. spaces, non-ASCII) round-trip cleanly.
-    let decoded_name = match urlencoding::decode(&filename) {
-        Ok(s) => s.into_owned(),
-        Err(_) => return (StatusCode::BAD_REQUEST, "invalid encoding").into_response(),
-    };
-    if !is_safe_filename(&decoded_name) {
+    // axum's `Path<String>` extractor already percent-decodes the captured
+    // segment; decoding again here would mangle filenames containing a
+    // literal `%` (a client sending `foo%2520bar.txt` to upload `foo%20bar.txt`
+    // would otherwise land as `foo bar.txt`). Use the extracted value as-is.
+    let decoded_name = filename.as_str();
+    if !is_safe_filename(decoded_name) {
         return (StatusCode::BAD_REQUEST, "invalid filename").into_response();
     }
 
@@ -305,7 +304,7 @@ async fn upload_handler(
         Err(resp) => return resp,
     };
 
-    let final_name = match resolve_collision(&view, &decoded_name).await {
+    let final_name = match resolve_collision(&view, decoded_name).await {
         Ok(n) => n,
         Err(resp) => return resp,
     };
@@ -352,9 +351,10 @@ async fn build_view(state: &AppState, ctx: &PublicLinkAuthContext) -> Result<Vie
 }
 
 fn decoded_user_path(raw: &str) -> Result<UserPath, Response> {
-    let decoded = urlencoding::decode(raw)
-        .map_err(|_| (StatusCode::BAD_REQUEST, "invalid url encoding").into_response())?;
-    UserPath::new(format!("/{decoded}"))
+    // axum's `Path<String>` extractor already percent-decoded the captured
+    // segment; decoding again here would mangle paths containing a literal
+    // `%`. Use the captured value verbatim.
+    UserPath::new(format!("/{raw}"))
         .map_err(|e| (StatusCode::BAD_REQUEST, format!("invalid path: {e}")).into_response())
 }
 
