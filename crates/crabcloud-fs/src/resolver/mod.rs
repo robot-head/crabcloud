@@ -3,8 +3,10 @@
 //! mounts on top.
 
 pub mod local;
+pub mod public_link;
 pub mod share;
 
+pub use public_link::PublicLinkMountResolver;
 pub use share::{FileCacheLookup, ShareMountResolver, SharesLookup};
 
 use crabcloud_storage::StoragePath;
