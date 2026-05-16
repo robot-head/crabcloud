@@ -25,8 +25,7 @@ pub struct MailWorker {
 
 impl MailWorker {
     /// Construct a new worker. Returns the worker plus a shutdown
-    /// handle. Drop both ends when shutting down the process — the
-    /// worker terminates after at most one in-flight send completes.
+    /// handle. See [`MailWorker::run`] for shutdown latency semantics.
     pub fn new(queue: MailQueue, mailer: Arc<Mailer>) -> (Self, Arc<Notify>) {
         let shutdown = Arc::new(Notify::new());
         (
@@ -39,14 +38,27 @@ impl MailWorker {
         )
     }
 
-    /// Run the worker loop until the shutdown handle is signalled.
+    /// Drain the queue until shutdown is signaled.
+    ///
+    /// On `Notify::notify_one()`, the worker terminates after the current
+    /// batch finishes draining (up to 8 rows). It does NOT abort an
+    /// in-flight `Mailer::send` — that would leave the SMTP connection
+    /// mid-transaction or leave the row stuck in `Sending`. Operators and
+    /// tests should expect shutdown to take up to N × (single-send
+    /// duration) where N is the batch size; a typical SMTP round-trip is
+    /// under 500ms.
     pub async fn run(self) {
         let mut cycles = 0u64;
         loop {
             cycles += 1;
             if cycles.is_multiple_of(5) {
-                if let Err(e) = self.queue.reclaim_stuck().await {
-                    tracing::warn!(error = %e, "mail_worker.reclaim_stuck failed");
+                match self.queue.reclaim_stuck().await {
+                    Ok(n) => {
+                        tracing::debug!(reclaimed = n, "mail_worker reclaim_stuck");
+                    }
+                    Err(e) => {
+                        tracing::warn!(error = %e, "mail_worker.reclaim_stuck failed");
+                    }
                 }
             }
             let batch = match self.queue.claim_batch(8).await {
