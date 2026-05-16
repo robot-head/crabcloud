@@ -103,6 +103,13 @@ async fn share_to_json(row: &ShareRow, state: &AppState) -> Value {
     // safer "null + boolean" shape so handlers cannot accidentally leak).
     let (share_with_value, share_with_displayname) = match row.share_type {
         ShareType::Link => (Value::Null, "(Public link)".to_string()),
+        ShareType::Email => {
+            // Email-link rows store the recipient address in `share_with`.
+            // Mirror Nextcloud's wire shape: the address is both the value
+            // and the displayname.
+            let addr = row.share_with.clone().unwrap_or_default();
+            (Value::String(addr.clone()), addr)
+        }
         ShareType::Group => {
             let dn = match row.share_with.as_deref() {
                 Some(gid) => group_display_name_of(state, gid).await,

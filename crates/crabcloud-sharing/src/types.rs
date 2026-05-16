@@ -10,6 +10,11 @@ pub enum ShareType {
     User = 0,
     Group = 1,
     Link = 3,
+    /// "Email-link" share — a public-link row whose `share_with` is an
+    /// email address rather than a user/group id. Routes through
+    /// `create_link` like `ShareType::Link`, additionally enqueuing a
+    /// `link_emailed` notification to the recipient.
+    Email = 4,
 }
 
 impl TryFrom<i16> for ShareType {
@@ -19,6 +24,7 @@ impl TryFrom<i16> for ShareType {
             0 => Ok(ShareType::User),
             1 => Ok(ShareType::Group),
             3 => Ok(ShareType::Link),
+            4 => Ok(ShareType::Email),
             _ => Err("unsupported share_type"),
         }
     }
@@ -115,7 +121,7 @@ mod tests {
 
     #[test]
     fn share_type_round_trips_via_i16() {
-        for v in [0_i16, 1, 3] {
+        for v in [0_i16, 1, 3, 4] {
             let st = ShareType::try_from(v).unwrap();
             assert_eq!(i16::from(st), v);
         }
@@ -124,6 +130,7 @@ mod tests {
     #[test]
     fn share_type_rejects_unknown() {
         assert!(ShareType::try_from(2_i16).is_err());
+        assert!(ShareType::try_from(5_i16).is_err());
         assert!(ShareType::try_from(99_i16).is_err());
     }
 

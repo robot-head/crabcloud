@@ -33,9 +33,11 @@ impl Shares {
     }
 
     pub async fn create(&self, req: CreateShareRequest) -> Result<ShareRow, ShareError> {
-        // Link rows take a different code path: no `share_with` target,
-        // password and expiration handled, token generated. SP8 §5.
-        if matches!(req.share_type, ShareType::Link) {
+        // Link + Email rows take a different code path: no user/group
+        // recipient lookup, password and expiration handled, token
+        // generated. Email additionally enqueues a `link_emailed` mail
+        // post-insert (Task C4). SP8 §5.
+        if matches!(req.share_type, ShareType::Link | ShareType::Email) {
             return self.create_link(req).await;
         }
         if req.permissions & 1 == 0 {
@@ -83,7 +85,7 @@ impl Shares {
                     return Err(ShareError::RecipientUnknown);
                 }
             }
-            ShareType::Link => unreachable!(),
+            ShareType::Link | ShareType::Email => unreachable!(),
         }
 
         let item_type = if row.mimetype.as_str() == crabcloud_filecache::DIRECTORY_MIMETYPE {
@@ -427,8 +429,8 @@ impl Shares {
             return Err(ShareError::NotImplemented);
         }
         if let Some(pw_opt) = &fields.password {
-            // Only Link rows accept password updates.
-            if !matches!(existing.share_type, ShareType::Link) {
+            // Only Link / Email rows accept password updates.
+            if !matches!(existing.share_type, ShareType::Link | ShareType::Email) {
                 return Err(ShareError::BadPermissions);
             }
             let hashed: Option<String> = match pw_opt {
@@ -450,7 +452,7 @@ impl Shares {
         if let Some(raw) = fields.permissions {
             // Link rows accept either bit 1 (read) or bit 4 (create), matching
             // `create_link`. User/group rows continue to require bit 1.
-            let ok = if matches!(existing.share_type, ShareType::Link) {
+            let ok = if matches!(existing.share_type, ShareType::Link | ShareType::Email) {
                 raw & 1 != 0 || raw & 4 != 0
             } else {
                 raw & 1 != 0
@@ -602,9 +604,16 @@ impl Shares {
         // sees a 500.
         let token = crabcloud_publiclinks::Tokens::new().generate();
         let token_str = token.to_string();
+        // Email shares persist the recipient address in `share_with` for
+        // audit + UI display. Plain Link shares omit it (None).
+        let share_with_for_insert: Option<&str> = match req.share_type {
+            ShareType::Email => Some(req.share_with.as_str()),
+            _ => None,
+        };
         let id = self
             .insert_link_row(
                 share_type_db,
+                share_with_for_insert,
                 &req.requester,
                 fileid,
                 &file_target,
@@ -619,8 +628,13 @@ impl Shares {
 
         Ok(ShareRow {
             id,
-            share_type: ShareType::Link,
-            share_with: None,
+            share_type: req.share_type,
+            // For Email shares, `share_with` is the recipient email address.
+            // For Link shares it's `None`.
+            share_with: match req.share_type {
+                ShareType::Email => Some(req.share_with.clone()),
+                _ => None,
+            },
             uid_owner: req.requester.clone(),
             uid_initiator: req.requester,
             parent: None,
@@ -642,6 +656,7 @@ impl Shares {
     async fn insert_link_row(
         &self,
         share_type_db: i16,
+        share_with: Option<&str>,
         requester: &str,
         fileid: i64,
         file_target: &str,
@@ -656,7 +671,7 @@ impl Shares {
             DbPool::Sqlite(p) => {
                 let res = sqlx::query(sql::INSERT_QM)
                     .bind(share_type_db)
-                    .bind::<Option<&str>>(None) // share_with
+                    .bind(share_with) // share_with (None for Link, email for Email)
                     .bind(requester) // uid_owner
                     .bind(requester) // uid_initiator
                     .bind::<Option<i64>>(None) // parent
@@ -679,7 +694,7 @@ impl Shares {
             DbPool::MySql(p) => {
                 let res = sqlx::query(sql::INSERT_QM)
                     .bind(share_type_db)
-                    .bind::<Option<&str>>(None)
+                    .bind(share_with)
                     .bind(requester)
                     .bind(requester)
                     .bind::<Option<i64>>(None)
@@ -702,7 +717,7 @@ impl Shares {
             DbPool::Postgres(p) => {
                 let row = sqlx::query(sql::INSERT_PG)
                     .bind(share_type_db)
-                    .bind::<Option<&str>>(None)
+                    .bind(share_with)
                     .bind(requester)
                     .bind(requester)
                     .bind::<Option<i64>>(None)
