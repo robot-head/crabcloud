@@ -185,6 +185,67 @@ pub async fn create_link(
     row.token.expect("link rows carry a token")
 }
 
+/// Seed a JPEG file under `uid`'s home at `path`, returning its
+/// filecache row. The image is a deterministic gradient at
+/// `width x height` so callers can assert on output dimensions after
+/// thumbnailing.
+pub async fn seed_jpeg(
+    state: &AppState,
+    uid: &str,
+    path: &str,
+    width: u32,
+    height: u32,
+) -> crabcloud_filecache::FilecacheRow {
+    use std::io::Cursor;
+    let img = image::RgbImage::from_fn(width, height, |x, y| {
+        image::Rgb([(x % 256) as u8, (y % 256) as u8, 128])
+    });
+    let mut buf = Cursor::new(Vec::new());
+    image::DynamicImage::ImageRgb8(img)
+        .write_to(&mut buf, image::ImageFormat::Jpeg)
+        .expect("encode jpeg");
+    seed_file_and_lookup(state, uid, path, &buf.into_inner()).await
+}
+
+/// Seed an arbitrary file under `uid`'s home and return its filecache
+/// row. Mime is sniffed from `path`'s extension / bytes by the storage
+/// backend — caller picks a `path` extension matching the desired mime
+/// (e.g. `.zip` for `application/zip`).
+pub async fn seed_file_with_mime(
+    state: &AppState,
+    uid: &str,
+    path: &str,
+    bytes: &[u8],
+    _mime_hint: &str,
+) -> crabcloud_filecache::FilecacheRow {
+    seed_file_and_lookup(state, uid, path, bytes).await
+}
+
+/// Internal helper: seed the file, then look the row back up so callers
+/// have its `fileid`.
+async fn seed_file_and_lookup(
+    state: &AppState,
+    uid: &str,
+    path: &str,
+    bytes: &[u8],
+) -> crabcloud_filecache::FilecacheRow {
+    seed_file(state, uid, path, bytes).await;
+    let storage_id = state
+        .storage_factory
+        .home_storage(&UserId::new(uid).unwrap())
+        .await
+        .unwrap()
+        .id()
+        .to_string();
+    let sp = StoragePath::new(path.trim_start_matches('/')).unwrap();
+    state
+        .filecache
+        .lookup(&storage_id, &sp)
+        .await
+        .unwrap()
+        .expect("filecache row should exist after seed_file")
+}
+
 /// Mint a session-typed app-password for `uid` and return the raw
 /// token. Callers wrap it in `format!("Bearer {token}")` for the
 /// `Authorization` header.

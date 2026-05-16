@@ -178,7 +178,8 @@ pub fn build_router(state: AppState, app_router: Router) -> Router {
             "/ocs",
             crate::routes::ocs::router().with_state(state.clone()),
         )
-        .merge(crate::routes::files_zip::router().with_state(state.clone()));
+        .merge(crate::routes::files_zip::router().with_state(state.clone()))
+        .merge(crate::routes::files_preview::router().with_state(state.clone()));
 
     // Public-link surface (`/s/{token}/...`). The unlock / download / upload
     // handlers live in `routes::public_link`; the viewer PAGE (`/s/{token}`

@@ -24,6 +24,12 @@ use uuid as _;
 #[cfg(test)]
 use zip as _;
 
+// `image` is a dev-dep used only by the `files_preview_e2e` integration
+// test (it encodes seeded JPEGs and decodes the response body). Anchor
+// it here for the same reason as `zip` above.
+#[cfg(test)]
+use image as _;
+
 mod auth_context;
 mod csrf;
 mod error;
