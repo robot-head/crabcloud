@@ -21,8 +21,8 @@ use axum::{
 use base64::Engine;
 use chrono::{Duration, Utc};
 use crabcloud_publiclinks::{
-    public_link_auth, AuthSurface, LinkRow, Passwords, PublicLinkAuthContext,
-    PublicLinkAuthState, RateLimiter, TokenLookup, UnlockCookie,
+    public_link_auth, AuthSurface, LinkRow, Passwords, PublicLinkAuthContext, PublicLinkAuthState,
+    RateLimiter, TokenLookup, UnlockCookie,
 };
 use std::{collections::HashMap, sync::Arc};
 use tower::ServiceExt;

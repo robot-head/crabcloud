@@ -224,8 +224,9 @@ fn dav_unlocked(state: &PublicLinkAuthState, hashed: &str, req: &Request) -> boo
         Ok(s) => s,
         Err(_) => return false,
     };
-    // Strict ASCII colon split; tolerates empty username.
-    let password = decoded.splitn(2, ':').nth(1).unwrap_or("");
+    // Strict ASCII colon split; tolerates empty username. Returns "" when
+    // the input contains no colon — which fails verification cleanly.
+    let password = decoded.split_once(':').map(|(_, p)| p).unwrap_or("");
     let hp = HashedPassword::from_stored(hashed.to_string());
     state.passwords.verify(password, &hp)
 }

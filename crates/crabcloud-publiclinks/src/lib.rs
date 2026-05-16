@@ -16,12 +16,18 @@ mod passwords;
 mod ratelimit;
 mod tokens;
 
-pub use auth_layer::{
-    public_link_auth, AuthSurface, PasswordGateRequired, PublicLinkAuthState,
-};
+pub use auth_layer::{public_link_auth, AuthSurface, PasswordGateRequired, PublicLinkAuthState};
 pub use context::PublicLinkAuthContext;
 pub use cookie::UnlockCookie;
 pub use error::PublicLinkError;
 pub use passwords::{HashedPassword, Passwords};
 pub use ratelimit::{RateLimitDecision, RateLimiter};
 pub use tokens::{LinkRow, Token, TokenLookup, Tokens};
+
+// Silence `unused_crate_dependencies` for dev-deps only used in
+// `tests/auth_layer_e2e.rs`. The lint fires against the lib test binary
+// when dev-deps are linked but not referenced from any unit test.
+#[cfg(test)]
+use tokio as _;
+#[cfg(test)]
+use tower as _;
