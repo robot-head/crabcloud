@@ -323,4 +323,40 @@ mod tests {
             "dedup must collapse concurrent reads"
         );
     }
+
+    #[tokio::test]
+    async fn cache_namespaces_by_storage_id() {
+        let tmp = TempDir::new().unwrap();
+        let cache = PreviewCache::new(tmp.path().to_path_buf(), 64 * 1024 * 1024);
+        let bytes_a = synth_jpeg();
+        let bytes_b = synth_jpeg();
+        let (path_a, _) = cache
+            .get_or_render(
+                "sidA",
+                7,
+                64,
+                "etag1234567890aa",
+                &ImageProvider,
+                || async { Ok(bytes_a.clone()) },
+            )
+            .await
+            .unwrap();
+        let (path_b, _) = cache
+            .get_or_render(
+                "sidB",
+                7,
+                64,
+                "etag1234567890bb",
+                &ImageProvider,
+                || async { Ok(bytes_b.clone()) },
+            )
+            .await
+            .unwrap();
+        assert_ne!(
+            path_a, path_b,
+            "different storage_ids must yield different cache paths"
+        );
+        assert!(path_a.to_string_lossy().contains("sidA"));
+        assert!(path_b.to_string_lossy().contains("sidB"));
+    }
 }
