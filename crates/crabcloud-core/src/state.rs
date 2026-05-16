@@ -95,6 +95,10 @@ pub struct AppState {
     /// when a worker was actually spawned (i.e. `mail.transport != "disabled"`).
     /// Tests signal `notify_one` here to drain the worker between runs.
     pub mail_worker_shutdown: Arc<tokio::sync::Notify>,
+    /// Expiration-warning sweeper shutdown handle. Same shape as
+    /// `mail_worker_shutdown` — present unconditionally; the task is
+    /// only spawned when mail transport is not Disabled.
+    pub expiration_sweeper_shutdown: Arc<tokio::sync::Notify>,
 }
 
 impl std::fmt::Debug for AppState {
@@ -385,6 +389,17 @@ impl AppStateBuilder {
         // them at construction time); reuse those clones here.
         let (mail_worker, mail_worker_shutdown) =
             MailWorker::new(mail_queue.clone(), mailer.clone());
+        let (expiration_sweeper, expiration_sweeper_shutdown) =
+            crate::expiration_sweeper::ExpirationWarningSweeper::new(
+                shares.clone(),
+                mail_queue.clone(),
+                users.clone(),
+                notification_prefs.clone(),
+                self.config
+                    .overwrite_cli_url
+                    .clone()
+                    .unwrap_or_default(),
+            );
         if !matches!(
             mail_transport_cfg.kind,
             crabcloud_mail::TransportKind::Disabled
@@ -393,6 +408,12 @@ impl AppStateBuilder {
             // terminates when `mail_worker_shutdown.notify_one()` is
             // called (typically at process shutdown / test teardown).
             std::mem::drop(tokio::spawn(async move { mail_worker.run().await }));
+            // Same shape for the expiration sweeper. Skipped under
+            // Disabled transport so unit tests with the default config
+            // don't spin a background task they have to drain.
+            std::mem::drop(tokio::spawn(async move {
+                expiration_sweeper.run().await
+            }));
         }
 
         let state = AppState {
@@ -416,6 +437,7 @@ impl AppStateBuilder {
             mail_queue,
             notification_prefs,
             mail_worker_shutdown,
+            expiration_sweeper_shutdown,
         };
 
         self.registry.run(&state).await?;

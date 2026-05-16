@@ -107,6 +107,21 @@ pub struct CreateShareRequest {
     pub expire_date: Option<NaiveDate>,
 }
 
+/// Slim projection of an `oc_share` row used by the
+/// `ExpirationWarningSweeper`. Carries just the fields the sweeper
+/// needs to render the warning template + stamp `last_warned`.
+#[derive(Debug, Clone)]
+pub struct ExpiringLink {
+    pub id: i64,
+    pub uid_owner: String,
+    /// For Link/Email rows, this is the FULL owner-relative path
+    /// (with leading slash) — `file_target` carries the path so the
+    /// sweeper can compute a sensible basename for the template.
+    pub file_target: String,
+    pub token: String,
+    pub expiration: chrono::NaiveDateTime,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct UpdateShareFields {
     pub permissions: Option<u32>,

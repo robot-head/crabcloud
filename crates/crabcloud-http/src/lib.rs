@@ -30,6 +30,12 @@ use zip as _;
 #[cfg(test)]
 use image as _;
 
+// `crabcloud-mail` is a dev-dep used only by the `files_sharing_e2e`
+// integration test (it imports `EventType` to assert the queued row's
+// event_type column). Same anchor pattern as `zip` / `image`.
+#[cfg(test)]
+use crabcloud_mail as _;
+
 mod auth_context;
 mod csrf;
 mod error;

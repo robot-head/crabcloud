@@ -1159,7 +1159,8 @@ async fn post_shares_email_type_enqueues_link_emailed_mail() {
     assert_eq!(queued.len(), 1, "expected one mail row enqueued");
     let env = &queued[0];
     assert_eq!(env.recipient, "friend@example.com");
-    assert_eq!(env.event_type, crabcloud_mail::EventType::LinkEmailed);
+    use crabcloud_mail::EventType;
+    assert_eq!(env.event_type, EventType::LinkEmailed);
     assert!(env.subject.contains("share"), "subject: {}", env.subject);
     assert!(
         env.html_body.contains(tok),
