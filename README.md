@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/crabcloud-logo-blackbg-text.png">
+    <img src="docs/crabcloud-logo-whitebg-text.png" alt="Crabcloud" width="240">
+  </picture>
+</p>
+
 # Crabcloud
 
 A self-hosted cloud platform written in Rust, with a [Dioxus](https://dioxuslabs.com/) frontend that renders on the server and hydrates in the browser. Crabcloud is API-compatible with [Nextcloud](https://nextcloud.com/), so existing Nextcloud desktop, mobile, and WebDAV clients pair against it without modification.
@@ -107,6 +114,31 @@ Crabcloud aims for parity with the core Nextcloud Hub. The table below tracks wh
 | Activity feed                                          |   ❌   |
 | Notifications                                          |   ❌   |
 | Collabora / OnlyOffice integration                     |   ❌   |
+
+## Screenshots
+
+<table>
+  <tr>
+    <td align="center">
+      <a href="docs/screenshots/files-list.png"><img src="docs/screenshots/files-list.png" alt="Files browser" width="420"></a><br>
+      <sub>Files browser</sub>
+    </td>
+    <td align="center">
+      <a href="docs/screenshots/files-empty.png"><img src="docs/screenshots/files-empty.png" alt="Empty folder with drop-to-upload" width="420"></a><br>
+      <sub>Empty folder with drop-to-upload</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <a href="docs/screenshots/files-selection.png"><img src="docs/screenshots/files-selection.png" alt="Multi-select cut and delete" width="420"></a><br>
+      <sub>Multi-select cut and delete</sub>
+    </td>
+    <td align="center">
+      <a href="docs/screenshots/files-delete-modal.png"><img src="docs/screenshots/files-delete-modal.png" alt="Delete confirmation" width="420"></a><br>
+      <sub>Delete confirmation</sub>
+    </td>
+  </tr>
+</table>
 
 ## Quick start
 
