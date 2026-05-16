@@ -11,9 +11,18 @@
 
 use crate::pages::files::breadcrumb::Breadcrumb;
 use crate::pages::files::path::segments_to_path;
+use crate::pages::preview_mime::is_previewable_mime;
 use crate::server_fns::public_link::{list_public_link, meta_public_link, PublicLinkMeta};
 use crate::server_fns::FileEntry;
 use dioxus::prelude::*;
+
+/// Inline JS swapped in via the thumbnail `<img>`'s `onerror` attribute.
+/// Mirrors the authed FileRow fallback: replaces the broken `<img>` with
+/// a `<span class="files-icon">📄</span>` so 404 / 415 / network errors
+/// degrade to the same generic emoji icon non-previewable rows show.
+/// Stored as a `const &str` so `rsx!` doesn't parse the `{...}` braces in
+/// the body as format placeholders.
+const THUMB_ONERROR_JS: &str = "this.onerror=null;this.replaceWith(Object.assign(document.createElement('span'),{className:'files-icon',textContent:'📄'}))";
 
 #[component]
 pub fn PublicLinkRoot(token: String) -> Element {
@@ -194,11 +203,31 @@ fn PublicRow(token: String, base_path: String, entry: FileEntry) -> Element {
         // captures a path with no leading slash.
         let rel = entry.path.trim_start_matches('/');
         let href = format!("/s/{token}/download/{rel}");
+        // Public-link thumbnails reuse the user-facing path under the
+        // sibling `/s/{token}/preview/{*path}` handler. fileid is
+        // intentionally absent from public-link DTOs (anonymous viewers
+        // never carry one), so the URL goes by path instead.
+        let thumb_url = match entry.mime.as_deref() {
+            Some(mime) if is_previewable_mime(mime) => {
+                Some(format!("/s/{token}/preview/{rel}?size=64"))
+            }
+            _ => None,
+        };
         rsx! {
             tr { class: "files-row",
                 td { class: "files-cell",
                     a { class: "files-name files-name-file", href: "{href}",
-                        span { class: "files-icon", "{icon}" }
+                        if let Some(url) = thumb_url {
+                            img {
+                                class: "files-thumb",
+                                src: "{url}",
+                                alt: "",
+                                loading: "lazy",
+                                "onerror": "{THUMB_ONERROR_JS}",
+                            }
+                        } else {
+                            span { class: "files-icon", "{icon}" }
+                        }
                         "{entry.name}"
                     }
                 }
@@ -322,5 +351,71 @@ mod tests {
     #[test]
     fn format_size_kb() {
         assert_eq!(format_size(2048), "2.0 KB");
+    }
+
+    /// SSR snapshot: a JPEG entry under a public-link viewer renders
+    /// `<img src="/s/{token}/preview/{path}?size=64">` — keyed on the
+    /// user-facing path, not a fileid (anonymous viewers don't carry
+    /// fileids). Mirrors the FileRow snapshot in `pages::files::row`.
+    #[cfg(feature = "server")]
+    #[test]
+    fn public_row_jpeg_emits_preview_img_tag() {
+        let entry = FileEntry {
+            name: "cat.jpg".into(),
+            path: "/photos/cat.jpg".into(),
+            is_dir: false,
+            size: 1234,
+            mtime_ms: 0,
+            mime: Some("image/jpeg".into()),
+            etag: "e0".into(),
+            fileid: None,
+            shared_by: None,
+            share_count: 0,
+        };
+        let html = dioxus::ssr::render_element(rsx! {
+            PublicRow {
+                token: "tok123".to_string(),
+                base_path: "/".to_string(),
+                entry,
+            }
+        });
+        assert!(
+            html.contains("/s/tok123/preview/photos/cat.jpg?size=64"),
+            "expected public preview URL, got: {html}"
+        );
+        assert!(
+            html.contains("class=\"files-thumb\""),
+            "expected files-thumb class, got: {html}"
+        );
+    }
+
+    /// SSR snapshot: a non-previewable file in a public-link viewer does
+    /// not emit a preview URL.
+    #[cfg(feature = "server")]
+    #[test]
+    fn public_row_plain_does_not_emit_preview_img_tag() {
+        let entry = FileEntry {
+            name: "notes.txt".into(),
+            path: "/notes.txt".into(),
+            is_dir: false,
+            size: 12,
+            mtime_ms: 0,
+            mime: Some("text/plain".into()),
+            etag: "e0".into(),
+            fileid: None,
+            shared_by: None,
+            share_count: 0,
+        };
+        let html = dioxus::ssr::render_element(rsx! {
+            PublicRow {
+                token: "tok123".to_string(),
+                base_path: "/".to_string(),
+                entry,
+            }
+        });
+        assert!(
+            !html.contains("/preview/"),
+            "non-previewable row should not emit preview URL, got: {html}"
+        );
     }
 }
