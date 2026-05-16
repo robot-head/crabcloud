@@ -45,6 +45,8 @@ pub fn minimal_sqlite_config(db_path: PathBuf) -> FileConfig {
         bind_address: "127.0.0.1:0".parse::<SocketAddr>().unwrap(),
         cache: CacheConfig::default(),
         filecache: FilecacheConfig::default(),
+        folder_zip_max_entries: 500,
+        folder_zip_max_bytes: 2 * 1024 * 1024 * 1024,
         bootstrap_admin: None,
     }
 }

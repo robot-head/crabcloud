@@ -3,6 +3,7 @@
 //! OCS REST + WebDAV surfaces remain here.
 
 pub mod dav;
+pub mod files_zip;
 pub mod ocs;
 pub mod public_dav;
 pub mod public_link;
