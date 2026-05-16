@@ -814,6 +814,7 @@ dependencies = [
  "crabcloud-fs",
  "crabcloud-http",
  "crabcloud-i18n",
+ "crabcloud-preview",
  "crabcloud-publiclinks",
  "crabcloud-sharing",
  "crabcloud-storage",
