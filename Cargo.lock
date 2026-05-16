@@ -958,6 +958,7 @@ dependencies = [
  "crabcloud-filecache",
  "crabcloud-fs",
  "crabcloud-ocs",
+ "crabcloud-preview",
  "crabcloud-publiclinks",
  "crabcloud-sharing",
  "crabcloud-storage",
