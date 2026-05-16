@@ -217,8 +217,7 @@ async fn mark_sent_transitions_state(fx: &Fixture) {
         .unwrap();
     let _ = fx.queue.claim_batch(1).await.unwrap();
     fx.queue.mark_sent(id).await.unwrap();
-    let (state, _next, _attempts, last_error) =
-        fetch_state_and_next_attempt(&fx.pool, id).await;
+    let (state, _next, _attempts, last_error) = fetch_state_and_next_attempt(&fx.pool, id).await;
     assert_eq!(state, "Sent");
     assert!(last_error.is_none());
 }
@@ -268,8 +267,7 @@ async fn mark_failed_permanent_transitions_to_failed_state(fx: &Fixture) {
 
 async fn reclaim_stuck_returns_old_sending_to_pending(fx: &Fixture) {
     // Insert a row in Sending state with claimed_at 10 minutes ago.
-    let ten_minutes_ago =
-        (Utc::now() - chrono::Duration::seconds(600)).naive_utc();
+    let ten_minutes_ago = (Utc::now() - chrono::Duration::seconds(600)).naive_utc();
     let now = Utc::now().naive_utc();
     let id: i64 = match fx.pool.as_ref() {
         DbPool::Sqlite(p) => {

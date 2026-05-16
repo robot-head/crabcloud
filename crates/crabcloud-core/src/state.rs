@@ -366,8 +366,7 @@ impl AppStateBuilder {
             crabcloud_mail::Mailer::from_config(&mail_transport_cfg).map_err(Error::Mail)?,
         );
         let mail_queue = MailQueue::new(Arc::new(pool.clone()));
-        let notification_prefs =
-            crabcloud_users::NotificationPrefs::new(Arc::new(pool.clone()));
+        let notification_prefs = crabcloud_users::NotificationPrefs::new(Arc::new(pool.clone()));
         let (mail_worker, mail_worker_shutdown) =
             MailWorker::new(mail_queue.clone(), mailer.clone());
         if !matches!(
