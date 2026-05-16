@@ -299,4 +299,22 @@ pub(crate) mod tests {
         );
         assert_eq!(empty.unwrap().kind, PlanKind::Dir);
     }
+
+    #[tokio::test]
+    async fn walk_returns_view_error_for_unknown_path() {
+        let (view, _tmp) = seed_view().await;
+        let r = walk_for_caps(
+            &view,
+            &UserPath::new("/does-not-exist").unwrap(),
+            &ZipCaps {
+                max_entries: 100,
+                max_bytes: 1024,
+            },
+        )
+        .await;
+        match r {
+            Err(WalkError::View(_)) => {}
+            other => panic!("expected WalkError::View, got {other:?}"),
+        }
+    }
 }

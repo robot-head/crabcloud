@@ -169,6 +169,10 @@ mod tests {
         assert!(names.iter().any(|n| n == "Photos/cat.jpg"));
         assert!(names.iter().any(|n| n == "Photos/dog.jpg"));
         assert!(names.iter().any(|n| n == "Photos/vacation/beach.jpg"));
+        assert!(
+            names.iter().any(|n| n == "Photos/vacation/empty/"),
+            "empty directory entry should be present in zip; got names {names:?}",
+        );
     }
 
     #[tokio::test]
