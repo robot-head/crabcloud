@@ -11,9 +11,18 @@
 
 use crate::pages::files::breadcrumb::Breadcrumb;
 use crate::pages::files::path::segments_to_path;
+use crate::pages::preview_mime::is_previewable_mime;
 use crate::server_fns::public_link::{list_public_link, meta_public_link, PublicLinkMeta};
 use crate::server_fns::FileEntry;
 use dioxus::prelude::*;
+
+/// Inline JS swapped in via the thumbnail `<img>`'s `onerror` attribute.
+/// Mirrors the authed FileRow fallback: replaces the broken `<img>` with
+/// a `<span class="files-icon">📄</span>` so 404 / 415 / network errors
+/// degrade to the same generic emoji icon non-previewable rows show.
+/// Stored as a `const &str` so `rsx!` doesn't parse the `{...}` braces in
+/// the body as format placeholders.
+const THUMB_ONERROR_JS: &str = "this.onerror=null;this.replaceWith(Object.assign(document.createElement('span'),{className:'files-icon',textContent:'📄'}))";
 
 #[component]
 pub fn PublicLinkRoot(token: String) -> Element {
@@ -194,11 +203,31 @@ fn PublicRow(token: String, base_path: String, entry: FileEntry) -> Element {
         // captures a path with no leading slash.
         let rel = entry.path.trim_start_matches('/');
         let href = format!("/s/{token}/download/{rel}");
+        // Public-link thumbnails reuse the user-facing path under the
+        // sibling `/s/{token}/preview/{*path}` handler. fileid is
+        // intentionally absent from public-link DTOs (anonymous viewers
+        // never carry one), so the URL goes by path instead.
+        let thumb_url = match entry.mime.as_deref() {
+            Some(mime) if is_previewable_mime(mime) => {
+                Some(format!("/s/{token}/preview/{rel}?size=64"))
+            }
+            _ => None,
+        };
         rsx! {
             tr { class: "files-row",
                 td { class: "files-cell",
                     a { class: "files-name files-name-file", href: "{href}",
-                        span { class: "files-icon", "{icon}" }
+                        if let Some(url) = thumb_url {
+                            img {
+                                class: "files-thumb",
+                                src: "{url}",
+                                alt: "",
+                                loading: "lazy",
+                                "onerror": "{THUMB_ONERROR_JS}",
+                            }
+                        } else {
+                            span { class: "files-icon", "{icon}" }
+                        }
                         "{entry.name}"
                     }
                 }
