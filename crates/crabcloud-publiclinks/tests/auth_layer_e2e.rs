@@ -123,15 +123,24 @@ async fn probe(req: Request) -> Response {
 fn router_for(state: Arc<PublicLinkAuthState>, surface: AuthSurface) -> Router {
     // `from_fn_with_state` clones `state` per request; we wrap it in a
     // closure that forwards to `public_link_auth(state, surface, ...)`.
+    //
+    // Mirrors `build_router`'s mount shape: the inner router exposes
+    // nest-relative routes and is nested under the surface prefix so the
+    // auth middleware sees the post-strip path.
     let state_for_mw = state.clone();
     let mw = move |req: Request, next: Next| {
         let s = state_for_mw.clone();
         async move { public_link_auth(s, surface, req, next).await }
     };
-    Router::new()
+    let inner = Router::new()
         // Catch-all so we don't care which exact path each test hits.
         .route("/{*rest}", any(probe))
-        .layer(from_fn_with_state(state, mw))
+        .route_layer(from_fn_with_state(state, mw));
+    let prefix = match surface {
+        AuthSurface::Browser => "/s",
+        AuthSurface::Dav => "/public.php/dav/files",
+    };
+    Router::new().nest(prefix, inner)
 }
 
 fn make_state(lookup: Arc<dyn TokenLookup>) -> Arc<PublicLinkAuthState> {

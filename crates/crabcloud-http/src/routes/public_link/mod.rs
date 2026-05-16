@@ -22,9 +22,9 @@
 //!   password gate is still in force or the link lacks the read bit.
 //!
 //! The page itself (`/s/{token}` and `/s/{token}/*path`) is rendered by
-//! the dx fullstack SSR pipeline; those routes flow through the same
-//! auth middleware but their handlers live in `crabcloud-app`'s server
-//! function set, not here.
+//! the dx fullstack SSR pipeline and is NOT covered by this nested
+//! router; its handlers live in `crabcloud-app`'s server function set
+//! and resolve the share row themselves from the token query parameter.
 //!
 //! Per-handler bodies live in sibling files (`unlock.rs`, `download.rs`,
 //! `preview.rs`, `upload.rs`, `zip.rs`) and call back into the shared
@@ -62,18 +62,20 @@ use zip::{zip_handler, zip_handler_root};
 /// Unlock-cookie lifetime in seconds. Matches the SP8 design (one hour).
 pub(super) const UNLOCK_COOKIE_TTL_SECS: i64 = 3600;
 
-/// Build the public-link router. The CALLER is responsible for layering
-/// `public_link_auth(AuthSurface::Browser)` on top — see
-/// `crate::router::build_router`. Without that layer the handlers will
-/// panic when they try to extract `PublicLinkAuthContext`.
+/// Build the public-link router. The CALLER mounts this under `/s` via
+/// `Router::nest` and layers `public_link_auth(AuthSurface::Browser)` on
+/// top — see `crate::router::build_router`. Without that layer the
+/// handlers will panic when they try to extract `PublicLinkAuthContext`.
+/// Routes are written nest-relative (no `/s/` prefix) so axum strips the
+/// mount prefix before the auth middleware sees the path.
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/s/{token}/unlock", post(unlock_handler))
-        .route("/s/{token}/download/{*path}", get(download_handler))
-        .route("/s/{token}/preview/{*path}", get(preview_handler))
-        .route("/s/{token}/upload/{filename}", post(upload_handler))
-        .route("/s/{token}/zip/", get(zip_handler_root))
-        .route("/s/{token}/zip/{*path}", get(zip_handler))
+        .route("/{token}/unlock", post(unlock_handler))
+        .route("/{token}/download/{*path}", get(download_handler))
+        .route("/{token}/preview/{*path}", get(preview_handler))
+        .route("/{token}/upload/{filename}", post(upload_handler))
+        .route("/{token}/zip/", get(zip_handler_root))
+        .route("/{token}/zip/{*path}", get(zip_handler))
 }
 
 /// Build a per-request `View` from a `PublicLinkAuthContext`. Constructs

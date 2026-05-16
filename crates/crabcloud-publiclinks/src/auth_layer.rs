@@ -70,8 +70,9 @@ pub struct PublicLinkAuthState {
 }
 
 /// Which surface the middleware is running on. Two surfaces share the same
-/// auth state but differ in password-gate enforcement (cookie vs. Basic)
-/// and in token-extraction path prefix.
+/// auth state but differ in password-gate enforcement (cookie vs. Basic).
+/// Token extraction is prefix-agnostic — the surface prefix is stripped by
+/// `Router::nest` before this middleware runs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AuthSurface {
     /// Browser-facing `/s/{token}`; password gate is a cookie set by the
@@ -96,7 +97,11 @@ pub async fn public_link_auth(
     mut req: Request,
     next: Next,
 ) -> Response {
-    let token = match extract_token(req.uri().path(), surface) {
+    // The middleware is mounted via `Router::nest(prefix, …)`, so by the time
+    // we run, `req.uri().path()` has already been re-rooted to the path
+    // *after* the surface prefix (`/{token}/…`). `extract_token` just takes
+    // the first segment of whatever we hand it — no prefix-stripping needed.
+    let token = match extract_token(req.uri().path()) {
         Some(t) => t,
         None => return not_found(),
     };
@@ -186,16 +191,17 @@ pub async fn public_link_auth(
     next.run(req).await
 }
 
-/// Extract the token from the path. The router has already matched the
-/// surface prefix; we just take the first segment after it. Returns `None`
-/// for paths that don't parse as a well-formed 15-char base62 token, which
-/// short-circuits DB lookups for typos and bot probes.
-fn extract_token(path: &str, surface: AuthSurface) -> Option<Token> {
-    let stripped = match surface {
-        AuthSurface::Browser => path.strip_prefix("/s/")?,
-        AuthSurface::Dav => path.strip_prefix("/public.php/dav/files/")?,
-    };
-    let first = stripped.split('/').next()?;
+/// Extract the token from the post-prefix path. The caller mounts this
+/// middleware via `Router::nest(prefix, …)`, so axum already stripped the
+/// surface prefix before we ran; we just take the first non-empty path
+/// segment. Returns `None` for paths that don't parse as a well-formed
+/// 15-char base62 token, which short-circuits DB lookups for typos and bot
+/// probes.
+fn extract_token(path_after_prefix: &str) -> Option<Token> {
+    let first = path_after_prefix
+        .trim_start_matches('/')
+        .split('/')
+        .next()?;
     Token::parse(first)
 }
 

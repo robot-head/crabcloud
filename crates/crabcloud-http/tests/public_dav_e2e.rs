@@ -1,8 +1,9 @@
 //! End-to-end tests for the anonymous public-link WebDAV surface mounted
 //! under `/public.php/dav/files/{token}/...`. Drives the full
-//! `build_router` so each request travels through the new
-//! `public_dav_gate` middleware (HTTP Basic against the link's bcrypt
-//! hash) before reaching the surface-neutral DAV handlers.
+//! `build_router` so each request travels through the nested
+//! `public_link_auth(AuthSurface::Dav)` middleware (HTTP Basic against
+//! the link's bcrypt hash) before reaching the surface-neutral DAV
+//! handlers.
 //!
 //! Fixture mirrors `dav_basic.rs` (filecache scanner disabled) plus the
 //! seed/create-link helpers from `public_link_e2e.rs`: seed an owner home
