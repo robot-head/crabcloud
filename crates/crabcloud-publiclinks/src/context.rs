@@ -39,4 +39,10 @@ pub struct PublicLinkAuthContext {
     /// Permission bits applied to the wrapped subroot, normalised through
     /// `SharePermissions::from_wire` upstream (re-share bit cleared).
     pub permissions: u32,
+    /// `true` on a password-protected Browser request whose cookie is missing
+    /// or invalid. Downstream handlers MUST check this before serving content;
+    /// the only legitimate consumer in this state is the unlock POST handler,
+    /// which needs the resolved share to mint a cookie. The viewer page should
+    /// render the gate variant in response to this flag.
+    pub password_gate_required: bool,
 }

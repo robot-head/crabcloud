@@ -117,6 +117,16 @@ pub async fn public_link_auth(
         }
     }
 
+    // Tracked separately from the `PasswordGateRequired` marker extension so
+    // we can also stamp it onto `PublicLinkAuthContext`. The marker remains
+    // the "render the gate page" signal for the viewer; the field is the
+    // "is this context safe to act on?" signal that every downstream handler
+    // is forced to acknowledge (the only legitimate consumer when it's `true`
+    // is the unlock POST handler, which needs the resolved share to mint a
+    // cookie). Dav never sets this — Dav 401s on missing/wrong credentials
+    // before reaching the context-build step.
+    let mut gate_required = false;
+
     if let Some(hashed) = row.password_hash.as_deref() {
         match surface {
             AuthSurface::Browser => {
@@ -125,6 +135,7 @@ pub async fn public_link_auth(
                     // based on this marker. Returning 401 here would pop a
                     // browser auth dialog, which is the wrong UX.
                     req.extensions_mut().insert(PasswordGateRequired);
+                    gate_required = true;
                 }
             }
             AuthSurface::Dav => {
@@ -156,6 +167,7 @@ pub async fn public_link_auth(
         owner_uid,
         owner_path,
         permissions: normalise_permissions(row.permissions),
+        password_gate_required: gate_required,
     });
 
     next.run(req).await

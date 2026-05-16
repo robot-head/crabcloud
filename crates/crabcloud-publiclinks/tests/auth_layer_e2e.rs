@@ -84,17 +84,21 @@ fn row_with_password(share_id: i64, owner: &str, path: &str, perms: u32, pw: &st
 }
 
 /// Probe handler — records whether the auth context / gate marker were set.
+///
+/// Emits both `x-needs-gate` (from the `PasswordGateRequired` marker
+/// extension) and `x-ctx-gate-required` (from the field on
+/// `PublicLinkAuthContext`). The two should always agree on the Browser
+/// surface — that redundancy is the whole point of the field: handlers can
+/// gate-check off the context alone without rummaging through extensions.
 async fn probe(req: Request) -> Response {
-    let has_ctx = req.extensions().get::<PublicLinkAuthContext>().is_some();
+    let ctx = req.extensions().get::<PublicLinkAuthContext>();
+    let has_ctx = ctx.is_some();
     let needs_gate = req
         .extensions()
         .get::<crabcloud_publiclinks::PasswordGateRequired>()
         .is_some();
-    let share_id = req
-        .extensions()
-        .get::<PublicLinkAuthContext>()
-        .map(|c| c.link_share_id)
-        .unwrap_or(0);
+    let share_id = ctx.map(|c| c.link_share_id).unwrap_or(0);
+    let ctx_gate_required = ctx.map(|c| c.password_gate_required).unwrap_or(false);
     let mut resp = (StatusCode::OK, "ok").into_response();
     let h = resp.headers_mut();
     h.insert(
@@ -104,6 +108,10 @@ async fn probe(req: Request) -> Response {
     h.insert(
         "x-needs-gate",
         HeaderValue::from_static(if needs_gate { "1" } else { "0" }),
+    );
+    h.insert(
+        "x-ctx-gate-required",
+        HeaderValue::from_static(if ctx_gate_required { "1" } else { "0" }),
     );
     h.insert(
         "x-share-id",
@@ -156,6 +164,8 @@ async fn browser_no_password_attaches_context() {
     assert_eq!(resp.status(), StatusCode::OK);
     assert_eq!(resp.headers().get("x-has-context").unwrap(), "1");
     assert_eq!(resp.headers().get("x-needs-gate").unwrap(), "0");
+    // No password on this link → context's gate flag must be false.
+    assert_eq!(resp.headers().get("x-ctx-gate-required").unwrap(), "0");
     assert_eq!(resp.headers().get("x-share-id").unwrap(), "101");
 }
 
@@ -183,6 +193,9 @@ async fn browser_with_password_no_cookie_attaches_gate_marker() {
     // gate marker is the additional signal, not a replacement.
     assert_eq!(resp.headers().get("x-needs-gate").unwrap(), "1");
     assert_eq!(resp.headers().get("x-has-context").unwrap(), "1");
+    // The same gate state is mirrored onto the context's field so handlers
+    // can fail-closed off the context alone without inspecting extensions.
+    assert_eq!(resp.headers().get("x-ctx-gate-required").unwrap(), "1");
 }
 
 #[tokio::test]
@@ -210,6 +223,9 @@ async fn browser_with_password_valid_cookie_attaches_context() {
     assert_eq!(resp.status(), StatusCode::OK);
     assert_eq!(resp.headers().get("x-has-context").unwrap(), "1");
     assert_eq!(resp.headers().get("x-needs-gate").unwrap(), "0");
+    // Valid cookie → gate is satisfied; context's flag must be false so
+    // downstream handlers know they can act on this context.
+    assert_eq!(resp.headers().get("x-ctx-gate-required").unwrap(), "0");
 }
 
 #[tokio::test]
@@ -320,6 +336,10 @@ async fn dav_with_correct_basic_attaches_context() {
     assert_eq!(resp.status(), StatusCode::OK);
     assert_eq!(resp.headers().get("x-has-context").unwrap(), "1");
     assert_eq!(resp.headers().get("x-share-id").unwrap(), "707");
+    // DAV never carries the gate flag — DAV 401s on missing/wrong
+    // credentials before context construction, so when the context exists
+    // on the DAV surface the flag is unconditionally false.
+    assert_eq!(resp.headers().get("x-ctx-gate-required").unwrap(), "0");
 }
 
 #[tokio::test]
