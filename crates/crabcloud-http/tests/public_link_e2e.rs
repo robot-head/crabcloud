@@ -342,7 +342,10 @@ async fn upload_create_link_writes_file() {
         .await
         .unwrap();
     let sp = StoragePath::new("Drop/hello.txt").unwrap();
-    assert!(storage.exists(&sp).await.unwrap(), "file written under Drop/");
+    assert!(
+        storage.exists(&sp).await.unwrap(),
+        "file written under Drop/"
+    );
 }
 
 #[tokio::test]

@@ -19,6 +19,13 @@
 //! the dx fullstack SSR pipeline; those routes flow through the same
 //! auth middleware but their handlers live in `crabcloud-app`'s server
 //! function set, not here.
+//!
+//! `clippy::result_large_err` is allowed at the module level: the natural
+//! error type for these helpers is `axum::response::Response`, which clippy
+//! flags as "large" because it carries a `Body`. Boxing it would buy nothing
+//! — every `Err` here is on the slow path and is immediately consumed by
+//! `into_response()` upstream.
+#![allow(clippy::result_large_err)]
 
 use axum::body::Body;
 use axum::extract::{Path, State};
@@ -28,9 +35,7 @@ use axum::routing::{get, post};
 use axum::{Extension, Form, Router};
 use crabcloud_core::AppState;
 use crabcloud_fs::{MountResolver, PublicLinkMountResolver, UserPath, View};
-use crabcloud_publiclinks::{
-    PublicLinkAuthContext, RateLimitDecision, Token, UnlockCookie,
-};
+use crabcloud_publiclinks::{PublicLinkAuthContext, RateLimitDecision, Token, UnlockCookie};
 use crabcloud_sharing::SharePermissions;
 use crabcloud_storage::FileKind;
 use futures::StreamExt as _;
@@ -326,10 +331,7 @@ async fn upload_handler(
 /// the mounts directly via `PublicLinkMountResolver` rather than going
 /// through `AppState::view_for`, which would use the recipient-side
 /// `ShareMountResolver` (wrong here — anonymous traffic has no recipient).
-async fn build_view(
-    state: &AppState,
-    ctx: &PublicLinkAuthContext,
-) -> Result<View, Response> {
+async fn build_view(state: &AppState, ctx: &PublicLinkAuthContext) -> Result<View, Response> {
     let perms = SharePermissions::from_wire(ctx.permissions);
     let resolver = Arc::new(PublicLinkMountResolver::new(
         state.storage_factory.clone(),
@@ -340,7 +342,7 @@ async fn build_view(
     let mounts = resolver
         .mounts_for(&ctx.owner_uid)
         .await
-        .map_err(|e| fs_err_to_response(e))?;
+        .map_err(fs_err_to_response)?;
     Ok(View::new(
         ctx.owner_uid.clone(),
         mounts,
@@ -366,8 +368,15 @@ async fn resolve_collision(view: &View, name: &str) -> Result<String, Response> 
         .map_err(|e| (StatusCode::BAD_REQUEST, format!("invalid path: {e}")).into_response())?;
     match view.stat(&initial).await {
         Err(FsError::NotFound) => return Ok(name.to_string()),
-        Err(FsError::Storage(crabcloud_storage::StorageError::NotFound)) => return Ok(name.to_string()),
-        Err(e) if matches!(&e, FsError::FileCache(crabcloud_filecache::FileCacheError::NotFound)) => {
+        Err(FsError::Storage(crabcloud_storage::StorageError::NotFound)) => {
+            return Ok(name.to_string())
+        }
+        Err(e)
+            if matches!(
+                &e,
+                FsError::FileCache(crabcloud_filecache::FileCacheError::NotFound)
+            ) =>
+        {
             return Ok(name.to_string());
         }
         Err(e) => return Err(fs_err_to_response(e)),
@@ -443,8 +452,8 @@ fn client_ip(headers: &HeaderMap) -> String {
 /// text bodies (the surface is browser-facing and the dx page does its own
 /// error rendering; XML wouldn't help here).
 fn fs_err_to_response(err: crabcloud_fs::FsError) -> Response {
-    use crabcloud_fs::FsError;
     use crabcloud_filecache::FileCacheError;
+    use crabcloud_fs::FsError;
     use crabcloud_storage::StorageError;
     match err {
         FsError::NotFound => (StatusCode::NOT_FOUND, "").into_response(),
@@ -455,9 +464,7 @@ fn fs_err_to_response(err: crabcloud_fs::FsError) -> Response {
         FsError::Storage(StorageError::PermissionDenied) => {
             (StatusCode::FORBIDDEN, "").into_response()
         }
-        FsError::Storage(StorageError::AlreadyExists) => {
-            (StatusCode::CONFLICT, "").into_response()
-        }
+        FsError::Storage(StorageError::AlreadyExists) => (StatusCode::CONFLICT, "").into_response(),
         FsError::Storage(StorageError::NotEmpty) => (StatusCode::CONFLICT, "").into_response(),
         FsError::Storage(StorageError::InvalidPath(m)) => {
             (StatusCode::BAD_REQUEST, m).into_response()
@@ -467,9 +474,7 @@ fn fs_err_to_response(err: crabcloud_fs::FsError) -> Response {
             format!("storage error: {e}"),
         )
             .into_response(),
-        FsError::FileCache(FileCacheError::NotFound) => {
-            (StatusCode::NOT_FOUND, "").into_response()
-        }
+        FsError::FileCache(FileCacheError::NotFound) => (StatusCode::NOT_FOUND, "").into_response(),
         FsError::FileCache(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("filecache error: {e}"),
