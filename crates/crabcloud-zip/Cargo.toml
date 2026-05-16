@@ -11,8 +11,7 @@ crabcloud-fs = { workspace = true }
 crabcloud-storage = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["sync", "io-util"] }
-tokio-util = { workspace = true, features = ["io"] }
-tracing = { workspace = true }
+tokio-util = { workspace = true, features = ["io", "io-util"] }
 zip = { workspace = true }
 
 [dev-dependencies]
