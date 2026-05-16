@@ -111,7 +111,23 @@ fn render_blocking(
     // 6. Exact long-edge fit (hayro's scale step rounds; this corrects).
     let resized = dynimg.thumbnail(size_px, size_px);
     // 7. JPEG q80 — flatten alpha to RGB.
-    let rgb = resized.to_rgb8();
+    // Composite over white before encoding. JPEG can't carry alpha; the
+    // conventional behavior is to flatten transparent areas to white rather
+    // than to black (which is what to_rgb8() would do, since it drops the
+    // alpha channel without considering the underlying alpha value).
+    let rgba = resized.to_rgba8();
+    let mut rgb = image::RgbImage::new(rgba.width(), rgba.height());
+    for (x, y, src) in rgba.enumerate_pixels() {
+        let a = src.0[3] as u16;
+        let inv = 255 - a;
+        // Premultiplied composite over white:
+        //   out = src.rgb * (a/255) + 255 * (inv/255)
+        //       = (src.rgb * a + 255 * inv) / 255
+        let r = ((src.0[0] as u16 * a + 255 * inv) / 255) as u8;
+        let g = ((src.0[1] as u16 * a + 255 * inv) / 255) as u8;
+        let b = ((src.0[2] as u16 * a + 255 * inv) / 255) as u8;
+        rgb.put_pixel(x, y, image::Rgb([r, g, b]));
+    }
     let mut out = Vec::with_capacity(64 * 1024);
     let mut encoder = JpegEncoder::new_with_quality(&mut out, JPEG_QUALITY);
     encoder
@@ -178,5 +194,27 @@ startxref\n\
             Err(PreviewError::SourceTooLarge { .. }) => {}
             other => panic!("expected SourceTooLarge, got {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn pdf_transparent_regions_composite_to_white() {
+        // The synthesized PDF has an empty content stream, so hayro
+        // renders a page where every pixel has alpha=0. Without the
+        // composite-over-white step, to_rgb8() drops the alpha channel
+        // leaving the underlying zero-init buffer (black). With the
+        // composite, those transparent pixels should flatten to white.
+        let bytes = synthesize_one_page_pdf();
+        let out = PdfProvider
+            .render(bytes, 64, 64 * 1024 * 1024)
+            .await
+            .unwrap();
+        let img = image::load_from_memory(&out).unwrap().to_rgb8();
+        // Sample the center pixel — should be white-ish (>=240 in all channels).
+        let (w, h) = (img.width(), img.height());
+        let center = img.get_pixel(w / 2, h / 2);
+        assert!(
+            center.0[0] >= 240 && center.0[1] >= 240 && center.0[2] >= 240,
+            "transparent PDF regions should composite to white, got {center:?}",
+        );
     }
 }
