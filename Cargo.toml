@@ -10,6 +10,7 @@ members = [
     "crates/crabcloud-http",
     "crates/crabcloud-i18n",
     "crates/crabcloud-ocs",
+    "crates/crabcloud-publiclinks",
     "crates/crabcloud-sharing",
     "crates/crabcloud-storage",
     "crates/crabcloud-users",
@@ -98,6 +99,7 @@ crabcloud-fs = { path = "crates/crabcloud-fs" }
 crabcloud-http = { path = "crates/crabcloud-http" }
 crabcloud-i18n = { path = "crates/crabcloud-i18n" }
 crabcloud-ocs = { path = "crates/crabcloud-ocs" }
+crabcloud-publiclinks = { path = "crates/crabcloud-publiclinks" }
 crabcloud-sharing = { path = "crates/crabcloud-sharing" }
 crabcloud-storage = { path = "crates/crabcloud-storage" }
 crabcloud-users = { path = "crates/crabcloud-users" }
