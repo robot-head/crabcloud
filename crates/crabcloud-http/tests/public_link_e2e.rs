@@ -14,7 +14,10 @@ use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use crabcloud_storage::StoragePath;
 use crabcloud_users::UserId;
-use support::{create_link, make_state, seed_file, seed_folder, seed_user, seed_zip_tree};
+use support::{
+    create_link, make_state, seed_file, seed_file_with_mime, seed_folder, seed_jpeg, seed_user,
+    seed_zip_tree,
+};
 use tempfile::tempdir;
 use tower::ServiceExt;
 
@@ -506,3 +509,138 @@ async fn unknown_token_returns_404() {
     let resp = app.oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
+
+// --- preview ---------------------------------------------------------------
+
+#[tokio::test]
+async fn public_preview_read_link_returns_jpeg() {
+    let dir = tempdir().unwrap();
+    let data = tempdir().unwrap();
+    let state = make_state(dir.path().join("pr.db"), data.path().to_path_buf()).await;
+    seed_user(&state, "alice").await;
+    seed_folder(&state, "alice", "Photos").await;
+    let _row = seed_jpeg(&state, "alice", "/Photos/cat.jpg", 500, 400).await;
+    let token = create_link(&state, "alice", "/Photos", 1, None, None).await;
+    let app = crabcloud_http::build_router(state, axum::Router::new());
+
+    let req = Request::builder()
+        .method("GET")
+        .uri(format!("/s/{token}/preview/cat.jpg?size=64"))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert_eq!(
+        resp.headers()
+            .get(axum::http::header::CONTENT_TYPE)
+            .unwrap(),
+        "image/jpeg"
+    );
+    let body = axum::body::to_bytes(resp.into_body(), 16 * 1024 * 1024)
+        .await
+        .unwrap();
+    let img = image::load_from_memory(&body).expect("decode preview jpeg");
+    assert!(
+        img.width() <= 64 && img.height() <= 64,
+        "thumbnail {} x {} should fit within 64",
+        img.width(),
+        img.height()
+    );
+}
+
+#[tokio::test]
+async fn public_preview_create_only_link_returns_403() {
+    let dir = tempdir().unwrap();
+    let data = tempdir().unwrap();
+    let state = make_state(dir.path().join("pco.db"), data.path().to_path_buf()).await;
+    seed_user(&state, "alice").await;
+    seed_folder(&state, "alice", "Drop").await;
+    let _ = seed_jpeg(&state, "alice", "/Drop/cat.jpg", 100, 100).await;
+    // perms=4 = create-only (file-drop) — no read bit.
+    let token = create_link(&state, "alice", "/Drop", 4, None, None).await;
+    let app = crabcloud_http::build_router(state, axum::Router::new());
+
+    let req = Request::builder()
+        .method("GET")
+        .uri(format!("/s/{token}/preview/cat.jpg?size=64"))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn public_preview_password_gated_no_cookie_returns_403() {
+    let dir = tempdir().unwrap();
+    let data = tempdir().unwrap();
+    let state = make_state(dir.path().join("ppg.db"), data.path().to_path_buf()).await;
+    seed_user(&state, "alice").await;
+    seed_folder(&state, "alice", "Photos").await;
+    let _ = seed_jpeg(&state, "alice", "/Photos/cat.jpg", 100, 100).await;
+    let token = create_link(&state, "alice", "/Photos", 1, Some("hunter2"), None).await;
+    let app = crabcloud_http::build_router(state, axum::Router::new());
+
+    let req = Request::builder()
+        .method("GET")
+        .uri(format!("/s/{token}/preview/cat.jpg?size=64"))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    let body = axum::body::to_bytes(resp.into_body(), 1024).await.unwrap();
+    let body_str = std::str::from_utf8(&body).unwrap();
+    assert!(
+        body_str.contains("password_required"),
+        "body must mention password_required, got {body_str:?}"
+    );
+}
+
+#[tokio::test]
+async fn public_preview_expired_token_returns_404() {
+    use chrono::NaiveDate;
+    let dir = tempdir().unwrap();
+    let data = tempdir().unwrap();
+    let state = make_state(dir.path().join("pex.db"), data.path().to_path_buf()).await;
+    seed_user(&state, "alice").await;
+    seed_folder(&state, "alice", "Photos").await;
+    let _ = seed_jpeg(&state, "alice", "/Photos/cat.jpg", 100, 100).await;
+    let past = NaiveDate::from_ymd_opt(2020, 1, 1).unwrap();
+    let token = create_link(&state, "alice", "/Photos", 1, None, Some(past)).await;
+    let app = crabcloud_http::build_router(state, axum::Router::new());
+
+    let req = Request::builder()
+        .method("GET")
+        .uri(format!("/s/{token}/preview/cat.jpg?size=64"))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn public_preview_unsupported_mime_returns_415() {
+    let dir = tempdir().unwrap();
+    let data = tempdir().unwrap();
+    let state = make_state(dir.path().join("pum.db"), data.path().to_path_buf()).await;
+    seed_user(&state, "alice").await;
+    seed_folder(&state, "alice", "Photos").await;
+    let _ = seed_file_with_mime(
+        &state,
+        "alice",
+        "/Photos/archive.zip",
+        b"PK\x03\x04junk",
+        "application/zip",
+    )
+    .await;
+    let token = create_link(&state, "alice", "/Photos", 1, None, None).await;
+    let app = crabcloud_http::build_router(state, axum::Router::new());
+
+    let req = Request::builder()
+        .method("GET")
+        .uri(format!("/s/{token}/preview/archive.zip?size=64"))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNSUPPORTED_MEDIA_TYPE);
+}
+
