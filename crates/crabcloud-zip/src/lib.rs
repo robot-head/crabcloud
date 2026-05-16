@@ -21,9 +21,7 @@ pub use compression::compression_for_mime;
 pub use error::{WalkError, ZipError};
 pub use mpsc_writer::MpscBytesWriter;
 pub use stream::stream_folder;
-pub use types::{
-    OverCapBody, OverCapLimits, PlanKind, PlannedEntry, ZipCaps, ZipPlan, ZipSummary,
-};
+pub use types::{OverCapBody, OverCapLimits, PlanKind, PlannedEntry, ZipCaps, ZipPlan, ZipSummary};
 pub use walk::{root_basename, walk_for_caps};
 
 // Anchors for dev-deps only referenced from `#[cfg(test)]` modules across

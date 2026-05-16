@@ -1040,6 +1040,7 @@ dependencies = [
  "crabcloud-fs",
  "crabcloud-storage",
  "crabcloud-users",
+ "serde",
  "tempfile",
  "thiserror 2.0.18",
  "tokio",

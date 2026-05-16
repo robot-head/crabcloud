@@ -516,8 +516,7 @@ async fn create_link_expired(state: &AppState, requester: &str, path: &str) -> S
         .unwrap()
         .id()
         .to_string();
-    let yesterday = (chrono::Utc::now() - chrono::Duration::days(1))
-        .date_naive();
+    let yesterday = (chrono::Utc::now() - chrono::Duration::days(1)).date_naive();
     let req = CreateShareRequest {
         requester: requester.to_string(),
         home_storage_id: home_sid,
@@ -550,7 +549,9 @@ async fn public_zip_read_link_returns_200() {
     let resp = app.oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
     assert_eq!(
-        resp.headers().get(axum::http::header::CONTENT_TYPE).unwrap(),
+        resp.headers()
+            .get(axum::http::header::CONTENT_TYPE)
+            .unwrap(),
         "application/zip"
     );
     let body = axum::body::to_bytes(resp.into_body(), 16 * 1024 * 1024)
