@@ -166,10 +166,19 @@ pub fn build_router(state: AppState, app_router: Router) -> Router {
     // OCS + app (Dioxus SSR + server functions) sub-router. Wrapped in CORS
     // and CSRF below. The dx-built binary substitutes asset hrefs at link
     // time, so the legacy `AssetRewriteLayer` is no longer needed.
-    let ocs_app = app_router.nest(
-        "/ocs",
-        crate::routes::ocs::router().with_state(state.clone()),
-    );
+    //
+    // `routes::files_zip` mounts the authed folder-zip endpoints
+    // (`GET /api/files/zip/...`) alongside the OCS surface: it shares the
+    // outer `AuthLayer` (so `Extension<AuthContext>` is present on every
+    // request), and goes through the same CSRF + CORS layers via
+    // `ocs_app_layered` below. CSRF bypasses safe methods, so a GET
+    // request without a session token is admitted as expected.
+    let ocs_app = app_router
+        .nest(
+            "/ocs",
+            crate::routes::ocs::router().with_state(state.clone()),
+        )
+        .merge(crate::routes::files_zip::router().with_state(state.clone()));
 
     // Public-link surface (`/s/{token}/...`). The unlock / download / upload
     // handlers live in `routes::public_link`; the viewer PAGE (`/s/{token}`
