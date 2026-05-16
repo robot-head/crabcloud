@@ -635,12 +635,12 @@ pub async fn list_dir(path: String) -> Result<Vec<FileEntry>, ServerFnError> {
         .map_err(map_fs_err)?;
     let owner_sid = owner_storage.id().to_string();
     let mut idx_to_fileid: Vec<(usize, i64)> = Vec::with_capacity(out.len());
-    for i in 0..out.len() {
-        if out[i].shared_by.is_some() {
+    for (i, e) in out.iter_mut().enumerate() {
+        if e.shared_by.is_some() {
             continue;
         }
-        let storage_path_str = out[i].path.trim_start_matches('/').to_string();
-        let sp = match crabcloud_storage::StoragePath::new(&storage_path_str) {
+        let storage_path_str = e.path.trim_start_matches('/');
+        let sp = match crabcloud_storage::StoragePath::new(storage_path_str) {
             Ok(p) => p,
             Err(_) => continue,
         };
@@ -649,7 +649,7 @@ pub async fn list_dir(path: String) -> Result<Vec<FileEntry>, ServerFnError> {
             // Decorate the DTO with the fileid so the UI can build
             // `/api/files/preview/{fileid}` thumbnail URLs. Directories
             // and share-mount entries leave this `None`.
-            out[i].fileid = Some(row.fileid);
+            e.fileid = Some(row.fileid);
         }
     }
     let fileids: Vec<i64> = idx_to_fileid.iter().map(|(_, f)| *f).collect();
