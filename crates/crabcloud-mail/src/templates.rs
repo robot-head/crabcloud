@@ -142,14 +142,29 @@ mod tests {
                 "path_basename": "Photos",
                 "link_url": "https://crabcloud.example/s/AbCd123Xyz0789Q",
                 "password_protected": true,
+                // Deliberately stuff a sentinel password into the context. The
+                // template MUST NOT emit it under any circumstance — the
+                // recipient gets the password out-of-band from the sender.
+                "password": "hunter2",
             })),
         )
         .unwrap();
         assert!(env
             .html_body
             .contains("https://crabcloud.example/s/AbCd123Xyz0789Q"));
-        // No password field in the body — security invariant.
-        assert!(!env.html_body.contains("password=\""));
+        // The invariant: no template path ever reaches the password field.
+        assert!(
+            !env.html_body.contains("hunter2"),
+            "password leaked into html_body: {}",
+            env.html_body
+        );
+        assert!(
+            !env.text_body.contains("hunter2"),
+            "password leaked into text_body: {}",
+            env.text_body
+        );
+        // The body should still mention "password" to explain the
+        // password-protected status to the recipient.
         assert!(env.html_body.contains("password") || env.text_body.contains("password"));
     }
 
