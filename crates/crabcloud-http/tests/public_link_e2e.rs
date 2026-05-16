@@ -643,4 +643,3 @@ async fn public_preview_unsupported_mime_returns_415() {
     let resp = app.oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::UNSUPPORTED_MEDIA_TYPE);
 }
-
