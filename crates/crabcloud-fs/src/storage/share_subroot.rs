@@ -48,6 +48,13 @@ impl SharedSubrootStorage {
         }
     }
 
+    /// `true` when this is a file-drop link: create permission with no read.
+    /// File-drop links must hide the linked folder's contents from anonymous
+    /// recipients (they can upload but not browse or download).
+    fn is_create_only(&self) -> bool {
+        !self.permissions.contains_read() && self.permissions.allows_create()
+    }
+
     fn translate(&self, recipient_relative: &StoragePath) -> StorageResult<StoragePath> {
         if recipient_relative.is_root() {
             return Ok(self.owner_path.clone());
@@ -70,18 +77,38 @@ impl Storage for SharedSubrootStorage {
     }
 
     async fn stat(&self, path: &StoragePath) -> StorageResult<FileMetadata> {
+        // Create-only file-drop: hide everything except the linked root itself.
+        // The viewer page still needs to stat the root so it can confirm the
+        // linked folder exists before rendering the upload UI.
+        if self.is_create_only() && !path.is_root() {
+            return Err(StorageError::PermissionDenied);
+        }
         self.inner.stat(&self.translate(path)?).await
     }
 
     async fn exists(&self, path: &StoragePath) -> StorageResult<bool> {
+        if self.is_create_only() && !path.is_root() {
+            return Err(StorageError::PermissionDenied);
+        }
         self.inner.exists(&self.translate(path)?).await
     }
 
     async fn list(&self, path: &StoragePath) -> StorageResult<Vec<DirEntry>> {
+        if self.is_create_only() {
+            if path.is_root() {
+                // The viewer page needs a successful "list me an empty folder"
+                // response so it can render the upload zone without contents.
+                return Ok(Vec::new());
+            }
+            return Err(StorageError::PermissionDenied);
+        }
         self.inner.list(&self.translate(path)?).await
     }
 
     async fn read(&self, path: &StoragePath) -> StorageResult<Pin<Box<dyn AsyncRead + Send>>> {
+        if self.is_create_only() {
+            return Err(StorageError::PermissionDenied);
+        }
         self.inner.read(&self.translate(path)?).await
     }
 
@@ -90,6 +117,9 @@ impl Storage for SharedSubrootStorage {
         path: &StoragePath,
         range: Range<u64>,
     ) -> StorageResult<Pin<Box<dyn AsyncRead + Send>>> {
+        if self.is_create_only() {
+            return Err(StorageError::PermissionDenied);
+        }
         self.inner.read_range(&self.translate(path)?, range).await
     }
 
@@ -376,6 +406,73 @@ mod tests {
         let s = wrap(seed_owner().await, 1); // read only
         let r = s
             .begin_multipart(&StoragePath::new("x.jpg").unwrap(), &NoopEventSink)
+            .await;
+        assert!(matches!(r, Err(StorageError::PermissionDenied)));
+    }
+
+    #[tokio::test]
+    async fn create_only_list_root_returns_empty() {
+        // File-drop permission set: create-only (bit 4), no read.
+        let s = wrap(seed_owner().await, 4);
+        let entries = s.list(&StoragePath::root()).await.unwrap();
+        assert!(
+            entries.is_empty(),
+            "create-only must hide directory listings; got {entries:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn create_only_list_subdir_forbidden() {
+        let s = wrap(seed_owner().await, 4);
+        let r = s.list(&StoragePath::new("anywhere").unwrap()).await;
+        assert!(matches!(r, Err(StorageError::PermissionDenied)));
+    }
+
+    #[tokio::test]
+    async fn create_only_stat_child_forbidden() {
+        let s = wrap(seed_owner().await, 4);
+        let r = s.stat(&StoragePath::new("x.jpg").unwrap()).await;
+        assert!(matches!(r, Err(StorageError::PermissionDenied)));
+    }
+
+    #[tokio::test]
+    async fn create_only_stat_root_allowed() {
+        let s = wrap(seed_owner().await, 4);
+        // Root must still stat — viewer page needs to verify the linked
+        // folder exists before rendering the upload UI.
+        let m = s.stat(&StoragePath::root()).await.unwrap();
+        assert!(matches!(m.kind, crabcloud_storage::FileKind::Directory));
+    }
+
+    #[tokio::test]
+    async fn create_only_read_forbidden() {
+        let s = wrap(seed_owner().await, 4);
+        let r = s.read(&StoragePath::new("x.jpg").unwrap()).await;
+        assert!(matches!(r, Err(StorageError::PermissionDenied)));
+    }
+
+    #[tokio::test]
+    async fn create_only_put_new_allowed() {
+        let s = wrap(seed_owner().await, 4);
+        s.put_file(
+            &StoragePath::new("upload.bin").unwrap(),
+            body(b"data"),
+            &NoopEventSink,
+        )
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn create_only_put_overwrite_forbidden() {
+        // The existing file should not be overwritable by file-drop uploaders.
+        let s = wrap(seed_owner().await, 4);
+        let r = s
+            .put_file(
+                &StoragePath::new("x.jpg").unwrap(),
+                body(b"overwrite"),
+                &NoopEventSink,
+            )
             .await;
         assert!(matches!(r, Err(StorageError::PermissionDenied)));
     }
