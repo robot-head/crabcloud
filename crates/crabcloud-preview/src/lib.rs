@@ -9,9 +9,13 @@
 
 mod error;
 mod ladder;
+mod provider;
+mod providers;
 
 pub use error::PreviewError;
 pub use ladder::{round_up_to_ladder, LADDER};
+pub use provider::{provider_for_mime, PreviewProvider, ProviderResult};
+pub use providers::{ImageProvider, PdfProvider};
 
 // Anchors for dev-deps only referenced from `#[cfg(test)]` modules across
 // other files — keeps `unused_crate_dependencies` quiet for the lib test
@@ -30,7 +34,6 @@ use tempfile as _;
 // Workspace deps wired in via Cargo.toml for the foundation tasks; real
 // call sites land in later tasks. Anchor here so the unused-deps lint
 // stays quiet on intermediate commits.
-use async_trait as _;
 use crabcloud_fs as _;
 use crabcloud_storage as _;
 use dashmap as _;
