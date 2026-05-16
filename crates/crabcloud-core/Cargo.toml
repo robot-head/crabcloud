@@ -33,6 +33,7 @@ crabcloud-config = { workspace = true, features = ["test-support"] }
 paste.workspace = true
 tempfile.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tracing-test.workspace = true
 
 [lints]
 workspace = true
