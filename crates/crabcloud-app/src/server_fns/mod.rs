@@ -549,6 +549,13 @@ pub struct FileEntry {
     pub mtime_ms: i64,
     pub mime: Option<String>,
     pub etag: String,
+    /// Filecache row id for owner-side rows. Used by the Files UI to build
+    /// `/api/files/preview/{fileid}?size=N` URLs for previewable mimes.
+    /// `None` for directories, share-mount entries (the recipient doesn't
+    /// hold a fileid pointer into the owner's cache), and rows where the
+    /// filecache lookup did not return a row.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub fileid: Option<i64>,
     /// Owner uid when this row sits at the recipient-facing root of an
     /// incoming share mount; `None` for ordinary home-mount entries.
     /// Populated by `list_dir` from the mount's `MountMetadata.owner_uid`.
@@ -628,17 +635,21 @@ pub async fn list_dir(path: String) -> Result<Vec<FileEntry>, ServerFnError> {
         .map_err(map_fs_err)?;
     let owner_sid = owner_storage.id().to_string();
     let mut idx_to_fileid: Vec<(usize, i64)> = Vec::with_capacity(out.len());
-    for (i, e) in out.iter().enumerate() {
-        if e.shared_by.is_some() {
+    for i in 0..out.len() {
+        if out[i].shared_by.is_some() {
             continue;
         }
-        let storage_path_str = e.path.trim_start_matches('/');
-        let sp = match crabcloud_storage::StoragePath::new(storage_path_str) {
+        let storage_path_str = out[i].path.trim_start_matches('/').to_string();
+        let sp = match crabcloud_storage::StoragePath::new(&storage_path_str) {
             Ok(p) => p,
             Err(_) => continue,
         };
         if let Ok(Some(row)) = state.filecache.lookup(&owner_sid, &sp).await {
             idx_to_fileid.push((i, row.fileid));
+            // Decorate the DTO with the fileid so the UI can build
+            // `/api/files/preview/{fileid}` thumbnail URLs. Directories
+            // and share-mount entries leave this `None`.
+            out[i].fileid = Some(row.fileid);
         }
     }
     let fileids: Vec<i64> = idx_to_fileid.iter().map(|(_, f)| *f).collect();
@@ -762,6 +773,7 @@ fn metadata_to_entry(
         mtime_ms,
         mime: (!is_dir).then(|| meta.mimetype.as_str().to_string()),
         etag: meta.etag.as_str().to_string(),
+        fileid: None,
         shared_by: None,
         share_count: 0,
     }
@@ -792,6 +804,7 @@ fn dir_entry_to_dto(
         mtime_ms,
         mime: (!is_dir).then(|| entry.metadata.mimetype.as_str().to_string()),
         etag: entry.metadata.etag.as_str().to_string(),
+        fileid: None,
         shared_by: None,
         share_count: 0,
     }

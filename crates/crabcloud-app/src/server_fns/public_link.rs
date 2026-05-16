@@ -174,6 +174,10 @@ fn dir_entry_to_dto(
         mtime_ms,
         mime: (!is_dir).then(|| entry.metadata.mimetype.as_str().to_string()),
         etag: entry.metadata.etag.as_str().to_string(),
+        // Public-link previews are keyed by `(token, path)`, not fileid;
+        // leave this `None` to avoid exposing internal cache ids to
+        // anonymous viewers.
+        fileid: None,
         shared_by: None,
         share_count: 0,
     }

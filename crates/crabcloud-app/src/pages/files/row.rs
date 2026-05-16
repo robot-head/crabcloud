@@ -2,8 +2,18 @@
 //! inline rename input when `rename_active == true`. ⋯ menu emits events
 //! for rename/delete (cut is added in Batch D).
 
+use crate::pages::preview_mime::is_previewable_mime;
 use crate::server_fns::FileEntry;
 use dioxus::prelude::*;
+
+/// Inline JS swapped in via the thumbnail `<img>`'s `onerror` attribute.
+/// On 404 / 415 / network error, replaces the `<img>` with a fresh
+/// `<span class="files-icon">📄</span>` so the row degrades gracefully
+/// to the generic file emoji that non-previewable rows already use.
+/// Kept as a `const &str` (rather than inlined in `rsx!`) so the `{...}`
+/// in the literal JSON-ish JS body isn't parsed by `rsx!` as a format
+/// placeholder.
+const THUMB_ONERROR_JS: &str = "this.onerror=null;this.replaceWith(Object.assign(document.createElement('span'),{className:'files-icon',textContent:'📄'}))";
 
 #[derive(Props, Clone, PartialEq)]
 pub struct FileRowProps {
@@ -105,12 +115,34 @@ pub fn FileRow(props: FileRowProps) -> Element {
         }
     } else {
         let href = format!("/dav/files/{user_id}{}", entry.path);
+        // Render an inline thumbnail (`<img>`) for previewable mimes when
+        // the server-side listing populated a fileid. The `onerror`
+        // handler swaps the broken image back to the generic emoji icon
+        // on 404 / 415 / network error so the row degrades gracefully —
+        // matches the server's allowlist (`provider_for_mime`) but
+        // tolerates drift (server says 415 → UI shows the emoji).
+        let thumb_url = match (entry.fileid, entry.mime.as_deref()) {
+            (Some(fid), Some(mime)) if is_previewable_mime(mime) => {
+                Some(format!("/api/files/preview/{fid}?size=64"))
+            }
+            _ => None,
+        };
         rsx! {
             a {
                 class: "files-name files-name-file",
                 href: "{href}",
                 onclick: move |evt: MouseEvent| evt.stop_propagation(),
-                span { class: "files-icon", "{icon}" }
+                if let Some(url) = thumb_url {
+                    img {
+                        class: "files-thumb",
+                        src: "{url}",
+                        alt: "",
+                        loading: "lazy",
+                        "onerror": "{THUMB_ONERROR_JS}",
+                    }
+                } else {
+                    span { class: "files-icon", "{icon}" }
+                }
                 "{entry.name}"
             }
         }
