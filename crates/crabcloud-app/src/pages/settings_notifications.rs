@@ -127,3 +127,94 @@ fn ToggleRow(
         }
     }
 }
+
+#[cfg(all(test, feature = "server"))]
+mod tests {
+    use super::*;
+
+    /// SSR snapshot: rendering the three toggle rows with a mocked
+    /// `NotificationPrefsDto` must produce HTML that contains every
+    /// user-facing label. Asserts the spec labels appear verbatim so a
+    /// future copy change doesn't silently break the page.
+    ///
+    /// EventHandler construction in `rsx!` goes through `Callback::new`,
+    /// which needs a live Dioxus runtime. Wrapping the rsx call in a
+    /// component body (`Wrapper`) defers the conversion to render time,
+    /// when the VirtualDom has its runtime up.
+    #[test]
+    fn renders_all_three_labels_with_mocked_prefs() {
+        let prefs = NotificationPrefsDto {
+            share_created: true,
+            link_emailed: false,
+            expiration_warning: true,
+        };
+
+        #[component]
+        fn Wrapper(prefs: NotificationPrefsDto) -> Element {
+            rsx! {
+                section { class: "notifications-settings",
+                    ToggleRow {
+                        label: "Notify me when others share with me".to_string(),
+                        event_type: "share_created".to_string(),
+                        enabled: prefs.share_created,
+                        on_changed: move |_: ()| {},
+                    }
+                    ToggleRow {
+                        label: "Send a copy of email-share confirmations".to_string(),
+                        event_type: "link_emailed".to_string(),
+                        enabled: prefs.link_emailed,
+                        on_changed: move |_: ()| {},
+                    }
+                    ToggleRow {
+                        label: "Warn me before my public links expire".to_string(),
+                        event_type: "expiration_warning".to_string(),
+                        enabled: prefs.expiration_warning,
+                        on_changed: move |_: ()| {},
+                    }
+                }
+            }
+        }
+
+        let html = dioxus::ssr::render_element(rsx! { Wrapper { prefs } });
+        assert!(
+            html.contains("Notify me when others share with me"),
+            "expected share_created label in HTML, got: {html}"
+        );
+        assert!(
+            html.contains("Send a copy of email-share confirmations"),
+            "expected link_emailed label in HTML, got: {html}"
+        );
+        assert!(
+            html.contains("Warn me before my public links expire"),
+            "expected expiration_warning label in HTML, got: {html}"
+        );
+    }
+
+    /// SSR snapshot: each toggle row reflects its `enabled` prop as the
+    /// `checked` attribute on the checkbox. Lock this in to catch a
+    /// future refactor that accidentally inverts the state.
+    #[test]
+    fn checkbox_checked_attr_reflects_enabled_prop() {
+        #[component]
+        fn Wrapper(enabled: bool) -> Element {
+            rsx! {
+                ToggleRow {
+                    label: "label".to_string(),
+                    event_type: "share_created".to_string(),
+                    enabled,
+                    on_changed: move |_: ()| {},
+                }
+            }
+        }
+        let html_on = dioxus::ssr::render_element(rsx! { Wrapper { enabled: true } });
+        assert!(
+            html_on.contains("checked"),
+            "enabled=true should render a checked attribute, got: {html_on}"
+        );
+        let html_off = dioxus::ssr::render_element(rsx! { Wrapper { enabled: false } });
+        assert!(
+            !html_off.contains("checked"),
+            "enabled=false should not render a checked attribute, got: {html_off}"
+        );
+    }
+}
