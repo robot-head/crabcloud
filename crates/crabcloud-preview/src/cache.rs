@@ -45,14 +45,12 @@ impl PreviewCache {
     /// Many arguments are deliberate: a `PreviewRequest` struct would just
     /// shuffle the same fields one indirection deeper and the handler
     /// always knows all of them upfront.
-    #[allow(clippy::too_many_arguments)]
     pub async fn get_or_render<F, Fut>(
         &self,
         storage_id: &str,
         fileid: i64,
         requested_size: u32,
         source_etag: &str,
-        source_mime: &str,
         provider: &'static dyn PreviewProvider,
         read_source: F,
     ) -> Result<(PathBuf, u32), PreviewError>
@@ -60,7 +58,6 @@ impl PreviewCache {
         F: FnOnce() -> Fut,
         Fut: std::future::Future<Output = Result<Vec<u8>, PreviewError>>,
     {
-        let _ = source_mime; // discriminator owned by the caller; we cache by id
         let size = round_up_to_ladder(requested_size)?;
         let cache_path = self.path_for(storage_id, fileid, size, source_etag);
 
@@ -206,15 +203,9 @@ mod tests {
         let bytes = synth_jpeg();
 
         let (p1, size1) = cache
-            .get_or_render(
-                "sid",
-                7,
-                64,
-                "abc123def456",
-                "image/jpeg",
-                &ImageProvider,
-                || async { Ok(bytes.clone()) },
-            )
+            .get_or_render("sid", 7, 64, "abc123def456", &ImageProvider, || async {
+                Ok(bytes.clone())
+            })
             .await
             .unwrap();
         assert_eq!(size1, 64);
@@ -222,15 +213,9 @@ mod tests {
 
         // Second call MUST NOT invoke read_source (we'd panic).
         let (p2, _) = cache
-            .get_or_render(
-                "sid",
-                7,
-                64,
-                "abc123def456",
-                "image/jpeg",
-                &ImageProvider,
-                || async { panic!("read_source called on cache hit") },
-            )
+            .get_or_render("sid", 7, 64, "abc123def456", &ImageProvider, || async {
+                panic!("read_source called on cache hit")
+            })
             .await
             .unwrap();
         assert_eq!(p1, p2);
@@ -247,7 +232,6 @@ mod tests {
                 1,
                 200,
                 "etag1234567890aa",
-                "image/jpeg",
                 &ImageProvider,
                 || async { Ok(bytes.clone()) },
             )
@@ -262,15 +246,9 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let cache = PreviewCache::new(tmp.path().to_path_buf(), 64 * 1024 * 1024);
         let r = cache
-            .get_or_render(
-                "sid",
-                1,
-                4096,
-                "etag",
-                "image/jpeg",
-                &ImageProvider,
-                || async { Ok(vec![]) },
-            )
+            .get_or_render("sid", 1, 4096, "etag", &ImageProvider, || async {
+                Ok(vec![])
+            })
             .await;
         assert!(matches!(r, Err(PreviewError::SizeOutOfRange(4096))));
     }
@@ -287,15 +265,9 @@ mod tests {
 
         let bytes = synth_jpeg();
         let (fresh_path, _) = cache
-            .get_or_render(
-                "sid",
-                3,
-                64,
-                "newetag",
-                "image/jpeg",
-                &ImageProvider,
-                || async { Ok(bytes.clone()) },
-            )
+            .get_or_render("sid", 3, 64, "newetag", &ImageProvider, || async {
+                Ok(bytes.clone())
+            })
             .await
             .unwrap();
         assert!(fresh_path.exists());
@@ -327,7 +299,6 @@ mod tests {
                         9,
                         64,
                         "concurrentetag123",
-                        "image/jpeg",
                         &ImageProvider,
                         || async {
                             counter.fetch_add(1, Ordering::SeqCst);
