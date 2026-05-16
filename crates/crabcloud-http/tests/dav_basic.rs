@@ -5,58 +5,27 @@
 
 #![allow(unused_crate_dependencies)]
 
+mod support;
+
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
-use crabcloud_config::test_support::minimal_sqlite_config;
-use crabcloud_core::{AppState, AppStateBuilder};
-use crabcloud_users::{AuthTokenType, BcryptVerifier, PasswordVerifier, User, UserId};
+use crabcloud_core::AppState;
+use support::{bearer, make_state, seed_user};
 use tempfile::tempdir;
 use tower::ServiceExt;
 
+/// Build state + seed `alice`. Wraps the shared `make_state` + `seed_user`
+/// pair so each test stays a one-liner.
 async fn make_state_with_user(db: std::path::PathBuf, data: std::path::PathBuf) -> AppState {
-    let mut cfg = minimal_sqlite_config(db);
-    cfg.datadirectory = data;
-    // Disable the filecache scanner: under `cargo test --workspace` on Linux
-    // CI the scanner's async event-apply races our handler's follow-up
-    // `view.stat` calls, occasionally serving a stale "not yet populated"
-    // miss back through `View::stat` -> 201 instead of 204 on overwrite PUT.
-    // Same workaround Batches C–F apply in their test helpers.
-    cfg.filecache.enabled = false;
-    let state = AppStateBuilder::new(cfg).build().await.unwrap();
-    let hash = BcryptVerifier::new().hash("hunter2").unwrap();
-    state
-        .users
-        .user_store()
-        .create(
-            &User {
-                uid: UserId::new("alice").unwrap(),
-                display_name: "Alice".into(),
-                email: None,
-                enabled: true,
-                last_seen: 0,
-            },
-            Some(&hash),
-        )
-        .await
-        .unwrap();
+    let state = make_state(db, data).await;
+    seed_user(&state, "alice").await;
     state
 }
 
-/// Mint a Bearer token for `alice` against the live token store. Returns the
-/// raw token string; callers wrap it in an `Authorization: Bearer …` header.
+/// Mint a Bearer token for `alice`. Thin wrapper over the shared
+/// `bearer` so the existing call sites stay unchanged.
 async fn alice_bearer(state: &AppState) -> String {
-    let ap = state.users.app_passwords().unwrap().clone();
-    let (_row, raw) = ap
-        .mint(
-            &UserId::new("alice").unwrap(),
-            "alice",
-            "DAV",
-            AuthTokenType::Session,
-            false,
-        )
-        .await
-        .unwrap();
-    raw.expose().to_string()
+    bearer(state, "alice").await
 }
 
 #[tokio::test]
