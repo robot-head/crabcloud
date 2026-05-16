@@ -2,48 +2,48 @@
 //! `crabcloud-filecache::propagate` convention: `_QM` is sqlite + mysql
 //! (positional `?`), `_PG` is postgres (`$1..$N`).
 
-/// Documentation-only constant. Every SELECT below names these 17 columns
+/// Documentation-only constant. Every SELECT below names these 18 columns
 /// in this order; row decoders rely on `try_get` by name, so the constant
 /// is not interpolated, but the listed names are the contract.
 pub(crate) const SELECT_COLUMNS: &str = "id, share_type, share_with, uid_owner, uid_initiator, \
     parent, item_type, item_source, file_source, file_target, permissions, stime, accepted, \
-    expiration, token, password, mail_send";
+    expiration, token, password, mail_send, last_warned";
 
 /// Documentation-only constant for the INSERT column list. `INSERT_QM` and
 /// `INSERT_PG` bind in this order. `id` is omitted: the database mints it
 /// (AUTOINCREMENT / AUTO_INCREMENT / BIGSERIAL).
 pub(crate) const INSERT_BIND_LIST: &str = "share_type, share_with, uid_owner, uid_initiator, \
     parent, item_type, item_source, file_source, file_target, permissions, stime, accepted, \
-    expiration, token, password, mail_send";
+    expiration, token, password, mail_send, last_warned";
 
 pub(crate) const SELECT_BY_ID_QM: &str = "SELECT id, share_type, share_with, uid_owner, \
     uid_initiator, parent, item_type, item_source, file_source, file_target, permissions, \
-    stime, accepted, expiration, token, password, mail_send \
+    stime, accepted, expiration, token, password, mail_send, last_warned \
     FROM oc_share WHERE id = ?";
 
 pub(crate) const SELECT_BY_ID_PG: &str = "SELECT id, share_type, share_with, uid_owner, \
     uid_initiator, parent, item_type, item_source, file_source, file_target, permissions, \
-    stime, accepted, expiration, token, password, mail_send \
+    stime, accepted, expiration, token, password, mail_send, last_warned \
     FROM oc_share WHERE id = $1";
 
 pub(crate) const SELECT_OUTGOING_QM: &str = "SELECT id, share_type, share_with, uid_owner, \
     uid_initiator, parent, item_type, item_source, file_source, file_target, permissions, \
-    stime, accepted, expiration, token, password, mail_send \
+    stime, accepted, expiration, token, password, mail_send, last_warned \
     FROM oc_share WHERE uid_owner = ? ORDER BY id";
 
 pub(crate) const SELECT_OUTGOING_PG: &str = "SELECT id, share_type, share_with, uid_owner, \
     uid_initiator, parent, item_type, item_source, file_source, file_target, permissions, \
-    stime, accepted, expiration, token, password, mail_send \
+    stime, accepted, expiration, token, password, mail_send, last_warned \
     FROM oc_share WHERE uid_owner = $1 ORDER BY id";
 
 pub(crate) const SELECT_FOR_OWNER_AND_SOURCE_QM: &str = "SELECT id, share_type, share_with, \
     uid_owner, uid_initiator, parent, item_type, item_source, file_source, file_target, \
-    permissions, stime, accepted, expiration, token, password, mail_send \
+    permissions, stime, accepted, expiration, token, password, mail_send, last_warned \
     FROM oc_share WHERE uid_owner = ? AND file_source = ? ORDER BY id";
 
 pub(crate) const SELECT_FOR_OWNER_AND_SOURCE_PG: &str = "SELECT id, share_type, share_with, \
     uid_owner, uid_initiator, parent, item_type, item_source, file_source, file_target, \
-    permissions, stime, accepted, expiration, token, password, mail_send \
+    permissions, stime, accepted, expiration, token, password, mail_send, last_warned \
     FROM oc_share WHERE uid_owner = $1 AND file_source = $2 ORDER BY id";
 
 pub(crate) const DELETE_BY_ID_QM: &str = "DELETE FROM oc_share WHERE id = ?";
@@ -55,14 +55,14 @@ pub(crate) const UNACCEPT_BY_ID_PG: &str = "UPDATE oc_share SET accepted = 0 WHE
 pub(crate) const INSERT_QM: &str = "INSERT INTO oc_share \
     (share_type, share_with, uid_owner, uid_initiator, parent, item_type, item_source, \
      file_source, file_target, permissions, stime, accepted, expiration, token, password, \
-     mail_send) \
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+     mail_send, last_warned) \
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
 pub(crate) const INSERT_PG: &str = "INSERT INTO oc_share \
     (share_type, share_with, uid_owner, uid_initiator, parent, item_type, item_source, \
      file_source, file_target, permissions, stime, accepted, expiration, token, password, \
-     mail_send) \
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) \
+     mail_send, last_warned) \
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) \
     RETURNING id";
 
 pub(crate) const UPDATE_PERMISSIONS_QM: &str = "UPDATE oc_share SET permissions = ? WHERE id = ?";
@@ -73,21 +73,48 @@ pub(crate) const UPDATE_EXPIRATION_PG: &str = "UPDATE oc_share SET expiration = 
 
 pub(crate) const SELECT_BY_TOKEN_QM: &str = "SELECT id, share_type, share_with, uid_owner, \
     uid_initiator, parent, item_type, item_source, file_source, file_target, permissions, \
-    stime, accepted, expiration, token, password, mail_send \
-    FROM oc_share WHERE token = ? AND share_type = 3";
+    stime, accepted, expiration, token, password, mail_send, last_warned \
+    FROM oc_share WHERE token = ? AND share_type IN (3, 4)";
 
 pub(crate) const SELECT_BY_TOKEN_PG: &str = "SELECT id, share_type, share_with, uid_owner, \
     uid_initiator, parent, item_type, item_source, file_source, file_target, permissions, \
-    stime, accepted, expiration, token, password, mail_send \
-    FROM oc_share WHERE token = $1 AND share_type = 3";
+    stime, accepted, expiration, token, password, mail_send, last_warned \
+    FROM oc_share WHERE token = $1 AND share_type IN (3, 4)";
 
 pub(crate) const UPDATE_PASSWORD_QM: &str = "UPDATE oc_share SET password = ? WHERE id = ?";
 pub(crate) const UPDATE_PASSWORD_PG: &str = "UPDATE oc_share SET password = $1 WHERE id = $2";
+
+/// Select link / email-link rows whose `expiration` falls inside the
+/// half-open window `(now, now + 24h]` and have not yet been warned.
+/// Used by `ExpirationWarningSweeper`. Returns at most `limit` rows.
+pub(crate) const SELECT_EXPIRING_LINKS_QM: &str =
+    "SELECT id, uid_owner, file_target, token, expiration \
+     FROM oc_share \
+     WHERE share_type IN (3, 4) AND expiration IS NOT NULL \
+       AND expiration > ? AND expiration <= ? AND last_warned IS NULL \
+     ORDER BY id LIMIT ?";
+
+pub(crate) const SELECT_EXPIRING_LINKS_PG: &str =
+    "SELECT id, uid_owner, file_target, token, expiration \
+     FROM oc_share \
+     WHERE share_type IN (3, 4) AND expiration IS NOT NULL \
+       AND expiration > $1 AND expiration <= $2 AND last_warned IS NULL \
+     ORDER BY id LIMIT $3";
+
+pub(crate) const STAMP_LAST_WARNED_QM: &str = "UPDATE oc_share SET last_warned = ? WHERE id = ?";
+pub(crate) const STAMP_LAST_WARNED_PG: &str = "UPDATE oc_share SET last_warned = $1 WHERE id = $2";
 
 /// Reference each constant so unused-const warnings stay quiet across batches
 /// (some are only consumed once Batch B's CRUD impls land below).
 const _: &str = SELECT_COLUMNS;
 const _: &str = INSERT_BIND_LIST;
+// Sweeper constants — first call site lands in Task C5's
+// `ExpirationWarningSweeper`. Anchor them here so the placeholder dead-code
+// warnings stay quiet between C1 and C5 landing.
+const _: &str = SELECT_EXPIRING_LINKS_QM;
+const _: &str = SELECT_EXPIRING_LINKS_PG;
+const _: &str = STAMP_LAST_WARNED_QM;
+const _: &str = STAMP_LAST_WARNED_PG;
 
 /// Build the dynamic `share_counts_for` query for an owner with `fileid_count`
 /// candidate fileids. Returns `(file_source, count)` rows for every fileid in
@@ -136,8 +163,8 @@ pub(crate) fn select_incoming(group_count: usize, dialect: Dialect) -> String {
     q.push_str(
         "SELECT id, share_type, share_with, uid_owner, uid_initiator, parent, item_type, \
          item_source, file_source, file_target, permissions, stime, accepted, expiration, \
-         token, password, mail_send FROM oc_share WHERE accepted = 1 AND share_type IN (0, 1) \
-         AND (",
+         token, password, mail_send, last_warned FROM oc_share WHERE accepted = 1 \
+         AND share_type IN (0, 1) AND (",
     );
     match dialect {
         Dialect::Qm => {

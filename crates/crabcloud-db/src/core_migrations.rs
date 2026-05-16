@@ -67,6 +67,13 @@ pub const CORE_MIGRATIONS: &[Migration] = &[
             "../../../migrations/core/0007_mail_queue_and_notification_prefs/postgres.sql"
         ),
     },
+    Migration {
+        version: 8,
+        name: "share_last_warned",
+        sqlite: include_str!("../../../migrations/core/0008_share_last_warned/sqlite.sql"),
+        mysql: include_str!("../../../migrations/core/0008_share_last_warned/mysql.sql"),
+        postgres: include_str!("../../../migrations/core/0008_share_last_warned/postgres.sql"),
+    },
 ];
 
 /// Returns the `core` migration set ready to be registered with a
@@ -94,7 +101,7 @@ mod tests {
         let mut runner = MigrationRunner::new(&pool, &cfg.dbtableprefix);
         runner.register(core_set());
         let applied = runner.run().await.unwrap();
-        assert_eq!(applied, 7);
+        assert_eq!(applied, 8);
 
         // Verify oc_appconfig exists and accepts a row.
         match &pool {

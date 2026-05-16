@@ -10,6 +10,11 @@ pub enum ShareType {
     User = 0,
     Group = 1,
     Link = 3,
+    /// "Email-link" share — a public-link row whose `share_with` is an
+    /// email address rather than a user/group id. Routes through
+    /// `create_link` like `ShareType::Link`, additionally enqueuing a
+    /// `link_emailed` notification to the recipient.
+    Email = 4,
 }
 
 impl TryFrom<i16> for ShareType {
@@ -19,6 +24,7 @@ impl TryFrom<i16> for ShareType {
             0 => Ok(ShareType::User),
             1 => Ok(ShareType::Group),
             3 => Ok(ShareType::Link),
+            4 => Ok(ShareType::Email),
             _ => Err("unsupported share_type"),
         }
     }
@@ -71,6 +77,10 @@ pub struct ShareRow {
     pub expiration: Option<DateTime<Utc>>,
     pub token: Option<String>,
     pub password_hash: Option<String>,
+    /// Timestamp when the expiration-warning mail was enqueued for this
+    /// row. `None` means "never warned"; the sweeper stamps this once it
+    /// has handed off (whether or not the user opted in).
+    pub last_warned: Option<DateTime<Utc>>,
 }
 
 /// Caller-supplied create request. The service validates and normalizes
@@ -97,6 +107,21 @@ pub struct CreateShareRequest {
     pub expire_date: Option<NaiveDate>,
 }
 
+/// Slim projection of an `oc_share` row used by the
+/// `ExpirationWarningSweeper`. Carries just the fields the sweeper
+/// needs to render the warning template + stamp `last_warned`.
+#[derive(Debug, Clone)]
+pub struct ExpiringLink {
+    pub id: i64,
+    pub uid_owner: String,
+    /// For Link/Email rows, this is the FULL owner-relative path
+    /// (with leading slash) — `file_target` carries the path so the
+    /// sweeper can compute a sensible basename for the template.
+    pub file_target: String,
+    pub token: String,
+    pub expiration: chrono::NaiveDateTime,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct UpdateShareFields {
     pub permissions: Option<u32>,
@@ -111,7 +136,7 @@ mod tests {
 
     #[test]
     fn share_type_round_trips_via_i16() {
-        for v in [0_i16, 1, 3] {
+        for v in [0_i16, 1, 3, 4] {
             let st = ShareType::try_from(v).unwrap();
             assert_eq!(i16::from(st), v);
         }
@@ -120,6 +145,7 @@ mod tests {
     #[test]
     fn share_type_rejects_unknown() {
         assert!(ShareType::try_from(2_i16).is_err());
+        assert!(ShareType::try_from(5_i16).is_err());
         assert!(ShareType::try_from(99_i16).is_err());
     }
 

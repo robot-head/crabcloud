@@ -1,17 +1,28 @@
 //! `Shares` — sharing CRUD service. SP7 spec sections §5 (surface) and §9
 //! (auth/permissions). Schema lives in migration `0006_shares`.
+//!
+//! Sibling modules host the bits that aren't core CRUD/token-resolve so
+//! this file stays focused:
+//! - `notifications` — best-effort mail hooks (`share_created`,
+//!   `link_emailed`) invoked post-insert.
+//! - `sweeper_support` — `find_expiring_links` + `stamp_last_warned`
+//!   used by `ExpirationWarningSweeper`.
+
+mod notifications;
+mod sweeper_support;
 
 use chrono::{DateTime, NaiveDateTime, Utc};
 use crabcloud_db::DbPool;
 use crabcloud_filecache::FileCache;
 use crabcloud_storage::StoragePath;
-use crabcloud_users::{GroupId, UserId, UsersService};
+use crabcloud_users::{GroupId, NotificationPrefs, UserId, UsersService};
 use sqlx::Row as _;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::error::ShareError;
+use crate::mail::MailEnqueuer;
 use crate::permissions::SharePermissions;
 use crate::sql::{self, Dialect};
 use crate::types::{CreateShareRequest, ItemType, ShareRow, ShareType, UpdateShareFields};
@@ -21,21 +32,45 @@ pub struct Shares {
     pub(crate) pool: Arc<DbPool>,
     pub(crate) users: Arc<UsersService>,
     pub(crate) filecache: Arc<FileCache>,
+    pub(crate) mail: Arc<dyn MailEnqueuer>,
+    pub(crate) prefs: NotificationPrefs,
+    /// Base URL the templates use to build absolute links
+    /// (e.g. `https://crabcloud.example`). Falls back to `/s/<token>`
+    /// relative when not set.
+    pub(crate) instance_url: String,
 }
 
 impl Shares {
-    pub fn new(pool: Arc<DbPool>, users: Arc<UsersService>, filecache: Arc<FileCache>) -> Self {
+    /// Construct a `Shares` service.
+    ///
+    /// `instance_url` is the base URL inserted into mail templates'
+    /// `{{ link_url }}` (so callers see `https://host/s/<token>`).
+    /// Empty string is tolerated — the templates degrade to relative
+    /// `/s/<token>` URLs.
+    pub fn new(
+        pool: Arc<DbPool>,
+        users: Arc<UsersService>,
+        filecache: Arc<FileCache>,
+        mail: Arc<dyn MailEnqueuer>,
+        prefs: NotificationPrefs,
+        instance_url: String,
+    ) -> Self {
         Self {
             pool,
             users,
             filecache,
+            mail,
+            prefs,
+            instance_url,
         }
     }
 
     pub async fn create(&self, req: CreateShareRequest) -> Result<ShareRow, ShareError> {
-        // Link rows take a different code path: no `share_with` target,
-        // password and expiration handled, token generated. SP8 §5.
-        if matches!(req.share_type, ShareType::Link) {
+        // Link + Email rows take a different code path: no user/group
+        // recipient lookup, password and expiration handled, token
+        // generated. Email additionally enqueues a `link_emailed` mail
+        // post-insert (Task C4). SP8 §5.
+        if matches!(req.share_type, ShareType::Link | ShareType::Email) {
             return self.create_link(req).await;
         }
         if req.permissions & 1 == 0 {
@@ -83,7 +118,7 @@ impl Shares {
                     return Err(ShareError::RecipientUnknown);
                 }
             }
-            ShareType::Link => unreachable!(),
+            ShareType::Link | ShareType::Email => unreachable!(),
         }
 
         let item_type = if row.mimetype.as_str() == crabcloud_filecache::DIRECTORY_MIMETYPE {
@@ -117,6 +152,7 @@ impl Shares {
                     .bind::<Option<String>>(None)
                     .bind::<Option<String>>(None)
                     .bind(0_i16)
+                    .bind::<Option<NaiveDateTime>>(None)
                     .execute(p)
                     .await?;
                 res.last_insert_rowid()
@@ -139,6 +175,7 @@ impl Shares {
                     .bind::<Option<String>>(None)
                     .bind::<Option<String>>(None)
                     .bind(0_i16)
+                    .bind::<Option<NaiveDateTime>>(None)
                     .execute(p)
                     .await?;
                 res.last_insert_id() as i64
@@ -161,11 +198,25 @@ impl Shares {
                     .bind::<Option<String>>(None)
                     .bind::<Option<String>>(None)
                     .bind(0_i16)
+                    .bind::<Option<NaiveDateTime>>(None)
                     .fetch_one(p)
                     .await?;
                 row.try_get::<i64, _>("id")?
             }
         };
+
+        // Post-insert notification hook. Only User shares mail the
+        // recipient; group shares would require fan-out to N members
+        // and are deferred. Failures are logged + dropped — the share
+        // itself succeeded.
+        if matches!(req.share_type, ShareType::User) {
+            self.try_enqueue_share_created_mail(
+                req.share_with.as_str(),
+                req.requester.as_str(),
+                &storage_path,
+            )
+            .await;
+        }
 
         Ok(ShareRow {
             id,
@@ -184,6 +235,7 @@ impl Shares {
             expiration: None,
             token: None,
             password_hash: None,
+            last_warned: None,
         })
     }
 
@@ -213,10 +265,12 @@ impl Shares {
         }
     }
 
-    /// Look up a share row by token. Returns `None` for unknown / non-link
-    /// rows (the SQL is filtered to `share_type = 3`). Does NOT enforce
-    /// expiration — the caller must compare `expiration` to `now()` and
-    /// treat past-expired as missing. SP8 §5.
+    /// Look up a public-link share row by its token. Filters on
+    /// `share_type IN (3, 4)` so both Link and Email rows are returned —
+    /// email-link recipients open the share via `/s/<token>` exactly like
+    /// regular link recipients. Returns `None` for unknown / non-link
+    /// rows. Does NOT enforce expiration — the caller must compare
+    /// `expiration` to `now()` and treat past-expired as missing. SP8 §5.
     pub async fn resolve_by_token(&self, token: &str) -> Result<Option<ShareRow>, ShareError> {
         match self.pool.as_ref() {
             DbPool::Sqlite(p) => {
@@ -423,8 +477,8 @@ impl Shares {
             return Err(ShareError::NotImplemented);
         }
         if let Some(pw_opt) = &fields.password {
-            // Only Link rows accept password updates.
-            if !matches!(existing.share_type, ShareType::Link) {
+            // Only Link / Email rows accept password updates.
+            if !matches!(existing.share_type, ShareType::Link | ShareType::Email) {
                 return Err(ShareError::BadPermissions);
             }
             let hashed: Option<String> = match pw_opt {
@@ -446,7 +500,7 @@ impl Shares {
         if let Some(raw) = fields.permissions {
             // Link rows accept either bit 1 (read) or bit 4 (create), matching
             // `create_link`. User/group rows continue to require bit 1.
-            let ok = if matches!(existing.share_type, ShareType::Link) {
+            let ok = if matches!(existing.share_type, ShareType::Link | ShareType::Email) {
                 raw & 1 != 0 || raw & 4 != 0
             } else {
                 raw & 1 != 0
@@ -598,9 +652,16 @@ impl Shares {
         // sees a 500.
         let token = crabcloud_publiclinks::Tokens::new().generate();
         let token_str = token.to_string();
+        // Email shares persist the recipient address in `share_with` for
+        // audit + UI display. Plain Link shares omit it (None).
+        let share_with_for_insert: Option<&str> = match req.share_type {
+            ShareType::Email => Some(req.share_with.as_str()),
+            _ => None,
+        };
         let id = self
             .insert_link_row(
                 share_type_db,
+                share_with_for_insert,
                 &req.requester,
                 fileid,
                 &file_target,
@@ -613,10 +674,31 @@ impl Shares {
             )
             .await?;
 
+        // Email-share post-insert hook: enqueue link_emailed mail.
+        // No opt-out gate here — the requester explicitly addressed an
+        // external recipient by typing their email, so the prefs table
+        // (which is keyed on uid, not address) doesn't apply.
+        if matches!(req.share_type, ShareType::Email) {
+            self.try_enqueue_link_emailed_mail(
+                req.share_with.as_str(),
+                req.requester.as_str(),
+                &storage_path,
+                &token_str,
+                password_hash.is_some(),
+                expiration,
+            )
+            .await;
+        }
+
         Ok(ShareRow {
             id,
-            share_type: ShareType::Link,
-            share_with: None,
+            share_type: req.share_type,
+            // For Email shares, `share_with` is the recipient email address.
+            // For Link shares it's `None`.
+            share_with: match req.share_type {
+                ShareType::Email => Some(req.share_with.clone()),
+                _ => None,
+            },
             uid_owner: req.requester.clone(),
             uid_initiator: req.requester,
             parent: None,
@@ -630,6 +712,7 @@ impl Shares {
             expiration: expiration.map(|n| DateTime::<Utc>::from_naive_utc_and_offset(n, Utc)),
             token: Some(token_str),
             password_hash,
+            last_warned: None,
         })
     }
 
@@ -637,6 +720,7 @@ impl Shares {
     async fn insert_link_row(
         &self,
         share_type_db: i16,
+        share_with: Option<&str>,
         requester: &str,
         fileid: i64,
         file_target: &str,
@@ -651,7 +735,7 @@ impl Shares {
             DbPool::Sqlite(p) => {
                 let res = sqlx::query(sql::INSERT_QM)
                     .bind(share_type_db)
-                    .bind::<Option<&str>>(None) // share_with
+                    .bind(share_with) // share_with (None for Link, email for Email)
                     .bind(requester) // uid_owner
                     .bind(requester) // uid_initiator
                     .bind::<Option<i64>>(None) // parent
@@ -666,6 +750,7 @@ impl Shares {
                     .bind(token)
                     .bind(password)
                     .bind(0_i16) // mail_send
+                    .bind::<Option<NaiveDateTime>>(None) // last_warned
                     .execute(p)
                     .await?;
                 Ok(res.last_insert_rowid())
@@ -673,7 +758,7 @@ impl Shares {
             DbPool::MySql(p) => {
                 let res = sqlx::query(sql::INSERT_QM)
                     .bind(share_type_db)
-                    .bind::<Option<&str>>(None)
+                    .bind(share_with)
                     .bind(requester)
                     .bind(requester)
                     .bind::<Option<i64>>(None)
@@ -688,6 +773,7 @@ impl Shares {
                     .bind(token)
                     .bind(password)
                     .bind(0_i16)
+                    .bind::<Option<NaiveDateTime>>(None)
                     .execute(p)
                     .await?;
                 Ok(res.last_insert_id() as i64)
@@ -695,7 +781,7 @@ impl Shares {
             DbPool::Postgres(p) => {
                 let row = sqlx::query(sql::INSERT_PG)
                     .bind(share_type_db)
-                    .bind::<Option<&str>>(None)
+                    .bind(share_with)
                     .bind(requester)
                     .bind(requester)
                     .bind::<Option<i64>>(None)
@@ -710,6 +796,7 @@ impl Shares {
                     .bind(token)
                     .bind(password)
                     .bind(0_i16)
+                    .bind::<Option<NaiveDateTime>>(None)
                     .fetch_one(p)
                     .await?;
                 Ok(row.try_get::<i64, _>("id")?)
@@ -862,6 +949,7 @@ struct RowParts {
     expiration: Option<NaiveDateTime>,
     token: Option<String>,
     password: Option<String>,
+    last_warned: Option<NaiveDateTime>,
 }
 
 fn assemble_row(parts: RowParts) -> Result<ShareRow, ShareError> {
@@ -875,6 +963,9 @@ fn assemble_row(parts: RowParts) -> Result<ShareRow, ShareError> {
     let permissions = SharePermissions::from_wire(parts.permissions as u32);
     let expiration = parts
         .expiration
+        .map(|n| DateTime::<Utc>::from_naive_utc_and_offset(n, Utc));
+    let last_warned = parts
+        .last_warned
         .map(|n| DateTime::<Utc>::from_naive_utc_and_offset(n, Utc));
     Ok(ShareRow {
         id: parts.id,
@@ -893,6 +984,7 @@ fn assemble_row(parts: RowParts) -> Result<ShareRow, ShareError> {
         expiration,
         token: parts.token,
         password_hash: parts.password,
+        last_warned,
     })
 }
 
@@ -914,6 +1006,7 @@ fn row_from_sqlite(row: sqlx::sqlite::SqliteRow) -> Result<ShareRow, ShareError>
         expiration: row.try_get("expiration")?,
         token: row.try_get("token")?,
         password: row.try_get("password")?,
+        last_warned: row.try_get("last_warned")?,
     })
 }
 
@@ -944,6 +1037,7 @@ fn row_from_mysql(row: sqlx::mysql::MySqlRow) -> Result<ShareRow, ShareError> {
         expiration: row.try_get_unchecked("expiration")?,
         token: row.try_get_unchecked("token")?,
         password: row.try_get_unchecked("password")?,
+        last_warned: row.try_get_unchecked("last_warned")?,
     })
 }
 
@@ -965,5 +1059,6 @@ fn row_from_postgres(row: sqlx::postgres::PgRow) -> Result<ShareRow, ShareError>
         expiration: row.try_get("expiration")?,
         token: row.try_get("token")?,
         password: row.try_get("password")?,
+        last_warned: row.try_get("last_warned")?,
     })
 }
