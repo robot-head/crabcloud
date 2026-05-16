@@ -8,8 +8,10 @@
 //! is materialized.
 
 mod error;
+mod ladder;
 
 pub use error::PreviewError;
+pub use ladder::{round_up_to_ladder, LADDER};
 
 // Anchors for dev-deps only referenced from `#[cfg(test)]` modules across
 // other files — keeps `unused_crate_dependencies` quiet for the lib test
