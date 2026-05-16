@@ -111,6 +111,16 @@ pub struct FileConfig {
     #[serde(default)]
     pub filecache: FilecacheConfig,
 
+    /// Folder zip download — max entries (files + directories) the
+    /// pre-flight walk will accept before rejecting with 413. Tunable via
+    /// `config.php`. Default 500.
+    #[serde(default = "default_folder_zip_max_entries")]
+    pub folder_zip_max_entries: u64,
+    /// Folder zip download — max total uncompressed bytes the pre-flight
+    /// walk will accept before rejecting with 413. Default 2 GiB.
+    #[serde(default = "default_folder_zip_max_bytes")]
+    pub folder_zip_max_bytes: u64,
+
     /// Optional bootstrap admin (Phase 3 deferred-users stand-in).
     pub bootstrap_admin: Option<BootstrapAdminConfig>,
 }
@@ -187,6 +197,12 @@ fn default_filecache_enabled() -> bool {
 fn default_event_channel_capacity() -> usize {
     1024
 }
+fn default_folder_zip_max_entries() -> u64 {
+    500
+}
+fn default_folder_zip_max_bytes() -> u64 {
+    2 * 1024 * 1024 * 1024
+}
 
 /// Errors raised while validating a parsed config.
 #[derive(Debug, thiserror::Error)]
@@ -261,6 +277,8 @@ mod tests {
                 backend: "memory".to_string(),
             },
             filecache: FilecacheConfig::default(),
+            folder_zip_max_entries: default_folder_zip_max_entries(),
+            folder_zip_max_bytes: default_folder_zip_max_bytes(),
             bootstrap_admin: None,
         }
     }
