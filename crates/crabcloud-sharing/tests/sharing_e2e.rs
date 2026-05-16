@@ -680,6 +680,44 @@ async fn link_share_update_sets_password_and_expiration(fx: &Fixture) {
     assert!(cleared.password_hash.is_none());
 }
 
+async fn link_share_update_to_file_drop_permissions_accepted(fx: &Fixture) {
+    seed_user(fx, "alice").await;
+    let _ = seed_file(fx, "alice", "/Drop", true).await;
+    let sid = fx.home_storage_id("alice");
+    let row = fx
+        .shares
+        .create(CreateShareRequest {
+            requester: "alice".into(),
+            path: "/Drop".into(),
+            share_type: ShareType::Link,
+            share_with: String::new(),
+            permissions: 1, // read link
+            home_storage_id: sid,
+            password: None,
+            expire_date: None,
+        })
+        .await
+        .unwrap();
+    assert_eq!(row.permissions.as_u8(), 1);
+
+    // Flip read-link to file-drop (bit 4 only). The old validation rejected
+    // this because it required bit 1; link rows should follow the same rule
+    // as create_link (at least bit 1 or bit 4).
+    let updated = fx
+        .shares
+        .update(
+            row.id,
+            &UserId::new("alice").unwrap(),
+            UpdateShareFields {
+                permissions: Some(4),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("file-drop permissions accepted on link update");
+    assert_eq!(updated.permissions.as_u8(), 4);
+}
+
 async fn resolve_by_token_returns_row(fx: &Fixture) {
     seed_user(fx, "alice").await;
     let _ = seed_file(fx, "alice", "/Photos", true).await;
@@ -751,6 +789,7 @@ per_dialect!(strips_bit_16);
 per_dialect!(rejects_reshare_attempt);
 per_dialect!(link_share_create_persists_token_and_password);
 per_dialect!(link_share_update_sets_password_and_expiration);
+per_dialect!(link_share_update_to_file_drop_permissions_accepted);
 per_dialect!(resolve_by_token_returns_row);
 per_dialect!(rejects_unknown_recipient);
 
