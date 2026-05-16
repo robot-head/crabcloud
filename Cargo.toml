@@ -14,6 +14,7 @@ members = [
     "crates/crabcloud-sharing",
     "crates/crabcloud-storage",
     "crates/crabcloud-users",
+    "crates/crabcloud-zip",
     "xtask",
 ]
 resolver = "2"
@@ -83,6 +84,7 @@ wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 web-sys = "0.3"
 xattr = "1"
+zip = { version = "5", default-features = false, features = ["deflate", "deflate-flate2"] }
 
 polib = "0.3"
 accept-language = "3.1"
@@ -103,6 +105,7 @@ crabcloud-publiclinks = { path = "crates/crabcloud-publiclinks" }
 crabcloud-sharing = { path = "crates/crabcloud-sharing" }
 crabcloud-storage = { path = "crates/crabcloud-storage" }
 crabcloud-users = { path = "crates/crabcloud-users" }
+crabcloud-zip = { path = "crates/crabcloud-zip" }
 email_address = "0.2"
 rpassword = "7"
 assert_cmd = "2"
