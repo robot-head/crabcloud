@@ -6,9 +6,7 @@
 //! rather than silently truncated.
 
 use crate::error::PublicLinkError;
-
-/// bcrypt cost. 12 matches `crabcloud-users::password::BCRYPT_COST`.
-pub const BCRYPT_COST: u32 = 12;
+pub use crabcloud_users::BCRYPT_COST;
 
 /// Bcrypt has a hard plaintext cap of 72 bytes; we reject longer inputs at
 /// hash time rather than truncate silently.
