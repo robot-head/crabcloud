@@ -11,13 +11,13 @@
 //! limits. On success the response is `200 OK` with
 //! `Content-Type: application/zip` and a streamed body.
 
-use crate::auth_context::AuthContext;
+use crate::extractors::auth::AuthenticatedUser;
 use axum::body::Body;
 use axum::extract::{Path, State};
 use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
-use axum::{Extension, Router};
+use axum::Router;
 use bytes::Bytes;
 use crabcloud_core::AppState;
 use crabcloud_fs::path::UserPath;
@@ -27,30 +27,28 @@ use serde::Serialize;
 use tokio_stream::wrappers::ReceiverStream;
 
 /// Build the authed folder-zip sub-router. Mounted under the global
-/// `AuthLayer` in `build_router`, so `Extension<AuthContext>` is present
-/// for any request that reached the handlers.
+/// `AuthLayer` in `build_router`. Handlers extract the caller via
+/// [`AuthenticatedUser`], which rejects with 401 when the `AuthLayer`
+/// did not install an `AuthContext` extension.
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/api/files/zip/", get(handler_root))
         .route("/api/files/zip/{*path}", get(handler))
 }
 
-async fn handler_root(
-    State(state): State<AppState>,
-    Extension(ctx): Extension<AuthContext>,
-) -> Response {
-    handle_zip(state, ctx, String::new()).await
+async fn handler_root(State(state): State<AppState>, authed: AuthenticatedUser) -> Response {
+    handle_zip(state, authed, String::new()).await
 }
 
 async fn handler(
     State(state): State<AppState>,
-    Extension(ctx): Extension<AuthContext>,
+    authed: AuthenticatedUser,
     Path(path): Path<String>,
 ) -> Response {
-    handle_zip(state, ctx, path).await
+    handle_zip(state, authed, path).await
 }
 
-async fn handle_zip(state: AppState, ctx: AuthContext, raw_path: String) -> Response {
+async fn handle_zip(state: AppState, authed: AuthenticatedUser, raw_path: String) -> Response {
     let user_path_str = if raw_path.is_empty() {
         "/".to_string()
     } else {
@@ -60,7 +58,11 @@ async fn handle_zip(state: AppState, ctx: AuthContext, raw_path: String) -> Resp
         Ok(p) => p,
         Err(_) => return (StatusCode::BAD_REQUEST, "invalid path").into_response(),
     };
-    let view = match state.view_for(&ctx.user_id).await {
+    let uid = match crabcloud_users::UserId::new(&authed.user_id) {
+        Ok(u) => u,
+        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "").into_response(),
+    };
+    let view = match state.view_for(&uid).await {
         Ok(v) => v,
         Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "").into_response(),
     };
@@ -83,7 +85,7 @@ async fn handle_zip(state: AppState, ctx: AuthContext, raw_path: String) -> Resp
         max_entries: state.config.folder_zip_max_entries,
         max_bytes: state.config.folder_zip_max_bytes,
     };
-    let archive_basename = basename_for_zip(&user_path, ctx.user_id.as_str());
+    let archive_basename = basename_for_zip(&user_path, authed.user_id.as_str());
 
     // Pre-walk so the 413 branch never has to retract a 200. On success
     // we discard the plan and let `stream_folder` re-walk inside the

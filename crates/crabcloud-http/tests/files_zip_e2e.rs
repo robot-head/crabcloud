@@ -298,6 +298,26 @@ async fn authed_zip_unknown_path_returns_404() {
 }
 
 #[tokio::test]
+async fn authed_zip_without_authorization_returns_401() {
+    let dir = tempdir().unwrap();
+    let data = tempdir().unwrap();
+    let state = make_state(dir.path().join("noauth.db"), data.path().to_path_buf()).await;
+    seed_user(&state, "alice").await;
+    let app = crabcloud_http::build_router(state, axum::Router::new());
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/files/zip/Photos")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
 async fn authed_zip_root_uses_uid_basename() {
     let dir = tempdir().unwrap();
     let data = tempdir().unwrap();
