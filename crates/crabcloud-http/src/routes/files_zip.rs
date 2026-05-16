@@ -91,8 +91,7 @@ async fn handle_zip(state: AppState, ctx: AuthContext, raw_path: String) -> Resp
     // threading the plan through a second public entry point.
     match crabcloud_zip::walk_for_caps(&view, &user_path, &caps).await {
         Ok(_) => {
-            let (tx, rx) =
-                tokio::sync::mpsc::channel::<Result<Bytes, std::io::Error>>(32);
+            let (tx, rx) = tokio::sync::mpsc::channel::<Result<Bytes, std::io::Error>>(32);
             let writer = MpscBytesWriter::new(tx);
             let view_clone = view;
             let user_path_clone = user_path;
@@ -154,9 +153,7 @@ fn zip_response(
         })
         .collect();
     let percent = urlencoding::encode(&basename);
-    let disp = format!(
-        "attachment; filename=\"{safe_ascii}.zip\"; filename*=UTF-8''{percent}.zip"
-    );
+    let disp = format!("attachment; filename=\"{safe_ascii}.zip\"; filename*=UTF-8''{percent}.zip");
     headers.insert(
         header::CONTENT_DISPOSITION,
         HeaderValue::from_str(&disp).unwrap_or(HeaderValue::from_static("attachment")),

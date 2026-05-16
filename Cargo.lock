@@ -906,6 +906,7 @@ dependencies = [
  "tracing",
  "urlencoding",
  "uuid",
+ "zip",
 ]
 
 [[package]]

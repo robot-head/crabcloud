@@ -17,6 +17,13 @@ use cookie as _;
 use quick_xml as _;
 use uuid as _;
 
+// `zip` is a dev-dep used only by the `files_zip_e2e` integration test
+// (it parses the response body to assert archive contents). Anchor it
+// here so the lib-test binary doesn't trip the workspace-wide
+// `unused_crate_dependencies` lint.
+#[cfg(test)]
+use zip as _;
+
 mod auth_context;
 mod csrf;
 mod error;
