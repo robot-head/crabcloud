@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+axum = { workspace = true }
 bytes = { workspace = true }
 chrono = { workspace = true }
 crabcloud-fs = { workspace = true }
@@ -13,6 +14,7 @@ serde = { workspace = true, features = ["derive"] }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["sync", "io-util"] }
 tokio-util = { workspace = true, features = ["io", "io-util"] }
+urlencoding = { workspace = true }
 zip = { workspace = true }
 
 [dev-dependencies]

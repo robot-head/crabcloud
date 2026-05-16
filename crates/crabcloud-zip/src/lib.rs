@@ -12,6 +12,7 @@
 
 mod compression;
 mod error;
+mod http;
 mod mpsc_writer;
 mod stream;
 mod types;
@@ -19,6 +20,7 @@ mod walk;
 
 pub use compression::compression_for_mime;
 pub use error::{WalkError, ZipError};
+pub use http::zip_response_headers;
 pub use mpsc_writer::MpscBytesWriter;
 pub use stream::stream_folder;
 pub use types::{OverCapBody, OverCapLimits, PlanKind, PlannedEntry, ZipCaps, ZipPlan, ZipSummary};
