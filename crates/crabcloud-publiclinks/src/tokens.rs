@@ -6,8 +6,7 @@
 use rand::Rng;
 use std::fmt;
 
-const ALPHABET: &[u8; 62] =
-    b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+const ALPHABET: &[u8; 62] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 const TOKEN_LEN: usize = 15;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

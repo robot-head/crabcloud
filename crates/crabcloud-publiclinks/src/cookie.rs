@@ -26,8 +26,7 @@ impl UnlockCookie {
         let mut payload = Vec::with_capacity(8 + 32);
         payload.extend_from_slice(&exp_unix.to_le_bytes());
         let tag = {
-            let mut mac =
-                HmacSha256::new_from_slice(secret).expect("HMAC accepts any key length");
+            let mut mac = HmacSha256::new_from_slice(secret).expect("HMAC accepts any key length");
             mac.update(token.as_bytes());
             mac.update(&exp_unix.to_le_bytes());
             mac.finalize().into_bytes()
@@ -55,8 +54,7 @@ impl UnlockCookie {
         if exp_unix < now_unix {
             return Err(PublicLinkError::InvalidCookie);
         }
-        let mut mac =
-            HmacSha256::new_from_slice(secret).expect("HMAC accepts any key length");
+        let mut mac = HmacSha256::new_from_slice(secret).expect("HMAC accepts any key length");
         mac.update(token.as_bytes());
         mac.update(&exp_bytes);
         mac.verify_slice(&bytes[8..])
