@@ -7,7 +7,7 @@
 use crate::context::RequestContext;
 use crate::pages::{
     home::Home, login::Login, login_v2_flow::LoginV2Flow, not_found::NotFound,
-    settings_security::SettingsSecurity,
+    public_link::PublicLink as PublicLinkPage, settings_security::SettingsSecurity,
 };
 use dioxus::prelude::*;
 
@@ -38,6 +38,17 @@ pub enum Route {
     /// route here and the page renders the folder identified by `segments`.
     #[route("/apps/files/:..segments")]
     FilesRoute { segments: Vec<String> },
+
+    /// Anonymous public-link viewer root. `/s/<token>` renders the linked
+    /// folder (or the password gate, depending on the auth context the
+    /// upstream `public_link_auth` middleware attached).
+    #[route("/s/:token")]
+    PublicLinkRoute { token: String },
+
+    /// Nested public-link path. `/s/<token>/sub/folder` renders the same
+    /// page with `path == ["sub", "folder"]`.
+    #[route("/s/:token/:..path")]
+    PublicLinkPathRoute { token: String, path: Vec<String> },
 
     /// Catch-all 404 page. SSR uses this to detect unknown paths and emit
     /// an HTTP 404 status.
@@ -78,6 +89,16 @@ pub fn FilesRoute(segments: Vec<String>) -> Element {
     let ctx = use_context::<RequestContext>();
     let path = segments_to_path(&segments);
     rsx! { Files { ctx, path } }
+}
+
+#[component]
+pub fn PublicLinkRoute(token: String) -> Element {
+    rsx! { PublicLinkPage { token, path: Vec::<String>::new() } }
+}
+
+#[component]
+pub fn PublicLinkPathRoute(token: String, path: Vec<String>) -> Element {
+    rsx! { PublicLinkPage { token, path } }
 }
 
 #[component]
