@@ -1,10 +1,144 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/crabcloud-logo-blackbg-text.png">
+    <img src="docs/crabcloud-logo-whitebg-text.png" alt="Crabcloud" width="240">
+  </picture>
+</p>
+
 # Crabcloud
 
-A Rust port of [Nextcloud server](https://github.com/nextcloud/server), with a Dioxus frontend.
+A self-hosted cloud platform written in Rust, with a [Dioxus](https://dioxuslabs.com/) frontend that renders on the server and hydrates in the browser. Crabcloud is API-compatible with [Nextcloud](https://nextcloud.com/), so existing Nextcloud desktop, mobile, and WebDAV clients pair against it without modification.
 
-**Status:** platform-core complete. The server boots, serves the Nextcloud-compatible API surface (`/status.php`, `/ocs/v2.php/cloud/capabilities`, `/index.php/login`), and renders an SSR'd Dioxus UI that hydrates in the browser. Spec §13 acceptance criteria are all green (verified by `cargo xtask check-all` + the Playwright E2E suite). Per-feature sub-projects (users, storage, WebDAV, sharing, calendar/contacts, etc.) build on this substrate.
+## What it is
 
-See `docs/superpowers/specs/` for design specs, `docs/superpowers/plans/` for implementation plans, and `CONTRIBUTING.md` for dev workflow.
+- **One static binary.** A single executable serves the WASM client, the SSR'd HTML shell, the WebDAV endpoints, and the OCS API. No PHP runtime, no Apache, no separate frontend build pipeline.
+- **Compatible by design.** `/status.php`, `/ocs/v2.php/cloud/*`, `/index.php/login/v2`, and `/remote.php/dav/...` behave like Nextcloud's so existing clients work unchanged. The Nextcloud Admin app speaks to the same OCS surface natively.
+- **Pluggable storage.** Filesystem access is abstracted behind an async `Storage` trait, with backends selectable per-mount and an event sink that keeps the file cache and scanner consistent.
+- **Cross-platform.** Builds and runs on Linux, macOS, and Windows; bundles to a single binary plus a `public/` asset directory.
+
+## Features
+
+Crabcloud aims for parity with the core Nextcloud Hub. The table below tracks which features are available today.
+
+### Platform
+
+| Feature                                        | Status |
+| ---------------------------------------------- | :----: |
+| Nextcloud-compatible OCS API (`/ocs/v2.php`)   |   ✅   |
+| Capabilities endpoint                          |   ✅   |
+| Server-side rendering + WASM hydration         |   ✅   |
+| Layered TOML configuration                     |   ✅   |
+| Database migrations (SQLite / PostgreSQL / MySQL) | ✅   |
+| Localization (gettext `.po` catalogs)          |   ✅   |
+| In-memory cache layer                          |   ✅   |
+| CLI admin subcommands                          |   ✅   |
+| Redis / Memcached cache backends               |   ❌   |
+| Background job runner / cron                   |   ❌   |
+| Theming & branding                             |   ❌   |
+| Maintenance mode                               |   ❌   |
+| Audit log                                      |   ❌   |
+| Federation (server-to-server)                  |   ❌   |
+| App store / third-party apps                   |   ❌   |
+
+### Authentication & users
+
+| Feature                                                | Status |
+| ------------------------------------------------------ | :----: |
+| Username + password login (bcrypt)                     |   ✅   |
+| Session cookies + CSRF protection                      |   ✅   |
+| App passwords (per-device tokens)                      |   ✅   |
+| Bearer / Basic auth for API and DAV clients            |   ✅   |
+| Login Flow v2 (`/index.php/login/v2`)                  |   ✅   |
+| User & group management via OCS (`/cloud/users`, `/cloud/groups`) | ✅ |
+| Force-logout / disable user                            |   ✅   |
+| Bootstrap-admin first-run flow                         |   ✅   |
+| Two-factor authentication                              |   ❌   |
+| WebAuthn / passkeys                                    |   ❌   |
+| LDAP / Active Directory                                |   ❌   |
+| SAML / OIDC SSO                                        |   ❌   |
+| Brute-force throttling (global)                        |   ❌   |
+| Rate-limited public-link password attempts             |   ✅   |
+
+### Files
+
+| Feature                                                | Status |
+| ------------------------------------------------------ | :----: |
+| WebDAV at `/dav/files/{user}/...` and `/remote.php/dav/...` |   ✅   |
+| Chunked uploads (`/dav/uploads/{user}/{id}/...`)       |   ✅   |
+| File cache + filesystem scanner                        |   ✅   |
+| WebDAV properties & locks                              |   ✅   |
+| Files web UI (browse, mkdir, rename, delete, move, upload) |   ✅ |
+| Local-disk storage backend                             |   ✅   |
+| In-memory storage backend (testing)                    |   ✅   |
+| Per-user mount resolution                              |   ✅   |
+| Trashbin                                               |   ❌   |
+| File versioning                                        |   ❌   |
+| Favorites                                              |   ❌   |
+| Tags & comments                                        |   ❌   |
+| Full-text & metadata search                            |   ❌   |
+| Thumbnails / previews                                  |   ❌   |
+| S3 / object-storage primary or external backend        |   ❌   |
+| SMB / FTP / WebDAV external storage                    |   ❌   |
+| Group folders                                          |   ❌   |
+| Server-side encryption                                 |   ❌   |
+| End-to-end encryption                                  |   ❌   |
+
+### Sharing
+
+| Feature                                                | Status |
+| ------------------------------------------------------ | :----: |
+| User shares                                            |   ✅   |
+| Group shares                                           |   ✅   |
+| Granular share permissions                             |   ✅   |
+| Public link shares                                     |   ✅   |
+| Password-protected public links                        |   ✅   |
+| Public-link cookies & session handling                 |   ✅   |
+| Share expiration dates                                 |   ❌   |
+| Upload-only / file-drop links                          |   ❌   |
+| Federated (server-to-server) shares                    |   ❌   |
+| Share-by-email                                         |   ❌   |
+| Circles                                                |   ❌   |
+
+### Collaboration apps
+
+| Feature                                                | Status |
+| ------------------------------------------------------ | :----: |
+| Calendar (CalDAV)                                      |   ❌   |
+| Contacts (CardDAV)                                     |   ❌   |
+| Mail                                                   |   ❌   |
+| Talk (chat / calls)                                    |   ❌   |
+| Notes                                                  |   ❌   |
+| Deck (kanban)                                          |   ❌   |
+| Tasks                                                  |   ❌   |
+| Photos                                                 |   ❌   |
+| Activity feed                                          |   ❌   |
+| Notifications                                          |   ❌   |
+| Collabora / OnlyOffice integration                     |   ❌   |
+
+## Screenshots
+
+<table>
+  <tr>
+    <td align="center">
+      <a href="docs/screenshots/files-list.png"><img src="docs/screenshots/files-list.png" alt="Files browser" width="420"></a><br>
+      <sub>Files browser</sub>
+    </td>
+    <td align="center">
+      <a href="docs/screenshots/files-empty.png"><img src="docs/screenshots/files-empty.png" alt="Empty folder with drop-to-upload" width="420"></a><br>
+      <sub>Empty folder with drop-to-upload</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <a href="docs/screenshots/files-selection.png"><img src="docs/screenshots/files-selection.png" alt="Multi-select cut and delete" width="420"></a><br>
+      <sub>Multi-select cut and delete</sub>
+    </td>
+    <td align="center">
+      <a href="docs/screenshots/files-delete-modal.png"><img src="docs/screenshots/files-delete-modal.png" alt="Delete confirmation" width="420"></a><br>
+      <sub>Delete confirmation</sub>
+    </td>
+  </tr>
+</table>
 
 ## Quick start
 
@@ -17,53 +151,53 @@ cargo install dioxus-cli --version "^0.7"
 cp config/config.toml.example config/config.toml
 #  - Set installed = true.
 #  - Pick a dbtype (sqlite is easiest).
-#  - For login, add a [bootstrap_admin] section with a bcrypt password hash.
+#  - For first login, add a [bootstrap_admin] section with a bcrypt password hash.
 
-# 2. Build UI + server (one dx invocation produces both WASM client + server
-#    binary with hashed asset paths substituted into SSR HTML). Replace
-#    <host-triple> with x86_64-unknown-linux-gnu / x86_64-pc-windows-msvc /
-#    aarch64-apple-darwin as appropriate.
+# 2. Build the UI and server together. Replace <host-triple> with
+#    x86_64-unknown-linux-gnu / x86_64-pc-windows-msvc / aarch64-apple-darwin.
 ( cd crates/crabcloud-app && dx build --release \
     @client --no-default-features --features web --target wasm32-unknown-unknown \
     @server --no-default-features --features server --target <host-triple> )
 
-# 3. Run migrations, then serve via the dx-built binary.
+# 3. Run migrations, then serve.
 ./target/dx/crabcloud-app/release/web/server --config config/config.toml migrate
 ./target/dx/crabcloud-app/release/web/server --config config/config.toml serve
 
-# 3a. Create your first admin user (interactive password prompt). The CLI
-#     subcommands work via cargo too — no dx asset pass needed.
+# 4. Create your first admin user (interactive password prompt).
 cargo run -p crabcloud-app -- user-add admin --admin
 
-# 3b. (or, for the fresh-install bootstrap path)
-#     Add [bootstrap_admin] to config.toml with a bcrypt hash;
-#     log in, change your password — your account is now a real DB user.
-
-# 3c. Pair a DAV / desktop / mobile client (Nextcloud-client-compatible):
-#     - Visit https://<your-server>/settings/security in your browser.
-#     - Click "Create app password", enter a device name (e.g. "Phone").
-#     - Copy the displayed token (shown ONCE).
-#     - Configure your client with username + that token as the password.
-#     - Alternatively, point your client at https://<your-server>/index.php/login/v2
-#       and follow Nextcloud's authorize-in-browser flow.
-
-# 3d. Administer users + groups via the OCS API (Nextcloud-compatible):
-#     - `POST /ocs/v2.php/cloud/users` with form `userid=<>&password=<>&email=<>&displayName=<>`
-#     - `PUT /ocs/v2.php/cloud/users/<uid>/disable` to force-logout a user everywhere
-#     - `GET /ocs/v2.php/cloud/users?search=<term>` to search by uid/displayname/email
-#     - Authenticate via the admin's session cookie (after logging in) or admin app password.
-#     - The Nextcloud Admin app speaks this API natively — point it at https://<server>.
-
-# 4. Visit http://127.0.0.1:8080/ in a browser.
+# 5. Visit http://127.0.0.1:8080/.
 ```
+
+### Pairing a client
+
+1. Sign in at `https://<your-server>/`.
+2. Open `Settings → Security` and click **Create app password**.
+3. Copy the displayed token (shown once) and paste it into your Nextcloud
+   desktop / mobile / WebDAV client as the password.
+
+Alternatively, point a client at `https://<your-server>/index.php/login/v2`
+to use Nextcloud's authorize-in-browser flow.
+
+### Administering via OCS
+
+```http
+POST /ocs/v2.php/cloud/users         # create user
+PUT  /ocs/v2.php/cloud/users/<uid>/disable
+GET  /ocs/v2.php/cloud/users?search=<term>
+```
+
+Authenticate with an admin session cookie or an admin app password. The
+official Nextcloud Admin app works unmodified.
 
 ## Development
 
-The Dioxus 0.7 fullstack model means a single `dx` invocation drives both the
-WASM client and the native server binary. dx performs link-time substitution of
-`manganis` asset placeholders into hashed `/assets/<…>.ext` paths in the SSR
-HTML, so any code path that needs the rendered page to match the served
-bundle (e.g. Playwright E2E) must go through a dx-built binary.
+Crabcloud uses Dioxus 0.7's fullstack model: a single `dx` invocation
+drives both the WASM client and the native server binary. `dx` performs
+link-time substitution of `manganis` asset placeholders into hashed
+`/assets/<…>.ext` paths, so any code path that needs the rendered page to
+match the served bundle (notably the Playwright E2E suite) must go
+through a `dx`-built binary.
 
 ### Hot-reload dev server
 
@@ -75,67 +209,56 @@ dx serve --release \
   @server --no-default-features --features server
 ```
 
-`dx serve` spawns the server binary with `IP` + `PORT` env vars set; the
-binary's `Cmd::Serve` honors these (overriding `bind_address` in
-`config.toml`) so HMR ws + asset reload reach the right address. The dev
-URL is printed on startup (typically `http://localhost:8080`).
+`dx serve` spawns the server with `IP` + `PORT` env vars; the binary's
+`Cmd::Serve` honors these (overriding `bind_address` in `config.toml`) so
+HMR ws + asset reload reach the right address.
 
-### Release build
+### Release build output
 
-From `crates/crabcloud-app/`:
-
-```bash
-dx build --release \
-  @client --no-default-features --features web --target wasm32-unknown-unknown \
-  @server --no-default-features --features server --target <host-triple>
-```
-
-Replace `<host-triple>` with `x86_64-unknown-linux-gnu` on Linux,
-`x86_64-pc-windows-msvc` on Windows, or `aarch64-apple-darwin` on Apple
-silicon. Output lives under `target/dx/crabcloud-app/release/web/`:
+`target/dx/crabcloud-app/release/web/`:
 
 - `server` (Linux/macOS) or `server.exe` (Windows) — the server binary.
 - `public/assets/` — hashed CSS / JS / image / WASM bundles.
 - `public/index.html` — generated shell.
 
-Run it via:
+### Cargo-only fallback
 
-```bash
-./target/dx/crabcloud-app/release/web/server --config config/config.toml serve
-```
-
-### Cargo-only fallback (CLI subcommands)
-
-For CLI subcommands (`migrate`, `user-add`, `files scan`, etc.) and
-scripted server runs that don't need the rendered UI, plain `cargo` works:
+For CLI subcommands (`migrate`, `user-add`, `files scan`, ...) and
+scripted server runs that don't need rendered HTML, plain `cargo` works:
 
 ```bash
 cargo run --release -p crabcloud-app -- migrate
 cargo run --release -p crabcloud-app -- user-add admin --admin
 ```
 
-The cargo-built server binary's SSR HTML will contain `manganis` placeholder
-strings for stylesheet/script hrefs (a known artifact of building without
-dx's linker pass) — production / E2E use the dx-built binary above.
+The cargo-built binary's SSR HTML contains `manganis` placeholder strings
+for stylesheet/script hrefs — production and E2E use the `dx`-built
+binary above.
 
 ## Workspace layout
 
 - `crates/crabcloud-config` — layered TOML config loader.
 - `crates/crabcloud-cache` — `Cache` trait + `MemoryCache` + `TypedCache<T>`.
 - `crates/crabcloud-db` — `DbPool` enum, `MigrationRunner`, core schema.
-- `crates/crabcloud-filecache` — DB-backed file cache + scanner consuming Storage events.
+- `crates/crabcloud-filecache` — DB-backed file cache + scanner.
 - `crates/crabcloud-fs` — per-user filesystem facade (View + Uploads + mount resolution).
 - `crates/crabcloud-i18n` — gettext `.po` loader, `Locale`, `I18n`.
 - `crates/crabcloud-ocs` — OCS envelope (JSON/XML), capabilities aggregator.
 - `crates/crabcloud-core` — `AppState`, `Error`, `AppConfigService`, `BootstrapHook`.
-- `crates/crabcloud-http` — axum router, middleware, session, CSRF, auth extractors, API handlers (including the Nextcloud-compatible admin OCS surface at `/ocs/v2.php/cloud/{users,groups}` and the WebDAV files API at `/dav/files/{user}/...` plus the legacy `/remote.php/dav/files/{user}/...` alias, with chunked uploads under `/dav/uploads/{user}/{upload_id}/...`).
-- `crates/crabcloud-storage` — `Storage` async trait + `MemoryStorage` and `LocalStorage` backends, `StoragePath` newtype, `EventSink` for cache/scanner consumers.
-- `crates/crabcloud-users` — user/group/preference stores, password verifier, `UsersService` façade, bootstrap-admin shim, `AppPasswordService` + `TokenStore` (auth tokens + Bearer/Basic).
-- `crates/crabcloud-app` — Dioxus 0.7 Fullstack (SSR + WASM hydration + `#[server]` functions) AND the binary entrypoint (CLI, tracing, lifecycle). Includes the Files web app at `/apps/files/<path>`: browse, download (via the existing `/dav/files/...` WebDAV GET), mkdir/rename/delete, multi-select cut/paste move, upload (single-PUT + chunked via `/dav/uploads/...`). Metadata server fns live at `POST /api/files/{list,mkdir,rename,delete,move,upload_begin}`.
+- `crates/crabcloud-http` — axum router, middleware, session, CSRF, auth extractors, OCS + WebDAV handlers.
+- `crates/crabcloud-storage` — `Storage` async trait + `MemoryStorage` and `LocalStorage` backends.
+- `crates/crabcloud-users` — user/group/preference stores, password verifier, `UsersService`, app passwords + token store.
+- `crates/crabcloud-sharing` — user/group shares with granular permissions.
+- `crates/crabcloud-publiclinks` — public link tokens, password gate, cookies, rate limiting.
+- `crates/crabcloud-app` — Dioxus fullstack app (SSR + hydration) and the binary entrypoint (CLI, tracing, lifecycle), including the Files web app.
 - `xtask/` — project automation.
-- `e2e/` — Playwright tests (real-browser SSR + hydration verification).
+- `e2e/` — Playwright tests.
 - `migrations/core/` — core SQL migrations, per-dialect.
 - `l10n/<app>/<locale>.po` — translation catalogs.
+
+## Contributing
+
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the development workflow.
 
 ## License
 
