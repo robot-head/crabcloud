@@ -206,7 +206,12 @@ async fn create_handler(
         None | Some("") => None,
         Some(s) => match NaiveDate::parse_from_str(s, "%Y-%m-%d") {
             Ok(d) => Some(d),
-            Err(_) => return from_share_error(ShareError::BadPermissions, fmt.0),
+            Err(_) => {
+                return from_share_error(
+                    ShareError::InvalidExpireDate("expected YYYY-MM-DD"),
+                    fmt.0,
+                )
+            }
         },
     };
     // Empty password string on create is the same as "no password".
@@ -336,13 +341,18 @@ async fn update_handler(
     //   field absent           -> None         (don't touch)
     //   present, empty string  -> Some(None)   (clear expiration)
     //   present, valid date    -> Some(Some(d))
-    //   present, malformed     -> 400 BadPermissions
+    //   present, malformed     -> 400 InvalidExpireDate
     let expire = match form.expire_date.as_deref() {
         None => None,
         Some("") => Some(None),
         Some(s) => match NaiveDate::parse_from_str(s, "%Y-%m-%d") {
             Ok(d) => Some(Some(d)),
-            Err(_) => return from_share_error(ShareError::BadPermissions, fmt.0),
+            Err(_) => {
+                return from_share_error(
+                    ShareError::InvalidExpireDate("expected YYYY-MM-DD"),
+                    fmt.0,
+                )
+            }
         },
     };
     // password tristate — same shape as expireDate. Empty string clears.

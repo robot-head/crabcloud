@@ -19,6 +19,9 @@ pub enum ShareError {
     #[error("bad permissions bitmask")]
     BadPermissions,
 
+    #[error("invalid expireDate format: {0}")]
+    InvalidExpireDate(&'static str),
+
     #[error("re-share rejected: only the owner of a file can share it")]
     ReshareRejected,
 
@@ -40,7 +43,9 @@ impl ShareError {
             ShareError::NotFound => 404,
             ShareError::Forbidden | ShareError::ReshareRejected | ShareError::PathNotOwned => 403,
             ShareError::RecipientUnknown => 404,
-            ShareError::InvalidShareType | ShareError::BadPermissions => 400,
+            ShareError::InvalidShareType
+            | ShareError::BadPermissions
+            | ShareError::InvalidExpireDate(_) => 400,
             ShareError::NotImplemented => 501,
             ShareError::DbError(_) => 500,
         }
