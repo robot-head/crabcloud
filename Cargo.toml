@@ -10,6 +10,7 @@ members = [
     "crates/crabcloud-http",
     "crates/crabcloud-i18n",
     "crates/crabcloud-ocs",
+    "crates/crabcloud-preview",
     "crates/crabcloud-publiclinks",
     "crates/crabcloud-sharing",
     "crates/crabcloud-storage",
@@ -42,10 +43,12 @@ figment = { version = "0.10", features = ["toml", "env"] }
 futures = "0.3"
 gloo-net = "0.7"
 gloo-timers = { version = "0.4", features = ["futures"] }
+hayro = "0.7"
 hex = "0.4"
 hmac = "0.13"
 httpdate = "1"
 hyper = { version = "1.5", features = ["http1", "server"] }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "webp"] }
 infer = { version = "0.19", default-features = false }
 js-sys = "0.3"
 md-5 = "0.11"
@@ -102,6 +105,7 @@ crabcloud-fs = { path = "crates/crabcloud-fs" }
 crabcloud-http = { path = "crates/crabcloud-http" }
 crabcloud-i18n = { path = "crates/crabcloud-i18n" }
 crabcloud-ocs = { path = "crates/crabcloud-ocs" }
+crabcloud-preview = { path = "crates/crabcloud-preview" }
 crabcloud-publiclinks = { path = "crates/crabcloud-publiclinks" }
 crabcloud-sharing = { path = "crates/crabcloud-sharing" }
 crabcloud-storage = { path = "crates/crabcloud-storage" }

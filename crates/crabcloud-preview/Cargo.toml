@@ -1,0 +1,28 @@
+[package]
+name = "crabcloud-preview"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+async-trait = { workspace = true }
+crabcloud-fs = { workspace = true }
+crabcloud-storage = { workspace = true }
+dashmap = { workspace = true }
+hayro = { workspace = true }
+image = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["sync", "fs", "rt", "io-util"] }
+tokio-util = { workspace = true, features = ["io"] }
+tracing = { workspace = true }
+
+[dev-dependencies]
+crabcloud-config = { workspace = true }
+crabcloud-db = { workspace = true }
+crabcloud-filecache = { workspace = true }
+crabcloud-users = { workspace = true }
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "test-util"] }
+
+[lints]
+workspace = true
