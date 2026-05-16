@@ -14,7 +14,7 @@
 use crate::auth_context::AuthContext;
 use axum::body::Body;
 use axum::extract::{Path, State};
-use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
+use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Extension, Router};
@@ -22,8 +22,7 @@ use bytes::Bytes;
 use crabcloud_core::AppState;
 use crabcloud_fs::path::UserPath;
 use crabcloud_storage::FileKind;
-use crabcloud_zip::{stream_folder, MpscBytesWriter, WalkError, ZipCaps};
-use serde::Serialize;
+use crabcloud_zip::{stream_folder, MpscBytesWriter, OverCapBody, WalkError, ZipCaps};
 use tokio_stream::wrappers::ReceiverStream;
 
 /// Build the authed folder-zip sub-router. Mounted under the global
@@ -103,9 +102,15 @@ async fn handle_zip(state: AppState, ctx: AuthContext, raw_path: String) -> Resp
                     tracing::warn!(error = %e, "authed zip stream failed mid-flight");
                 }
             });
-            zip_response(archive_basename, rx)
+            let headers = crabcloud_zip::zip_response_headers(&archive_basename);
+            let stream = ReceiverStream::new(rx);
+            let body = Body::from_stream(stream);
+            (StatusCode::OK, headers, body).into_response()
         }
-        Err(WalkError::TooLarge { count, bytes }) => too_large_response(count, bytes, caps),
+        Err(WalkError::TooLarge { count, bytes }) => {
+            let body = OverCapBody::for_too_large(count, bytes, caps);
+            (StatusCode::PAYLOAD_TOO_LARGE, axum::Json(body)).into_response()
+        }
         Err(WalkError::View(_)) => (StatusCode::INTERNAL_SERVER_ERROR, "").into_response(),
     }
 }
@@ -127,65 +132,4 @@ fn basename_for_zip(user_path: &UserPath, fallback: &str) -> String {
         .filter(|s| !s.is_empty())
         .map(str::to_string)
         .unwrap_or_else(|| fallback.to_string())
-}
-
-fn zip_response(
-    basename: String,
-    rx: tokio::sync::mpsc::Receiver<Result<Bytes, std::io::Error>>,
-) -> Response {
-    let mut headers = HeaderMap::new();
-    headers.insert(
-        header::CONTENT_TYPE,
-        HeaderValue::from_static("application/zip"),
-    );
-    // RFC 6266 dual-form: a 7-bit ASCII fallback for legacy clients plus
-    // `filename*=UTF-8''…` for everything modern. The ASCII fallback
-    // substitutes `_` for any byte outside `[A-Za-z0-9._-]` so the value
-    // is always a valid HTTP-header `quoted-string`.
-    let safe_ascii: String = basename
-        .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_' {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect();
-    let percent = urlencoding::encode(&basename);
-    let disp = format!("attachment; filename=\"{safe_ascii}.zip\"; filename*=UTF-8''{percent}.zip");
-    headers.insert(
-        header::CONTENT_DISPOSITION,
-        HeaderValue::from_str(&disp).unwrap_or(HeaderValue::from_static("attachment")),
-    );
-    let stream = ReceiverStream::new(rx);
-    let body = Body::from_stream(stream);
-    (StatusCode::OK, headers, body).into_response()
-}
-
-#[derive(Serialize)]
-struct OverCapBody {
-    error: &'static str,
-    entries: u64,
-    bytes: u64,
-    limits: OverCapLimits,
-}
-
-#[derive(Serialize)]
-struct OverCapLimits {
-    max_entries: u64,
-    max_bytes: u64,
-}
-
-fn too_large_response(count: u64, bytes: u64, caps: ZipCaps) -> Response {
-    let body = OverCapBody {
-        error: "folder too large",
-        entries: count,
-        bytes,
-        limits: OverCapLimits {
-            max_entries: caps.max_entries,
-            max_bytes: caps.max_bytes,
-        },
-    };
-    (StatusCode::PAYLOAD_TOO_LARGE, axum::Json(body)).into_response()
 }

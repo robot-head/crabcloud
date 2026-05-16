@@ -1032,6 +1032,7 @@ dependencies = [
 name = "crabcloud-zip"
 version = "0.1.0"
 dependencies = [
+ "axum",
  "bytes",
  "chrono",
  "crabcloud-config",
@@ -1040,10 +1041,12 @@ dependencies = [
  "crabcloud-fs",
  "crabcloud-storage",
  "crabcloud-users",
+ "serde",
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
  "tokio-util",
+ "urlencoding",
  "zip",
 ]
 

@@ -483,6 +483,198 @@ async fn upload_filename_with_percent_preserves_percent() {
     );
 }
 
+// --- zip (folder zip via public link) -------------------------------------
+
+/// Mirror of `seed_zip_tree` from `files_zip_e2e.rs` — three small files
+/// across two directories so the resulting archive carries multiple entries
+/// and at least one nested folder.
+async fn seed_zip_tree(state: &AppState, uid: &str, root: &str) {
+    seed_folder(state, uid, root).await;
+    seed_folder(state, uid, &format!("{root}/vacation")).await;
+    seed_file(state, uid, &format!("{root}/cat.txt"), b"cat-text").await;
+    seed_file(state, uid, &format!("{root}/dog.txt"), b"dog-text").await;
+    seed_file(
+        state,
+        uid,
+        &format!("{root}/vacation/beach.txt"),
+        b"beach-text-bytes",
+    )
+    .await;
+}
+
+/// Create a public link with an explicit expiration date (`expire_date`
+/// goes through `Shares::create` verbatim; the service stores it as a
+/// `NaiveDateTime` at 00:00:00 UTC). Passing yesterday's date is enough to
+/// trip the auth layer's past-expiration arm without depending on a clock
+/// injection.
+async fn create_link_expired(state: &AppState, requester: &str, path: &str) -> String {
+    use crabcloud_sharing::{CreateShareRequest, ShareType};
+    let home_sid = state
+        .storage_factory
+        .home_storage(&UserId::new(requester).unwrap())
+        .await
+        .unwrap()
+        .id()
+        .to_string();
+    let yesterday = (chrono::Utc::now() - chrono::Duration::days(1)).date_naive();
+    let req = CreateShareRequest {
+        requester: requester.to_string(),
+        home_storage_id: home_sid,
+        path: path.to_string(),
+        share_type: ShareType::Link,
+        share_with: String::new(),
+        permissions: 1,
+        password: None,
+        expire_date: Some(yesterday),
+    };
+    let row = state.shares.create(req).await.expect("create_link_expired");
+    row.token.expect("link rows carry a token")
+}
+
+#[tokio::test]
+async fn public_zip_read_link_returns_200() {
+    let dir = tempdir().unwrap();
+    let data = tempdir().unwrap();
+    let state = make_state(dir.path().join("pzr.db"), data.path().to_path_buf()).await;
+    seed_user(&state, "alice").await;
+    seed_zip_tree(&state, "alice", "/Photos").await;
+    let token = create_link(&state, "alice", "/Photos", 1, None).await;
+    let app = crabcloud_http::build_router(state, axum::Router::new());
+
+    let req = Request::builder()
+        .method("GET")
+        .uri(format!("/s/{token}/zip/"))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert_eq!(
+        resp.headers()
+            .get(axum::http::header::CONTENT_TYPE)
+            .unwrap(),
+        "application/zip"
+    );
+    let body = axum::body::to_bytes(resp.into_body(), 16 * 1024 * 1024)
+        .await
+        .unwrap();
+    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(body.to_vec())).unwrap();
+    // Three files + at least one directory entry (the nested `vacation`
+    // folder; the link root itself is `/` inside the View and the walker
+    // skips that as an empty zip prefix).
+    let names: Vec<String> = (0..archive.len())
+        .map(|i| archive.by_index(i).unwrap().name().to_string())
+        .collect();
+    assert!(
+        names.iter().any(|n| n == "cat.txt"),
+        "missing cat.txt in {names:?}"
+    );
+    assert!(
+        names.iter().any(|n| n == "dog.txt"),
+        "missing dog.txt in {names:?}"
+    );
+    assert!(
+        names.iter().any(|n| n == "vacation/beach.txt"),
+        "missing vacation/beach.txt in {names:?}"
+    );
+}
+
+#[tokio::test]
+async fn public_zip_create_only_link_returns_403() {
+    let dir = tempdir().unwrap();
+    let data = tempdir().unwrap();
+    let state = make_state(dir.path().join("pzco.db"), data.path().to_path_buf()).await;
+    seed_user(&state, "alice").await;
+    seed_zip_tree(&state, "alice", "/Drop").await;
+    // File-drop: create-only (bit 4), no read.
+    let token = create_link(&state, "alice", "/Drop", 4, None).await;
+    let app = crabcloud_http::build_router(state, axum::Router::new());
+
+    let req = Request::builder()
+        .method("GET")
+        .uri(format!("/s/{token}/zip/"))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn public_zip_expired_token_returns_404() {
+    let dir = tempdir().unwrap();
+    let data = tempdir().unwrap();
+    let state = make_state(dir.path().join("pze.db"), data.path().to_path_buf()).await;
+    seed_user(&state, "alice").await;
+    seed_zip_tree(&state, "alice", "/Photos").await;
+    let token = create_link_expired(&state, "alice", "/Photos").await;
+    let app = crabcloud_http::build_router(state, axum::Router::new());
+
+    let req = Request::builder()
+        .method("GET")
+        .uri(format!("/s/{token}/zip/"))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn public_zip_password_gated_no_cookie_returns_403() {
+    let dir = tempdir().unwrap();
+    let data = tempdir().unwrap();
+    let state = make_state(dir.path().join("pzg.db"), data.path().to_path_buf()).await;
+    seed_user(&state, "alice").await;
+    seed_zip_tree(&state, "alice", "/Vault").await;
+    let token = create_link(&state, "alice", "/Vault", 1, Some("hunter2")).await;
+    let app = crabcloud_http::build_router(state, axum::Router::new());
+
+    let req = Request::builder()
+        .method("GET")
+        .uri(format!("/s/{token}/zip/"))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    let body = axum::body::to_bytes(resp.into_body(), 1024).await.unwrap();
+    let body_str = std::str::from_utf8(&body).unwrap();
+    assert!(
+        body_str.contains("password_required"),
+        "body must mention password_required, got {body_str:?}"
+    );
+}
+
+#[tokio::test]
+async fn public_zip_root_uses_basename() {
+    // A link rooted at `/Photos` zipped via `/s/<token>/zip/` should name
+    // the archive `Photos.zip` — the View sees `/` (the linked subroot is
+    // the mount) so the basename has to be derived from `owner_path`.
+    let dir = tempdir().unwrap();
+    let data = tempdir().unwrap();
+    let state = make_state(dir.path().join("pzn.db"), data.path().to_path_buf()).await;
+    seed_user(&state, "alice").await;
+    seed_zip_tree(&state, "alice", "/Photos").await;
+    let token = create_link(&state, "alice", "/Photos", 1, None).await;
+    let app = crabcloud_http::build_router(state, axum::Router::new());
+
+    let req = Request::builder()
+        .method("GET")
+        .uri(format!("/s/{token}/zip/"))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let cd = resp
+        .headers()
+        .get(axum::http::header::CONTENT_DISPOSITION)
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string();
+    assert!(
+        cd.contains("filename=\"Photos.zip\""),
+        "expected Photos.zip in {cd}"
+    );
+}
+
 #[tokio::test]
 async fn unknown_token_returns_404() {
     let dir = tempdir().unwrap();

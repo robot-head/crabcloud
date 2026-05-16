@@ -20,14 +20,14 @@ pub async fn walk_for_caps(
     root: &UserPath,
     caps: &ZipCaps,
 ) -> Result<ZipPlan, WalkError> {
-    let root_basename = root_basename(root);
+    let basename = root_basename(root);
     let mut entries: Vec<PlannedEntry> = Vec::new();
     let mut total_bytes: u64 = 0;
 
     // DFS via an explicit stack of (user_path, zip_prefix). Recording the
     // current directory itself before descending preserves empty folders.
     let mut stack: Vec<(UserPath, String)> = Vec::new();
-    stack.push((root.clone(), root_basename));
+    stack.push((root.clone(), basename));
 
     while let Some((current_user_path, zip_prefix)) = stack.pop() {
         // Record the directory itself so empty folders survive the zip.
@@ -84,7 +84,12 @@ pub async fn walk_for_caps(
     })
 }
 
-fn root_basename(root: &UserPath) -> String {
+/// Basename of a user-facing path, stripped of leading/trailing slashes.
+///
+/// Returns the empty string for the home root (`/`). Public so HTTP
+/// handlers can derive `Content-Disposition` filenames without duplicating
+/// the trimming logic.
+pub fn root_basename(root: &UserPath) -> String {
     let stripped = root.as_str().trim_start_matches('/').trim_end_matches('/');
     if stripped.is_empty() {
         return String::new();
