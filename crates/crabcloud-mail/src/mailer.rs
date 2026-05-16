@@ -46,30 +46,30 @@ impl Mailer {
                     Some(name) => format!("{} <{}>", name, self.from_address),
                     None => self.from_address.clone(),
                 };
-                let msg = Message::builder()
-                    .from(
-                        from.parse()
-                            .map_err(|e| MailError::ConfigInvalid(format!("mail_from parse: {e}")))?,
-                    )
-                    .to(env
-                        .recipient
-                        .parse()
-                        .map_err(|e| MailError::Transport(format!("recipient parse: {e}")))?)
-                    .subject(&env.subject)
-                    .multipart(
-                        MultiPart::alternative()
-                            .singlepart(
-                                SinglePart::builder()
-                                    .header(header::ContentType::TEXT_PLAIN)
-                                    .body(env.text_body.clone()),
-                            )
-                            .singlepart(
-                                SinglePart::builder()
-                                    .header(header::ContentType::TEXT_HTML)
-                                    .body(env.html_body.clone()),
-                            ),
-                    )
-                    .map_err(|e| MailError::Transport(format!("message build: {e}")))?;
+                let msg =
+                    Message::builder()
+                        .from(from.parse().map_err(|e| {
+                            MailError::ConfigInvalid(format!("mail_from parse: {e}"))
+                        })?)
+                        .to(env
+                            .recipient
+                            .parse()
+                            .map_err(|e| MailError::Transport(format!("recipient parse: {e}")))?)
+                        .subject(&env.subject)
+                        .multipart(
+                            MultiPart::alternative()
+                                .singlepart(
+                                    SinglePart::builder()
+                                        .header(header::ContentType::TEXT_PLAIN)
+                                        .body(env.text_body.clone()),
+                                )
+                                .singlepart(
+                                    SinglePart::builder()
+                                        .header(header::ContentType::TEXT_HTML)
+                                        .body(env.html_body.clone()),
+                                ),
+                        )
+                        .map_err(|e| MailError::Transport(format!("message build: {e}")))?;
                 client.send(msg).await.map_err(|e| {
                     if e.is_transient() {
                         MailError::Transient(format!("smtp: {e}"))

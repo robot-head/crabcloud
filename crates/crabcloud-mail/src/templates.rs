@@ -60,10 +60,7 @@ fn fmt_tera_error(e: &tera::Error) -> String {
 }
 
 /// Render a fully-populated MailEnvelope for the given event type.
-pub fn render_template(
-    event: EventType,
-    ctx: TemplateContext,
-) -> Result<MailEnvelope, MailError> {
+pub fn render_template(event: EventType, ctx: TemplateContext) -> Result<MailEnvelope, MailError> {
     let html_name = format!("{}.html", event.as_str());
     let text_name = format!("{}.txt", event.as_str());
 

@@ -25,6 +25,11 @@ impl EventType {
     /// Parse from the on-wire string used in `oc_mail_queue.event_type`.
     /// Returns `None` for unknown strings (forward-compat with rows
     /// written by a newer server).
+    ///
+    /// Intentionally inherent rather than `FromStr`: the queue row type
+    /// is an enum, not a parsed value, and `None` (unknown) is a valid
+    /// outcome we want to handle without `Err`.
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Option<Self> {
         match s {
             "share_created" => Some(Self::ShareCreated),
