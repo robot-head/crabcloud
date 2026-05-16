@@ -11,6 +11,7 @@ use chrono::NaiveDate;
 use common::{
     add_user_to_group, seed_file, seed_group, seed_user, share_request, Fixture, FixtureKind,
 };
+use crabcloud_publiclinks::{HashedPassword, Passwords};
 use crabcloud_sharing::{CreateShareRequest, ShareError, ShareType, UpdateShareFields};
 use crabcloud_users::UserId;
 
@@ -130,10 +131,24 @@ async fn link_share_create_persists_token_and_password(fx: &Fixture) {
     assert_eq!(row.token.as_deref().map(str::len), Some(15));
     // SP8 Batch A landed bcrypt (not argon2) — workspace consistency with
     // `crabcloud-users`. Stored hash uses `$2a$`/`$2b$`/`$2y$` prefix.
+    let stored = row.password_hash.as_deref().expect("password_hash stored");
     assert!(
-        row.password_hash.as_deref().unwrap().starts_with("$2"),
-        "expected bcrypt prefix, got {:?}",
-        row.password_hash
+        stored.starts_with("$2"),
+        "expected bcrypt prefix, got {stored:?}"
+    );
+    // The prefix check alone would still pass if we'd persisted the salt or
+    // a malformed transform of the password. Verify the hash actually
+    // round-trips against the plaintext we sent in (and rejects a different
+    // password), so any bug that stores the wrong bytes is caught here.
+    let verifier = Passwords::new();
+    let hp = HashedPassword::from_stored(stored.to_string());
+    assert!(
+        verifier.verify("hunter2", &hp),
+        "stored hash must verify against the input password"
+    );
+    assert!(
+        !verifier.verify("wrong-password", &hp),
+        "stored hash must not verify against a different password"
     );
     // file_target for link rows stores the full owner path (not just the
     // basename) so resolve_by_token returns a usable mount root.
