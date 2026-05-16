@@ -71,6 +71,19 @@ pub(crate) const UPDATE_PERMISSIONS_PG: &str = "UPDATE oc_share SET permissions 
 pub(crate) const UPDATE_EXPIRATION_QM: &str = "UPDATE oc_share SET expiration = ? WHERE id = ?";
 pub(crate) const UPDATE_EXPIRATION_PG: &str = "UPDATE oc_share SET expiration = $1 WHERE id = $2";
 
+pub(crate) const SELECT_BY_TOKEN_QM: &str = "SELECT id, share_type, share_with, uid_owner, \
+    uid_initiator, parent, item_type, item_source, file_source, file_target, permissions, \
+    stime, accepted, expiration, token, password, mail_send \
+    FROM oc_share WHERE token = ? AND share_type = 3";
+
+pub(crate) const SELECT_BY_TOKEN_PG: &str = "SELECT id, share_type, share_with, uid_owner, \
+    uid_initiator, parent, item_type, item_source, file_source, file_target, permissions, \
+    stime, accepted, expiration, token, password, mail_send \
+    FROM oc_share WHERE token = $1 AND share_type = 3";
+
+pub(crate) const UPDATE_PASSWORD_QM: &str = "UPDATE oc_share SET password = ? WHERE id = ?";
+pub(crate) const UPDATE_PASSWORD_PG: &str = "UPDATE oc_share SET password = $1 WHERE id = $2";
+
 /// Reference each constant so unused-const warnings stay quiet across batches
 /// (some are only consumed once Batch B's CRUD impls land below).
 const _: &str = SELECT_COLUMNS;
