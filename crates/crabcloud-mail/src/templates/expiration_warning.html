@@ -1,0 +1,13 @@
+{% include "_partials/header.html" %}
+<p>Hi,</p>
+<p>
+  Your public-link share for <strong>{{ link_basename }}</strong> expires
+  on <strong>{{ expiration_dt }}</strong>.
+</p>
+<p>
+  Open <a href="{{ instance_url | safe }}">Crabcloud</a> to extend or revoke the share.
+</p>
+<p style="font-size:13px;color:#666;">
+  Link URL: <a href="{{ link_url | safe }}">{{ link_url | safe }}</a>
+</p>
+{% include "_partials/footer.html" %}

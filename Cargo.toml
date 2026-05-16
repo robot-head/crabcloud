@@ -9,6 +9,7 @@ members = [
     "crates/crabcloud-fs",
     "crates/crabcloud-http",
     "crates/crabcloud-i18n",
+    "crates/crabcloud-mail",
     "crates/crabcloud-ocs",
     "crates/crabcloud-preview",
     "crates/crabcloud-publiclinks",
@@ -51,6 +52,7 @@ hyper = { version = "1.5", features = ["http1", "server"] }
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "webp"] }
 infer = { version = "0.19", default-features = false }
 js-sys = "0.3"
+lettre = { version = "0.11", default-features = false, features = ["builder", "smtp-transport", "tokio1-rustls-tls"] }
 md-5 = "0.11"
 paste = "1"
 phf = { version = "0.13", features = ["macros"] }
@@ -72,6 +74,7 @@ sqlx = { version = "0.8", default-features = false, features = [
 subtle = "2.6"
 thiserror = "2"
 tempfile = "3"
+tera = "1"
 testcontainers = "0.27"
 testcontainers-modules = { version = "0.15", features = ["mysql", "postgres"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "fs", "time"] }
@@ -104,6 +107,7 @@ crabcloud-filecache = { path = "crates/crabcloud-filecache" }
 crabcloud-fs = { path = "crates/crabcloud-fs" }
 crabcloud-http = { path = "crates/crabcloud-http" }
 crabcloud-i18n = { path = "crates/crabcloud-i18n" }
+crabcloud-mail = { path = "crates/crabcloud-mail" }
 crabcloud-ocs = { path = "crates/crabcloud-ocs" }
 crabcloud-preview = { path = "crates/crabcloud-preview" }
 crabcloud-publiclinks = { path = "crates/crabcloud-publiclinks" }

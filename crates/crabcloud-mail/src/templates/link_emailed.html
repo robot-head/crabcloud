@@ -1,0 +1,20 @@
+{% include "_partials/header.html" %}
+<p>Hi,</p>
+<p>
+  <strong>{{ owner_display_name }}</strong> has shared
+  <strong>{{ path_basename }}</strong> with you via a public link.
+</p>
+<p>
+  <a href="{{ link_url | safe }}" style="display:inline-block;padding:10px 16px;background:#0d6efd;color:#fff;text-decoration:none;border-radius:4px;">
+    Open share
+  </a>
+</p>
+<p style="font-size:13px;color:#666;">
+  Link URL: <a href="{{ link_url | safe }}">{{ link_url | safe }}</a>
+</p>
+{% if password_protected %}
+<p>
+  This link is password-protected. The sender will share the password with you separately.
+</p>
+{% endif %}
+{% include "_partials/footer.html" %}
