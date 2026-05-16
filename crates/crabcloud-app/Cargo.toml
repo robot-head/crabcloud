@@ -105,12 +105,18 @@ tempfile.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 tower = { workspace = true, features = ["util"] }
 
-# Host-only dev dep: `crabcloud-preview` pulls `image` + `hayro` which we
-# deliberately keep out of the WASM graph. Gating to `cfg(not(wasm32))`
-# means the parity test in `pages::preview_mime` can import the real
-# `provider_for_mime` on the host without polluting the browser bundle.
+# Host-only dev deps: kept out of the WASM graph via `cfg(not(wasm32))`.
+# - `crabcloud-preview` pulls `image` + `hayro`; the parity test in
+#   `pages::preview_mime` imports the real `provider_for_mime` on the host
+#   without polluting the browser bundle.
+# - `crabcloud-mail` is the source of truth for `EventType`; the parity test
+#   in `server_fns::notification_prefs` cross-checks our local
+#   `KNOWN_EVENT_TYPES` allowlist against `EventType::from_str` so the two
+#   lists can't silently drift. `crabcloud-mail` deliberately stays out of
+#   the WASM dep graph (it pulls the SMTP stack).
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 crabcloud-preview = { workspace = true }
+crabcloud-mail = { workspace = true }
 
 [[test]]
 name = "server_fns_files"
