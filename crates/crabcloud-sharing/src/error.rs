@@ -28,6 +28,9 @@ pub enum ShareError {
     #[error("not implemented in this version (deferred to SP8)")]
     NotImplemented,
 
+    #[error("password rejected: {0}")]
+    PasswordRejected(&'static str),
+
     #[error(transparent)]
     DbError(#[from] sqlx::Error),
 }
@@ -40,7 +43,9 @@ impl ShareError {
             ShareError::NotFound => 404,
             ShareError::Forbidden | ShareError::ReshareRejected | ShareError::PathNotOwned => 403,
             ShareError::RecipientUnknown => 404,
-            ShareError::InvalidShareType | ShareError::BadPermissions => 400,
+            ShareError::InvalidShareType
+            | ShareError::BadPermissions
+            | ShareError::PasswordRejected(_) => 400,
             ShareError::NotImplemented => 501,
             ShareError::DbError(_) => 500,
         }

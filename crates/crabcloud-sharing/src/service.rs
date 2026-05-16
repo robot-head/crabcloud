@@ -431,10 +431,13 @@ impl Shares {
                 Some(pw) => Some(
                     crabcloud_publiclinks::Passwords::new()
                         .hash(pw)
-                        .map_err(|_| {
-                            ShareError::DbError(sqlx::Error::Protocol(
-                                "password hash failed".into(),
-                            ))
+                        .map_err(|e| match e {
+                            crabcloud_publiclinks::PublicLinkError::PasswordTooWeak(msg) => {
+                                ShareError::PasswordRejected(msg)
+                            }
+                            other => ShareError::DbError(sqlx::Error::Protocol(format!(
+                                "password hash failed: {other}"
+                            ))),
                         })?
                         .as_str()
                         .to_string(),
@@ -574,8 +577,13 @@ impl Shares {
             Some(pw) => {
                 let h = crabcloud_publiclinks::Passwords::new()
                     .hash(pw)
-                    .map_err(|_| {
-                        ShareError::DbError(sqlx::Error::Protocol("password hash failed".into()))
+                    .map_err(|e| match e {
+                        crabcloud_publiclinks::PublicLinkError::PasswordTooWeak(msg) => {
+                            ShareError::PasswordRejected(msg)
+                        }
+                        other => ShareError::DbError(sqlx::Error::Protocol(format!(
+                            "password hash failed: {other}"
+                        ))),
                     })?;
                 Some(h.as_str().to_string())
             }
