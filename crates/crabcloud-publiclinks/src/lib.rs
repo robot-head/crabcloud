@@ -9,9 +9,11 @@
 mod cookie;
 mod error;
 mod passwords;
+mod ratelimit;
 mod tokens;
 
 pub use cookie::UnlockCookie;
 pub use error::PublicLinkError;
 pub use passwords::{HashedPassword, Passwords};
+pub use ratelimit::{RateLimitDecision, RateLimiter};
 pub use tokens::{Token, Tokens};
