@@ -463,10 +463,12 @@ impl Shares {
         Ok(())
     }
 
-    /// Look up a share row by token. Returns `None` for unknown / non-link
-    /// rows (the SQL is filtered to `share_type = 3`). Does NOT enforce
-    /// expiration — the caller must compare `expiration` to `now()` and
-    /// treat past-expired as missing. SP8 §5.
+    /// Look up a public-link share row by its token. Filters on
+    /// `share_type IN (3, 4)` so both Link and Email rows are returned —
+    /// email-link recipients open the share via `/s/<token>` exactly like
+    /// regular link recipients. Returns `None` for unknown / non-link
+    /// rows. Does NOT enforce expiration — the caller must compare
+    /// `expiration` to `now()` and treat past-expired as missing. SP8 §5.
     pub async fn resolve_by_token(&self, token: &str) -> Result<Option<ShareRow>, ShareError> {
         match self.pool.as_ref() {
             DbPool::Sqlite(p) => {
