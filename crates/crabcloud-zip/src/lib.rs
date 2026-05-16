@@ -22,6 +22,7 @@ pub use error::{WalkError, ZipError};
 pub use mpsc_writer::MpscBytesWriter;
 pub use stream::stream_folder;
 pub use types::{PlanKind, PlannedEntry, ZipCaps, ZipPlan, ZipSummary};
+pub use walk::root_basename;
 pub use walk::walk_for_caps;
 
 // Anchors for dev-deps only referenced from `#[cfg(test)]` modules across

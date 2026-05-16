@@ -20,7 +20,7 @@ pub async fn walk_for_caps(
     root: &UserPath,
     caps: &ZipCaps,
 ) -> Result<ZipPlan, WalkError> {
-    let root_basename = root_basename(root);
+    let root_basename = root_basename(root).unwrap_or_default();
     let mut entries: Vec<PlannedEntry> = Vec::new();
     let mut total_bytes: u64 = 0;
 
@@ -84,15 +84,18 @@ pub async fn walk_for_caps(
     })
 }
 
-fn root_basename(root: &UserPath) -> String {
+/// Basename of the requested root. `None` if `root` is the filesystem
+/// root (`/`); callers should substitute a surface-appropriate fallback
+/// (e.g. the user id for authed, the link token for public links).
+pub fn root_basename(root: &crabcloud_fs::path::UserPath) -> Option<String> {
     let stripped = root.as_str().trim_start_matches('/').trim_end_matches('/');
     if stripped.is_empty() {
-        return String::new();
+        return None;
     }
-    match stripped.rsplit_once('/') {
+    Some(match stripped.rsplit_once('/') {
         Some((_, last)) => last.to_string(),
         None => stripped.to_string(),
-    }
+    })
 }
 
 fn join_user_path(parent: &UserPath, child: &str) -> Result<UserPath, WalkError> {

@@ -85,7 +85,8 @@ async fn handle_zip(state: AppState, authed: AuthenticatedUser, raw_path: String
         max_entries: state.config.folder_zip_max_entries,
         max_bytes: state.config.folder_zip_max_bytes,
     };
-    let archive_basename = basename_for_zip(&user_path, authed.user_id.as_str());
+    let archive_basename =
+        crabcloud_zip::root_basename(&user_path).unwrap_or_else(|| authed.user_id.clone());
 
     // Pre-walk so the 413 branch never has to retract a 200. On success
     // we discard the plan and let `stream_folder` re-walk inside the
@@ -110,25 +111,6 @@ async fn handle_zip(state: AppState, authed: AuthenticatedUser, raw_path: String
         Err(WalkError::TooLarge { count, bytes }) => too_large_response(count, bytes, caps),
         Err(WalkError::View(_)) => (StatusCode::INTERNAL_SERVER_ERROR, "").into_response(),
     }
-}
-
-/// Derive the archive basename from the resolved user path. Root (`/`)
-/// falls back to `fallback` (the caller passes the uid, matching the
-/// Nextcloud convention `<uid>.zip` for whole-home archives).
-fn basename_for_zip(user_path: &UserPath, fallback: &str) -> String {
-    let trimmed = user_path
-        .as_str()
-        .trim_start_matches('/')
-        .trim_end_matches('/');
-    if trimmed.is_empty() {
-        return fallback.to_string();
-    }
-    trimmed
-        .rsplit('/')
-        .next()
-        .filter(|s| !s.is_empty())
-        .map(str::to_string)
-        .unwrap_or_else(|| fallback.to_string())
 }
 
 fn zip_response(
