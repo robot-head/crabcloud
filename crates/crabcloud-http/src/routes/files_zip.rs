@@ -58,10 +58,8 @@ async fn handle_zip(state: AppState, authed: AuthenticatedUser, raw_path: String
         Ok(p) => p,
         Err(_) => return (StatusCode::BAD_REQUEST, "invalid path").into_response(),
     };
-    let uid = match crabcloud_users::UserId::new(&authed.user_id) {
-        Ok(u) => u,
-        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "").into_response(),
-    };
+    let uid = crabcloud_users::UserId::new(authed.user_id.as_str())
+        .expect("AuthenticatedUser.user_id is a validated UserId");
     let view = match state.view_for(&uid).await {
         Ok(v) => v,
         Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "").into_response(),
