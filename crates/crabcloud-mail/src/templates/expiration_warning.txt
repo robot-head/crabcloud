@@ -1,0 +1,10 @@
+Hi,
+
+Your public-link share for {{ link_basename }} expires on {{ expiration_dt }}.
+
+Open Crabcloud to extend or revoke the share: {{ instance_url }}
+
+Link URL: {{ link_url }}
+
+--
+Sent by Crabcloud.

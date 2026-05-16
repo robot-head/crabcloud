@@ -1,0 +1,10 @@
+{% include "_partials/header.html" %}
+<p>Hi {{ recipient_display_name }},</p>
+<p>
+  <strong>{{ owner_display_name }}</strong> has shared
+  <strong>{{ path_basename }}</strong> with you.
+</p>
+<p>
+  Open <a href="{{ instance_url | safe }}">Crabcloud</a> to view the shared item.
+</p>
+{% include "_partials/footer.html" %}

@@ -1,0 +1,11 @@
+Hi,
+
+{{ owner_display_name }} has shared {{ path_basename }} with you via a public link.
+
+Open the share at: {{ link_url }}
+
+{% if password_protected %}
+This link is password-protected. The sender will share the password with you separately.
+{% endif %}
+--
+Sent by Crabcloud at {{ instance_url }}.

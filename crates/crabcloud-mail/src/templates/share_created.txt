@@ -1,0 +1,8 @@
+Hi {{ recipient_display_name }},
+
+{{ owner_display_name }} has shared {{ path_basename }} with you.
+
+Open Crabcloud to view it: {{ instance_url }}
+
+--
+Sent by Crabcloud.
