@@ -211,7 +211,11 @@ async fn post_shares_creates_user_share_and_returns_wire_shape() {
 }
 
 #[tokio::test]
-async fn post_shares_with_link_type_returns_501() {
+async fn post_shares_with_link_type_creates_link_row() {
+    // Batch B lifted the `NotImplemented` gate: link rows are now persisted
+    // by the service. The HTTP layer doesn't yet wire password/expire_date
+    // from the form (Batch E), so a link created via POST has no password
+    // and no expiration. The response still carries a 15-char token.
     let dir = tempdir().unwrap();
     let data = tempdir().unwrap();
     let state = make_state(dir.path().join("link.db"), data.path().to_path_buf()).await;
@@ -228,7 +232,13 @@ async fn post_shares_with_link_type_returns_501() {
         ))
         .await
         .unwrap();
-    assert_eq!(resp.status(), StatusCode::NOT_IMPLEMENTED);
+    let (status, v) = decode(resp).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(v["ocs"]["meta"]["statuscode"], 200);
+    assert_eq!(v["ocs"]["data"]["share_type"], 3);
+    assert_eq!(v["ocs"]["data"]["uid_owner"], "alice");
+    let tok = v["ocs"]["data"]["token"].as_str().expect("token string");
+    assert_eq!(tok.len(), 15);
 }
 
 // --- GET /shares -----------------------------------------------------------
@@ -468,7 +478,10 @@ async fn put_shares_as_non_owner_returns_403() {
 }
 
 #[tokio::test]
-async fn put_shares_password_returns_501() {
+async fn put_shares_password_on_user_share_rejected() {
+    // After Batch B, password updates are only meaningful for link rows.
+    // Attempting to set a password on a user/group share is rejected with
+    // `BadPermissions` (HTTP 400), not silently accepted.
     let dir = tempdir().unwrap();
     let data = tempdir().unwrap();
     let state = make_state(dir.path().join("pwd.db"), data.path().to_path_buf()).await;
@@ -498,7 +511,7 @@ async fn put_shares_password_returns_501() {
         ))
         .await
         .unwrap();
-    assert_eq!(resp.status(), StatusCode::NOT_IMPLEMENTED);
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
 // --- DELETE /shares/{id} ---------------------------------------------------

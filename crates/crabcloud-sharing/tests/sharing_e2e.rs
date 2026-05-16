@@ -124,21 +124,14 @@ async fn link_share_create_persists_token_and_password(fx: &Fixture) {
         password: Some("hunter2".into()),
         expire_date: None,
     };
-    let row = fx
-        .shares
-        .create(req)
-        .await
-        .expect("link share creates");
+    let row = fx.shares.create(req).await.expect("link share creates");
     assert_eq!(row.share_type, ShareType::Link);
     assert!(row.share_with.is_none());
     assert_eq!(row.token.as_deref().map(str::len), Some(15));
     // SP8 Batch A landed bcrypt (not argon2) — workspace consistency with
     // `crabcloud-users`. Stored hash uses `$2a$`/`$2b$`/`$2y$` prefix.
     assert!(
-        row.password_hash
-            .as_deref()
-            .unwrap()
-            .starts_with("$2"),
+        row.password_hash.as_deref().unwrap().starts_with("$2"),
         "expected bcrypt prefix, got {:?}",
         row.password_hash
     );
@@ -666,11 +659,7 @@ async fn link_share_update_sets_password_and_expiration(fx: &Fixture) {
         .unwrap();
     assert!(updated.password_hash.is_some());
     assert!(
-        updated
-            .password_hash
-            .as_deref()
-            .unwrap()
-            .starts_with("$2"),
+        updated.password_hash.as_deref().unwrap().starts_with("$2"),
         "expected bcrypt prefix"
     );
     assert!(updated.expiration.is_some());

@@ -575,9 +575,7 @@ impl Shares {
                 let h = crabcloud_publiclinks::Passwords::new()
                     .hash(pw)
                     .map_err(|_| {
-                        ShareError::DbError(sqlx::Error::Protocol(
-                            "password hash failed".into(),
-                        ))
+                        ShareError::DbError(sqlx::Error::Protocol("password hash failed".into()))
                     })?;
                 Some(h.as_str().to_string())
             }
@@ -622,8 +620,7 @@ impl Shares {
             permissions: perms,
             stime,
             accepted: true,
-            expiration: expiration
-                .map(|n| DateTime::<Utc>::from_naive_utc_and_offset(n, Utc)),
+            expiration: expiration.map(|n| DateTime::<Utc>::from_naive_utc_and_offset(n, Utc)),
             token: Some(token_str),
             password_hash,
         })
