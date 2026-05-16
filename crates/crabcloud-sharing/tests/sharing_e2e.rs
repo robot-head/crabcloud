@@ -691,6 +691,43 @@ async fn link_share_update_sets_password_and_expiration(fx: &Fixture) {
     assert!(cleared.password_hash.is_none());
 }
 
+async fn resolve_by_token_returns_row(fx: &Fixture) {
+    seed_user(fx, "alice").await;
+    let _ = seed_file(fx, "alice", "/Photos", true).await;
+    let sid = fx.home_storage_id("alice");
+    let row = fx
+        .shares
+        .create(CreateShareRequest {
+            requester: "alice".into(),
+            path: "/Photos".into(),
+            share_type: ShareType::Link,
+            share_with: String::new(),
+            permissions: 1,
+            home_storage_id: sid,
+            password: None,
+            expire_date: None,
+        })
+        .await
+        .unwrap();
+    let token = row.token.clone().unwrap();
+    let found = fx
+        .shares
+        .resolve_by_token(&token)
+        .await
+        .unwrap()
+        .expect("row");
+    assert_eq!(found.id, row.id);
+    assert_eq!(found.uid_owner, "alice");
+    assert_eq!(found.file_target, "/Photos");
+    // Token shape valid but not present in DB.
+    assert!(fx
+        .shares
+        .resolve_by_token("ABCDEFGHIJKLMNO")
+        .await
+        .unwrap()
+        .is_none());
+}
+
 // ---------------- per-dialect test wrappers ----------------
 
 macro_rules! per_dialect {
@@ -725,6 +762,7 @@ per_dialect!(strips_bit_16);
 per_dialect!(rejects_reshare_attempt);
 per_dialect!(link_share_create_persists_token_and_password);
 per_dialect!(link_share_update_sets_password_and_expiration);
+per_dialect!(resolve_by_token_returns_row);
 per_dialect!(rejects_unknown_recipient);
 
 per_dialect!(get_returns_the_inserted_share);

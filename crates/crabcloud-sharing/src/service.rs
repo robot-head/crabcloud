@@ -213,6 +213,36 @@ impl Shares {
         }
     }
 
+    /// Look up a share row by token. Returns `None` for unknown / non-link
+    /// rows (the SQL is filtered to `share_type = 3`). Does NOT enforce
+    /// expiration — the caller must compare `expiration` to `now()` and
+    /// treat past-expired as missing. SP8 §5.
+    pub async fn resolve_by_token(&self, token: &str) -> Result<Option<ShareRow>, ShareError> {
+        match self.pool.as_ref() {
+            DbPool::Sqlite(p) => {
+                let row = sqlx::query(sql::SELECT_BY_TOKEN_QM)
+                    .bind(token)
+                    .fetch_optional(p)
+                    .await?;
+                row.map(row_from_sqlite).transpose()
+            }
+            DbPool::MySql(p) => {
+                let row = sqlx::query(sql::SELECT_BY_TOKEN_QM)
+                    .bind(token)
+                    .fetch_optional(p)
+                    .await?;
+                row.map(row_from_mysql).transpose()
+            }
+            DbPool::Postgres(p) => {
+                let row = sqlx::query(sql::SELECT_BY_TOKEN_PG)
+                    .bind(token)
+                    .fetch_optional(p)
+                    .await?;
+                row.map(row_from_postgres).transpose()
+            }
+        }
+    }
+
     pub async fn list_outgoing(&self, owner: &UserId) -> Result<Vec<ShareRow>, ShareError> {
         match self.pool.as_ref() {
             DbPool::Sqlite(p) => {
