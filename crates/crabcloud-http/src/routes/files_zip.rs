@@ -22,8 +22,7 @@ use bytes::Bytes;
 use crabcloud_core::AppState;
 use crabcloud_fs::path::UserPath;
 use crabcloud_storage::FileKind;
-use crabcloud_zip::{stream_folder, MpscBytesWriter, WalkError, ZipCaps};
-use serde::Serialize;
+use crabcloud_zip::{stream_folder, MpscBytesWriter, OverCapBody, WalkError, ZipCaps};
 use tokio_stream::wrappers::ReceiverStream;
 
 /// Build the authed folder-zip sub-router. Mounted under the global
@@ -163,29 +162,7 @@ fn zip_response(
     (StatusCode::OK, headers, body).into_response()
 }
 
-#[derive(Serialize)]
-struct OverCapBody {
-    error: &'static str,
-    entries: u64,
-    bytes: u64,
-    limits: OverCapLimits,
-}
-
-#[derive(Serialize)]
-struct OverCapLimits {
-    max_entries: u64,
-    max_bytes: u64,
-}
-
 fn too_large_response(count: u64, bytes: u64, caps: ZipCaps) -> Response {
-    let body = OverCapBody {
-        error: "folder too large",
-        entries: count,
-        bytes,
-        limits: OverCapLimits {
-            max_entries: caps.max_entries,
-            max_bytes: caps.max_bytes,
-        },
-    };
+    let body = OverCapBody::for_too_large(count, bytes, caps);
     (StatusCode::PAYLOAD_TOO_LARGE, axum::Json(body)).into_response()
 }
