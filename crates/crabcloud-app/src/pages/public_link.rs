@@ -352,4 +352,70 @@ mod tests {
     fn format_size_kb() {
         assert_eq!(format_size(2048), "2.0 KB");
     }
+
+    /// SSR snapshot: a JPEG entry under a public-link viewer renders
+    /// `<img src="/s/{token}/preview/{path}?size=64">` — keyed on the
+    /// user-facing path, not a fileid (anonymous viewers don't carry
+    /// fileids). Mirrors the FileRow snapshot in `pages::files::row`.
+    #[cfg(feature = "server")]
+    #[test]
+    fn public_row_jpeg_emits_preview_img_tag() {
+        let entry = FileEntry {
+            name: "cat.jpg".into(),
+            path: "/photos/cat.jpg".into(),
+            is_dir: false,
+            size: 1234,
+            mtime_ms: 0,
+            mime: Some("image/jpeg".into()),
+            etag: "e0".into(),
+            fileid: None,
+            shared_by: None,
+            share_count: 0,
+        };
+        let html = dioxus::ssr::render_element(rsx! {
+            PublicRow {
+                token: "tok123".to_string(),
+                base_path: "/".to_string(),
+                entry,
+            }
+        });
+        assert!(
+            html.contains("/s/tok123/preview/photos/cat.jpg?size=64"),
+            "expected public preview URL, got: {html}"
+        );
+        assert!(
+            html.contains("class=\"files-thumb\""),
+            "expected files-thumb class, got: {html}"
+        );
+    }
+
+    /// SSR snapshot: a non-previewable file in a public-link viewer does
+    /// not emit a preview URL.
+    #[cfg(feature = "server")]
+    #[test]
+    fn public_row_plain_does_not_emit_preview_img_tag() {
+        let entry = FileEntry {
+            name: "notes.txt".into(),
+            path: "/notes.txt".into(),
+            is_dir: false,
+            size: 12,
+            mtime_ms: 0,
+            mime: Some("text/plain".into()),
+            etag: "e0".into(),
+            fileid: None,
+            shared_by: None,
+            share_count: 0,
+        };
+        let html = dioxus::ssr::render_element(rsx! {
+            PublicRow {
+                token: "tok123".to_string(),
+                base_path: "/".to_string(),
+                entry,
+            }
+        });
+        assert!(
+            !html.contains("/preview/"),
+            "non-previewable row should not emit preview URL, got: {html}"
+        );
+    }
 }

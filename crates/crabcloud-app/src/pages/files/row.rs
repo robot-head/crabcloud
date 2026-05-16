@@ -276,4 +276,148 @@ mod tests {
     fn format_size_mb() {
         assert_eq!(format_size(2 * 1024 * 1024 + 100 * 1024), "2.1 MB");
     }
+
+    /// SSR snapshot: a JPEG entry with a populated fileid emits an
+    /// `<img src="/api/files/preview/{fileid}?size=64">` tag inside the
+    /// file anchor, instead of the bare emoji span.
+    #[cfg(feature = "server")]
+    #[test]
+    fn jpeg_row_emits_preview_img_tag() {
+        let entry = FileEntry {
+            name: "cat.jpg".into(),
+            path: "/photos/cat.jpg".into(),
+            is_dir: false,
+            size: 1234,
+            mtime_ms: 0,
+            mime: Some("image/jpeg".into()),
+            etag: "e0".into(),
+            fileid: Some(42),
+            shared_by: None,
+            share_count: 0,
+        };
+        // EventHandler construction in rsx! goes through Callback::new,
+        // which needs a live Dioxus runtime. Wrapping the rsx call in a
+        // component body (`Wrapper`) defers the conversion to render
+        // time, when the VirtualDom has its runtime up.
+        #[component]
+        fn Wrapper(entry: FileEntry) -> Element {
+            rsx! {
+                FileRow {
+                    entry,
+                    user_id: "alice".to_string(),
+                    rename_active: false,
+                    selected: false,
+                    on_open_folder: move |_: String| {},
+                    on_toggle_select: move |_: String| {},
+                    on_rename_start: move |_: String| {},
+                    on_rename_commit: move |_: (String, String)| {},
+                    on_rename_cancel: move |_: ()| {},
+                    on_delete: move |_: String| {},
+                    on_share: move |_: String| {},
+                }
+            }
+        }
+        let html = dioxus::ssr::render_element(rsx! { Wrapper { entry } });
+        assert!(
+            html.contains("/api/files/preview/42?size=64"),
+            "expected preview URL in row HTML, got: {html}"
+        );
+        assert!(
+            html.contains("class=\"files-thumb\""),
+            "expected files-thumb class in row HTML, got: {html}"
+        );
+    }
+
+    /// SSR snapshot: a non-previewable (text/plain) entry must NOT emit
+    /// a preview URL — keeps the plain emoji icon path intact.
+    #[cfg(feature = "server")]
+    #[test]
+    fn plain_row_does_not_emit_preview_img_tag() {
+        let entry = FileEntry {
+            name: "notes.txt".into(),
+            path: "/notes.txt".into(),
+            is_dir: false,
+            size: 12,
+            mtime_ms: 0,
+            mime: Some("text/plain".into()),
+            etag: "e0".into(),
+            fileid: Some(99),
+            shared_by: None,
+            share_count: 0,
+        };
+        // EventHandler construction in rsx! goes through Callback::new,
+        // which needs a live Dioxus runtime. Wrapping the rsx call in a
+        // component body (`Wrapper`) defers the conversion to render
+        // time, when the VirtualDom has its runtime up.
+        #[component]
+        fn Wrapper(entry: FileEntry) -> Element {
+            rsx! {
+                FileRow {
+                    entry,
+                    user_id: "alice".to_string(),
+                    rename_active: false,
+                    selected: false,
+                    on_open_folder: move |_: String| {},
+                    on_toggle_select: move |_: String| {},
+                    on_rename_start: move |_: String| {},
+                    on_rename_commit: move |_: (String, String)| {},
+                    on_rename_cancel: move |_: ()| {},
+                    on_delete: move |_: String| {},
+                    on_share: move |_: String| {},
+                }
+            }
+        }
+        let html = dioxus::ssr::render_element(rsx! { Wrapper { entry } });
+        assert!(
+            !html.contains("/api/files/preview/"),
+            "non-previewable row should not emit preview URL, got: {html}"
+        );
+    }
+
+    /// SSR snapshot: a directory entry — even with a previewable-looking
+    /// mime accidentally populated — must keep the folder icon and not
+    /// emit a preview URL. Directories are filtered upstream by `is_dir`.
+    #[cfg(feature = "server")]
+    #[test]
+    fn directory_row_does_not_emit_preview_img_tag() {
+        let entry = FileEntry {
+            name: "photos".into(),
+            path: "/photos".into(),
+            is_dir: true,
+            size: 0,
+            mtime_ms: 0,
+            mime: None,
+            etag: "e0".into(),
+            fileid: None,
+            shared_by: None,
+            share_count: 0,
+        };
+        // EventHandler construction in rsx! goes through Callback::new,
+        // which needs a live Dioxus runtime. Wrapping the rsx call in a
+        // component body (`Wrapper`) defers the conversion to render
+        // time, when the VirtualDom has its runtime up.
+        #[component]
+        fn Wrapper(entry: FileEntry) -> Element {
+            rsx! {
+                FileRow {
+                    entry,
+                    user_id: "alice".to_string(),
+                    rename_active: false,
+                    selected: false,
+                    on_open_folder: move |_: String| {},
+                    on_toggle_select: move |_: String| {},
+                    on_rename_start: move |_: String| {},
+                    on_rename_commit: move |_: (String, String)| {},
+                    on_rename_cancel: move |_: ()| {},
+                    on_delete: move |_: String| {},
+                    on_share: move |_: String| {},
+                }
+            }
+        }
+        let html = dioxus::ssr::render_element(rsx! { Wrapper { entry } });
+        assert!(
+            !html.contains("/api/files/preview/"),
+            "directory row should not emit preview URL, got: {html}"
+        );
+    }
 }
