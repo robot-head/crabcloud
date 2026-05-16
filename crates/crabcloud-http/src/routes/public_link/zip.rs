@@ -4,7 +4,7 @@
 
 use axum::body::Body;
 use axum::extract::{Path, State};
-use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
+use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::Extension;
 use bytes::Bytes;
@@ -111,7 +111,10 @@ async fn handle_public_zip(
                     tracing::warn!(error = %e, "public-link zip stream failed mid-flight");
                 }
             });
-            public_zip_response(basename, rx)
+            let headers = crabcloud_zip::zip_response_headers(&basename);
+            let stream = ReceiverStream::new(rx);
+            let body = Body::from_stream(stream);
+            (StatusCode::OK, headers, body).into_response()
         }
         Err(WalkError::TooLarge { count, bytes }) => {
             let body = OverCapBody::for_too_large(count, bytes, caps);
@@ -150,35 +153,4 @@ fn public_zip_basename(
         Some((_, last)) if !last.is_empty() => last.to_string(),
         _ => stripped.to_string(),
     }
-}
-
-fn public_zip_response(
-    basename: String,
-    rx: tokio::sync::mpsc::Receiver<Result<Bytes, std::io::Error>>,
-) -> Response {
-    let mut headers = HeaderMap::new();
-    headers.insert(
-        header::CONTENT_TYPE,
-        HeaderValue::from_static("application/zip"),
-    );
-    // RFC 6266 dual-form, matching the authed surface in `files_zip`.
-    let safe_ascii: String = basename
-        .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_' {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect();
-    let percent = urlencoding::encode(&basename);
-    let disp = format!("attachment; filename=\"{safe_ascii}.zip\"; filename*=UTF-8''{percent}.zip");
-    headers.insert(
-        header::CONTENT_DISPOSITION,
-        HeaderValue::from_str(&disp).unwrap_or(HeaderValue::from_static("attachment")),
-    );
-    let stream = ReceiverStream::new(rx);
-    let body = Body::from_stream(stream);
-    (StatusCode::OK, headers, body).into_response()
 }
