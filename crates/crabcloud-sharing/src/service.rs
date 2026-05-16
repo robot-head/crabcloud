@@ -436,11 +436,7 @@ impl Shares {
     /// Stamp `last_warned = now` on a share row regardless of whether
     /// the user opted in. The sweeper does this *after* attempting the
     /// enqueue so an opted-out user is not re-considered next sweep.
-    pub async fn stamp_last_warned(
-        &self,
-        id: i64,
-        when: NaiveDateTime,
-    ) -> Result<(), ShareError> {
+    pub async fn stamp_last_warned(&self, id: i64, when: NaiveDateTime) -> Result<(), ShareError> {
         match self.pool.as_ref() {
             DbPool::Sqlite(p) => {
                 sqlx::query(sql::STAMP_LAST_WARNED_QM)

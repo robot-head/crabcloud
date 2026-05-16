@@ -141,11 +141,7 @@ impl ExpirationWarningSweeper {
             Some(e) => e.as_str().to_string(),
             None => return false,
         };
-        match self
-            .prefs
-            .get(uid.as_str(), "expiration_warning")
-            .await
-        {
+        match self.prefs.get(uid.as_str(), "expiration_warning").await {
             Ok(true) => {}
             Ok(false) => return false,
             Err(e) => {

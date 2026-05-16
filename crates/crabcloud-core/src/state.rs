@@ -308,11 +308,7 @@ impl AppStateBuilder {
         // for templated link generation.
         let mail_queue = MailQueue::new(Arc::new(pool.clone()));
         let notification_prefs = crabcloud_users::NotificationPrefs::new(Arc::new(pool.clone()));
-        let instance_url = self
-            .config
-            .overwrite_cli_url
-            .clone()
-            .unwrap_or_default();
+        let instance_url = self.config.overwrite_cli_url.clone().unwrap_or_default();
 
         let shares = Arc::new(crabcloud_sharing::Shares::new(
             Arc::new(pool.clone()),
@@ -395,10 +391,7 @@ impl AppStateBuilder {
                 mail_queue.clone(),
                 users.clone(),
                 notification_prefs.clone(),
-                self.config
-                    .overwrite_cli_url
-                    .clone()
-                    .unwrap_or_default(),
+                self.config.overwrite_cli_url.clone().unwrap_or_default(),
             );
         if !matches!(
             mail_transport_cfg.kind,
@@ -411,9 +404,7 @@ impl AppStateBuilder {
             // Same shape for the expiration sweeper. Skipped under
             // Disabled transport so unit tests with the default config
             // don't spin a background task they have to drain.
-            std::mem::drop(tokio::spawn(async move {
-                expiration_sweeper.run().await
-            }));
+            std::mem::drop(tokio::spawn(async move { expiration_sweeper.run().await }));
         }
 
         let state = AppState {

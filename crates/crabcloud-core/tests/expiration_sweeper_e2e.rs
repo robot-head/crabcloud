@@ -90,7 +90,12 @@ async fn seed_folder(fx: &Fx, uid: &str, path: &str) -> i64 {
 
     // Root first if missing.
     let root = StoragePath::root();
-    if filecache.lookup(&storage_id, &root).await.unwrap().is_none() {
+    if filecache
+        .lookup(&storage_id, &root)
+        .await
+        .unwrap()
+        .is_none()
+    {
         let md = FileMetadata {
             path: root.clone(),
             kind: FileKind::Directory,
@@ -102,7 +107,7 @@ async fn seed_folder(fx: &Fx, uid: &str, path: &str) -> i64 {
         };
         filecache
             .apply(&StorageEvent::DirCreated {
-                storage_id: storage_id.clone().into(),
+                storage_id: storage_id.clone(),
                 path: root.clone(),
                 metadata: md,
             })
@@ -121,7 +126,7 @@ async fn seed_folder(fx: &Fx, uid: &str, path: &str) -> i64 {
     };
     filecache
         .apply(&StorageEvent::DirCreated {
-            storage_id: storage_id.clone().into(),
+            storage_id: storage_id.clone(),
             path: sp.clone(),
             metadata: md,
         })
