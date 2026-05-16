@@ -26,6 +26,14 @@ use std::sync::Arc;
 /// `/s/{token}` prefix, so we gate it on the path explicitly here. Requests
 /// matching `/s/...` flow through the real layer; everything else is passed
 /// straight to the inner service.
+///
+// TODO(sp8-followup): replace this path-conditional wrapper with axum's
+// `Router::nest("/s", router.route_layer(public_link_auth))`. The current
+// shape exists because `crabcloud_publiclinks::auth_layer::extract_token`
+// expects the absolute request path (it strips a leading `/s/`); a nested
+// router would hand it the post-strip path and short-circuit token parsing.
+// Fix: change `extract_token` (and the DAV equivalent) to accept the
+// already-stripped path, then drop this wrapper.
 async fn public_link_gate(
     state: Arc<crabcloud_publiclinks::PublicLinkAuthState>,
     req: axum::extract::Request,
