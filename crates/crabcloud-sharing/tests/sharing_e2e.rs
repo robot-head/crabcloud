@@ -631,6 +631,66 @@ async fn delete_third_party_forbidden(fx: &Fixture) {
     assert!(matches!(err, ShareError::Forbidden), "got {err:?}");
 }
 
+async fn link_share_update_sets_password_and_expiration(fx: &Fixture) {
+    seed_user(fx, "alice").await;
+    let _ = seed_file(fx, "alice", "/Photos", true).await;
+    let sid = fx.home_storage_id("alice");
+    let row = fx
+        .shares
+        .create(CreateShareRequest {
+            requester: "alice".into(),
+            path: "/Photos".into(),
+            share_type: ShareType::Link,
+            share_with: String::new(),
+            permissions: 1,
+            home_storage_id: sid,
+            password: None,
+            expire_date: None,
+        })
+        .await
+        .unwrap();
+    assert!(row.password_hash.is_none());
+
+    let updated = fx
+        .shares
+        .update(
+            row.id,
+            &UserId::new("alice").unwrap(),
+            UpdateShareFields {
+                password: Some(Some("newpw".into())),
+                expire_date: Some(Some(NaiveDate::from_ymd_opt(2030, 1, 1).unwrap())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    assert!(updated.password_hash.is_some());
+    assert!(
+        updated
+            .password_hash
+            .as_deref()
+            .unwrap()
+            .starts_with("$2"),
+        "expected bcrypt prefix"
+    );
+    assert!(updated.expiration.is_some());
+
+    // Clear password.
+    let cleared = fx
+        .shares
+        .update(
+            row.id,
+            &UserId::new("alice").unwrap(),
+            UpdateShareFields {
+                password: Some(None),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    assert!(cleared.password_hash.is_none());
+}
+
 // ---------------- per-dialect test wrappers ----------------
 
 macro_rules! per_dialect {
@@ -664,6 +724,7 @@ per_dialect!(rejects_bit_one_cleared);
 per_dialect!(strips_bit_16);
 per_dialect!(rejects_reshare_attempt);
 per_dialect!(link_share_create_persists_token_and_password);
+per_dialect!(link_share_update_sets_password_and_expiration);
 per_dialect!(rejects_unknown_recipient);
 
 per_dialect!(get_returns_the_inserted_share);

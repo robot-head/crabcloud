@@ -389,8 +389,29 @@ impl Shares {
         if existing.uid_owner != requester.as_str() {
             return Err(ShareError::Forbidden);
         }
-        if fields.password.is_some() || fields.note.is_some() {
+        if fields.note.is_some() {
             return Err(ShareError::NotImplemented);
+        }
+        if let Some(pw_opt) = &fields.password {
+            // Only Link rows accept password updates.
+            if !matches!(existing.share_type, ShareType::Link) {
+                return Err(ShareError::BadPermissions);
+            }
+            let hashed: Option<String> = match pw_opt {
+                Some(pw) => Some(
+                    crabcloud_publiclinks::Passwords::new()
+                        .hash(pw)
+                        .map_err(|_| {
+                            ShareError::DbError(sqlx::Error::Protocol(
+                                "password hash failed".into(),
+                            ))
+                        })?
+                        .as_str()
+                        .to_string(),
+                ),
+                None => None,
+            };
+            run_update_password(&self.pool, id, hashed.as_deref()).await?;
         }
         if let Some(raw) = fields.permissions {
             if raw & 1 == 0 {
@@ -682,6 +703,37 @@ async fn run_update_permissions(pool: &DbPool, id: i64, perms_db: i32) -> Result
         DbPool::Postgres(p) => {
             sqlx::query(sql::UPDATE_PERMISSIONS_PG)
                 .bind(perms_db)
+                .bind(id)
+                .execute(p)
+                .await?;
+        }
+    }
+    Ok(())
+}
+
+async fn run_update_password(
+    pool: &DbPool,
+    id: i64,
+    value: Option<&str>,
+) -> Result<(), ShareError> {
+    match pool {
+        DbPool::Sqlite(p) => {
+            sqlx::query(sql::UPDATE_PASSWORD_QM)
+                .bind(value)
+                .bind(id)
+                .execute(p)
+                .await?;
+        }
+        DbPool::MySql(p) => {
+            sqlx::query(sql::UPDATE_PASSWORD_QM)
+                .bind(value)
+                .bind(id)
+                .execute(p)
+                .await?;
+        }
+        DbPool::Postgres(p) => {
+            sqlx::query(sql::UPDATE_PASSWORD_PG)
+                .bind(value)
                 .bind(id)
                 .execute(p)
                 .await?;
