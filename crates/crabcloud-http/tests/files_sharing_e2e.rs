@@ -777,6 +777,9 @@ async fn ocs_create_link_returns_token_and_url() {
     assert_eq!(url, format!("/s/{tok}"));
     // Link rows mask the recipient: `share_with` is null on the wire.
     assert!(v["ocs"]["data"]["share_with"].is_null());
+    // Link rows render Nextcloud's literal "(Public link)" displayname so
+    // clients can label the row without needing to special-case share_type.
+    assert_eq!(v["ocs"]["data"]["share_with_displayname"], "(Public link)");
     // password_set defaults to false when no password supplied.
     assert_eq!(v["ocs"]["data"]["password_set"], false);
 }
@@ -1027,4 +1030,97 @@ async fn ocs_update_link_expire_date_sets() {
         .unwrap();
     let (_, v) = decode(resp).await;
     assert_eq!(v["ocs"]["data"]["expiration"], "2030-06-15");
+}
+
+/// Omitting `permissions` on a link create defaults to 1 (read) per the
+/// OCS contract. The handler applies the default before hitting the
+/// service so the link is accepted without the caller having to know
+/// Nextcloud's "1 means read" convention.
+#[tokio::test]
+async fn ocs_create_link_omitted_permissions_defaults_to_read() {
+    let dir = tempdir().unwrap();
+    let data = tempdir().unwrap();
+    let state = make_state(
+        dir.path().join("link_default_perms.db"),
+        data.path().to_path_buf(),
+    )
+    .await;
+    seed_user(&state, "alice").await;
+    seed_folder(&state, "alice", "Photos").await;
+    let alice_token = issue_bearer(&state, "alice").await;
+    let app = crabcloud_http::build_router(state, axum::Router::new());
+
+    let resp = app
+        .oneshot(ocs_post(
+            &format!("{BASE}/shares?format=json"),
+            &alice_token,
+            "path=/Photos&shareType=3",
+        ))
+        .await
+        .unwrap();
+    let (status, v) = decode(resp).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(v["ocs"]["meta"]["statuscode"], 200);
+    assert_eq!(v["ocs"]["data"]["share_type"], 3);
+    assert_eq!(v["ocs"]["data"]["permissions"], 1);
+}
+
+/// A link create with `permissions=0` is rejected by the service's
+/// `permissions & 1 == 0 && permissions & 4 == 0` gate — at least one of
+/// read (1) or create (4) is required. Surfaces as HTTP 400.
+#[tokio::test]
+async fn ocs_create_link_zero_permissions_rejected() {
+    let dir = tempdir().unwrap();
+    let data = tempdir().unwrap();
+    let state = make_state(
+        dir.path().join("link_zero_perms.db"),
+        data.path().to_path_buf(),
+    )
+    .await;
+    seed_user(&state, "alice").await;
+    seed_folder(&state, "alice", "Photos").await;
+    let alice_token = issue_bearer(&state, "alice").await;
+    let app = crabcloud_http::build_router(state, axum::Router::new());
+
+    let resp = app
+        .oneshot(ocs_post(
+            &format!("{BASE}/shares?format=json"),
+            &alice_token,
+            "path=/Photos&shareType=3&permissions=0",
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+}
+
+/// `permissions=4` (create-only, file-drop) is a valid link mode — Batch C's
+/// SharedSubrootStorage create-only path depends on this. This test pins the
+/// happy path against future refactors of the permission gate.
+#[tokio::test]
+async fn ocs_create_link_file_drop_permissions_accepted() {
+    let dir = tempdir().unwrap();
+    let data = tempdir().unwrap();
+    let state = make_state(
+        dir.path().join("link_filedrop.db"),
+        data.path().to_path_buf(),
+    )
+    .await;
+    seed_user(&state, "alice").await;
+    seed_folder(&state, "alice", "Drop").await;
+    let alice_token = issue_bearer(&state, "alice").await;
+    let app = crabcloud_http::build_router(state, axum::Router::new());
+
+    let resp = app
+        .oneshot(ocs_post(
+            &format!("{BASE}/shares?format=json"),
+            &alice_token,
+            "path=/Drop&shareType=3&permissions=4",
+        ))
+        .await
+        .unwrap();
+    let (status, v) = decode(resp).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(v["ocs"]["meta"]["statuscode"], 200);
+    assert_eq!(v["ocs"]["data"]["share_type"], 3);
+    assert_eq!(v["ocs"]["data"]["permissions"], 4);
 }
