@@ -110,14 +110,33 @@ async fn dispatch(
     let user_path = parse_user_path(&url_path)?;
     let view = build_view(&state, &ctx).await?;
 
+    // The downstream `View` is built from `SharedSubrootStorage`, which
+    // enforces the link's permission mask on storage-touching calls
+    // (`put_file`, `mkdir`, `delete`, `rename`). Reads, by contrast, are
+    // routed through the filecache layer (`FileCache::stat`/`list`) which
+    // queries the OWNER storage directly — the wrapper's read-side
+    // carve-outs (e.g. "create-only links hide non-root entries") aren't
+    // invoked. Guard the read methods here so a file-drop link can't be
+    // probed via PROPFIND/GET against arbitrary child paths.
+    let perms = SharePermissions::from_wire(ctx.permissions);
     match method {
         Method::GET | Method::HEAD => {
+            if !perms.contains_read() {
+                return Ok((StatusCode::FORBIDDEN, "").into_response());
+            }
             get_or_head_with_view(&view, &user_path, &headers, method == Method::HEAD).await
         }
         Method::PUT => put_with_view(&view, &user_path, &headers, body).await,
         Method::DELETE => delete_with_view(&view, &user_path).await,
         m if m.as_str() == "MKCOL" => mkcol_with_view(&view, &user_path).await,
         m if m.as_str() == "PROPFIND" => {
+            // Allow PROPFIND on the link root for create-only links — the
+            // viewer / desktop client needs a successful stat on the
+            // upload target so it can render the drop zone. Children stay
+            // hidden.
+            if !perms.contains_read() && !user_path.is_root() {
+                return Ok((StatusCode::FORBIDDEN, "").into_response());
+            }
             let pctx = PropfindContext {
                 href_prefix: HREF_PREFIX,
                 root_label: &token,
