@@ -444,7 +444,14 @@ impl Shares {
             run_update_password(&self.pool, id, hashed.as_deref()).await?;
         }
         if let Some(raw) = fields.permissions {
-            if raw & 1 == 0 {
+            // Link rows accept either bit 1 (read) or bit 4 (create), matching
+            // `create_link`. User/group rows continue to require bit 1.
+            let ok = if matches!(existing.share_type, ShareType::Link) {
+                raw & 1 != 0 || raw & 4 != 0
+            } else {
+                raw & 1 != 0
+            };
+            if !ok {
                 return Err(ShareError::BadPermissions);
             }
             let perms = SharePermissions::from_wire(raw);
