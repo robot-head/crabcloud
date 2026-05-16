@@ -7,12 +7,14 @@ rust-version.workspace = true
 [dependencies]
 anyhow.workspace = true
 async-trait.workspace = true
+chrono.workspace = true
 crabcloud-cache.workspace = true
 crabcloud-config.workspace = true
 crabcloud-db.workspace = true
 crabcloud-filecache.workspace = true
 crabcloud-fs.workspace = true
 crabcloud-i18n.workspace = true
+crabcloud-mail.workspace = true
 crabcloud-ocs.workspace = true
 crabcloud-preview.workspace = true
 crabcloud-publiclinks.workspace = true
@@ -23,7 +25,7 @@ dashmap.workspace = true
 secrecy.workspace = true
 sqlx.workspace = true
 thiserror.workspace = true
-tokio = { workspace = true, features = ["sync"] }
+tokio = { workspace = true, features = ["sync", "time", "rt"] }
 tracing.workspace = true
 
 [dev-dependencies]
