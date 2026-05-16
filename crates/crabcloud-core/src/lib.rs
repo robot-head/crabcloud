@@ -4,6 +4,11 @@
 //!
 //! See `docs/superpowers/specs/2026-05-10-platform-core-design.md` §4.1.
 
+// `paste` is only referenced from `tests/mail_queue_e2e.rs`. The lib's
+// own test target doesn't see it, which triggers
+// `unused_crate_dependencies`. Silence it for test builds.
+#![cfg_attr(test, allow(unused_crate_dependencies))]
+
 mod appconfig;
 mod bootstrap;
 mod error;

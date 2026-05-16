@@ -66,6 +66,7 @@ impl OcsError {
             | CoreError::ConfigValidation(_)
             | CoreError::Db(_)
             | CoreError::Cache(_)
+            | CoreError::Mail(_)
             | CoreError::Internal(_) => OcsStatus::ServerError,
             CoreError::Users(_) => match self.error.http_status() {
                 401 => OcsStatus::Unauthorized,

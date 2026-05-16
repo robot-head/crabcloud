@@ -3,6 +3,8 @@
 use crate::appconfig::AppConfigService;
 use crate::bootstrap::BootstrapRegistry;
 use crate::error::{CoreResult, Error};
+use crate::mail_queue::MailQueue;
+use crate::mail_worker::MailWorker;
 use crate::publiclinks::SharesTokenLookup;
 use crabcloud_cache::{Cache, MemoryCache};
 use crabcloud_config::FileConfig;
@@ -80,6 +82,19 @@ pub struct AppState {
     /// dropped on commit or abort. Process-local; chunked uploads do not
     /// survive a restart (matches Nextcloud's behavior).
     pub upload_id_map: Arc<DashMap<String, String>>,
+    /// Mail transport. Wired by `AppStateBuilder` from `FileConfig.mail`.
+    /// The `MailWorker` is the consumer; application code generally
+    /// enqueues via `mail_queue` instead of calling this directly.
+    pub mailer: Arc<crabcloud_mail::Mailer>,
+    /// Persistent outbound-mail queue (`oc_mail_queue`).
+    pub mail_queue: MailQueue,
+    /// Per-user notification opt-out service
+    /// (`oc_user_notification_prefs`).
+    pub notification_prefs: crabcloud_users::NotificationPrefs,
+    /// Mail worker shutdown handle. Always present; only meaningful
+    /// when a worker was actually spawned (i.e. `mail.transport != "disabled"`).
+    /// Tests signal `notify_one` here to drain the worker between runs.
+    pub mail_worker_shutdown: Arc<tokio::sync::Notify>,
 }
 
 impl std::fmt::Debug for AppState {
@@ -324,6 +339,47 @@ impl AppStateBuilder {
             self.config.preview_max_pixels,
         ));
 
+        // Mail wiring: build transport, queue, prefs, and (when not
+        // disabled) spawn the worker. The transport kind is mapped from
+        // the string in `config.mail.transport`; unknown values degrade
+        // to `Disabled` rather than failing boot.
+        let mail_cfg = &self.config.mail;
+        let mail_transport_cfg = crabcloud_mail::TransportConfig {
+            kind: match mail_cfg.transport.as_str() {
+                "smtp" => crabcloud_mail::TransportKind::Smtp,
+                "log" => crabcloud_mail::TransportKind::Log,
+                _ => crabcloud_mail::TransportKind::Disabled,
+            },
+            smtp_host: mail_cfg.smtp_host.clone(),
+            smtp_port: mail_cfg.smtp_port,
+            smtp_username: mail_cfg.smtp_username.clone(),
+            smtp_password: mail_cfg.smtp_password.clone(),
+            smtp_security: match mail_cfg.smtp_security.as_str() {
+                "tls" => crabcloud_mail::SmtpSecurity::Tls,
+                "none" => crabcloud_mail::SmtpSecurity::None,
+                _ => crabcloud_mail::SmtpSecurity::Starttls,
+            },
+            mail_from: mail_cfg.mail_from.clone(),
+            mail_from_name: mail_cfg.mail_from_name.clone(),
+        };
+        let mailer = Arc::new(
+            crabcloud_mail::Mailer::from_config(&mail_transport_cfg).map_err(Error::Mail)?,
+        );
+        let mail_queue = MailQueue::new(Arc::new(pool.clone()));
+        let notification_prefs =
+            crabcloud_users::NotificationPrefs::new(Arc::new(pool.clone()));
+        let (mail_worker, mail_worker_shutdown) =
+            MailWorker::new(mail_queue.clone(), mailer.clone());
+        if !matches!(
+            mail_transport_cfg.kind,
+            crabcloud_mail::TransportKind::Disabled
+        ) {
+            // The `JoinHandle` is intentionally dropped; the worker
+            // terminates when `mail_worker_shutdown.notify_one()` is
+            // called (typically at process shutdown / test teardown).
+            std::mem::drop(tokio::spawn(async move { mail_worker.run().await }));
+        }
+
         let state = AppState {
             config: self.config.clone(),
             pool,
@@ -341,6 +397,10 @@ impl AppStateBuilder {
             publiclinks_auth,
             preview,
             upload_id_map,
+            mailer,
+            mail_queue,
+            notification_prefs,
+            mail_worker_shutdown,
         };
 
         self.registry.run(&state).await?;
