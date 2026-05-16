@@ -994,6 +994,7 @@ dependencies = [
  "crabcloud-core",
  "crabcloud-filecache",
  "crabcloud-fs",
+ "crabcloud-mail",
  "crabcloud-ocs",
  "crabcloud-preview",
  "crabcloud-publiclinks",

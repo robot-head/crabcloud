@@ -1124,3 +1124,95 @@ async fn ocs_create_link_file_drop_permissions_accepted() {
     assert_eq!(v["ocs"]["data"]["share_type"], 3);
     assert_eq!(v["ocs"]["data"]["permissions"], 4);
 }
+
+// --- shareType=4 (Email) ----------------------------------------------------
+
+#[tokio::test]
+async fn post_shares_email_type_enqueues_link_emailed_mail() {
+    let dir = tempdir().unwrap();
+    let data = tempdir().unwrap();
+    let state = make_state(dir.path().join("email.db"), data.path().to_path_buf()).await;
+    seed_user(&state, "alice").await;
+    seed_folder(&state, "alice", "Vacation").await;
+    let alice_token = issue_bearer(&state, "alice").await;
+    let inspect_state = state.clone();
+    let app = crabcloud_http::build_router(state, axum::Router::new());
+
+    let resp = app
+        .oneshot(ocs_post(
+            &format!("{BASE}/shares?format=json"),
+            &alice_token,
+            "path=/Vacation&shareType=4&shareWith=friend%40example.com&permissions=1",
+        ))
+        .await
+        .unwrap();
+    let (status, v) = decode(resp).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(v["ocs"]["meta"]["statuscode"], 200);
+    assert_eq!(v["ocs"]["data"]["share_type"], 4);
+    assert_eq!(v["ocs"]["data"]["share_with"], "friend@example.com");
+    let tok = v["ocs"]["data"]["token"].as_str().expect("token string");
+    assert_eq!(tok.len(), 15);
+
+    // Inspect the queue: link_emailed row should have been enqueued.
+    let queued = inspect_state.mail_queue.claim_batch(10).await.unwrap();
+    assert_eq!(queued.len(), 1, "expected one mail row enqueued");
+    let env = &queued[0];
+    assert_eq!(env.recipient, "friend@example.com");
+    assert_eq!(env.event_type, crabcloud_mail::EventType::LinkEmailed);
+    assert!(env.subject.contains("share"), "subject: {}", env.subject);
+    assert!(
+        env.html_body.contains(tok),
+        "html body must include the share token"
+    );
+}
+
+#[tokio::test]
+async fn post_shares_email_type_rejects_invalid_email() {
+    let dir = tempdir().unwrap();
+    let data = tempdir().unwrap();
+    let state = make_state(dir.path().join("bad.db"), data.path().to_path_buf()).await;
+    seed_user(&state, "alice").await;
+    seed_folder(&state, "alice", "Vacation").await;
+    let alice_token = issue_bearer(&state, "alice").await;
+    let inspect_state = state.clone();
+    let app = crabcloud_http::build_router(state, axum::Router::new());
+
+    let resp = app
+        .oneshot(ocs_post(
+            &format!("{BASE}/shares?format=json"),
+            &alice_token,
+            "path=/Vacation&shareType=4&shareWith=not-an-email&permissions=1",
+        ))
+        .await
+        .unwrap();
+    let (status, v) = decode(resp).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(v["ocs"]["meta"]["statuscode"], 400);
+    // No row should have been queued.
+    let queued = inspect_state.mail_queue.claim_batch(10).await.unwrap();
+    assert_eq!(queued.len(), 0);
+}
+
+#[tokio::test]
+async fn post_shares_email_type_rejects_missing_share_with() {
+    let dir = tempdir().unwrap();
+    let data = tempdir().unwrap();
+    let state = make_state(dir.path().join("miss.db"), data.path().to_path_buf()).await;
+    seed_user(&state, "alice").await;
+    seed_folder(&state, "alice", "Vacation").await;
+    let alice_token = issue_bearer(&state, "alice").await;
+    let app = crabcloud_http::build_router(state, axum::Router::new());
+
+    // shareWith omitted entirely — Email validation must still reject.
+    let resp = app
+        .oneshot(ocs_post(
+            &format!("{BASE}/shares?format=json"),
+            &alice_token,
+            "path=/Vacation&shareType=4&permissions=1",
+        ))
+        .await
+        .unwrap();
+    let (status, _v) = decode(resp).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}

@@ -293,6 +293,51 @@ impl Shares {
         }
     }
 
+    /// Best-effort: render + enqueue a `link_emailed` mail to the
+    /// recipient address. Mirrors `try_enqueue_share_created_mail`
+    /// shape; no opt-out gate since the recipient isn't a local uid.
+    async fn try_enqueue_link_emailed_mail(
+        &self,
+        recipient_email: &str,
+        owner_uid: &str,
+        storage_path: &StoragePath,
+        token: &str,
+        password_protected: bool,
+        expiration: Option<NaiveDateTime>,
+    ) {
+        let owner_display = display_name_of(&self.users, owner_uid).await;
+        let link_url = build_link_url(&self.instance_url, token);
+        let expiration_str = expiration
+            .map(|n| n.date().format("%Y-%m-%d").to_string())
+            .unwrap_or_default();
+
+        let ctx = TemplateContext {
+            lang: "en".to_string(),
+            instance_url: self.instance_url.clone(),
+            // Templates use `recipient_display_name`; for an email-only
+            // recipient we don't have one, so reuse the address.
+            recipient_display_name: recipient_email.to_string(),
+            recipient_email: recipient_email.to_string(),
+            event_specific: serde_json::json!({
+                "owner_display_name": owner_display,
+                "path_basename": storage_path.basename(),
+                "link_url": link_url,
+                "password_protected": password_protected,
+                "expiration_dt": expiration_str,
+            }),
+        };
+        let env = match render_template(EventType::LinkEmailed, ctx) {
+            Ok(e) => e,
+            Err(e) => {
+                tracing::warn!(error = %e, "link_emailed: render_template failed");
+                return;
+            }
+        };
+        if let Err(e) = self.mail.enqueue(&env).await {
+            tracing::warn!(error = %e, "link_emailed: mail.enqueue failed");
+        }
+    }
+
     pub async fn get(&self, id: i64) -> Result<Option<ShareRow>, ShareError> {
         match self.pool.as_ref() {
             DbPool::Sqlite(p) => {
@@ -726,6 +771,22 @@ impl Shares {
             )
             .await?;
 
+        // Email-share post-insert hook: enqueue link_emailed mail.
+        // No opt-out gate here — the requester explicitly addressed an
+        // external recipient by typing their email, so the prefs table
+        // (which is keyed on uid, not address) doesn't apply.
+        if matches!(req.share_type, ShareType::Email) {
+            self.try_enqueue_link_emailed_mail(
+                req.share_with.as_str(),
+                req.requester.as_str(),
+                &storage_path,
+                &token_str,
+                password_hash.is_some(),
+                expiration,
+            )
+            .await;
+        }
+
         Ok(ShareRow {
             id,
             share_type: req.share_type,
@@ -933,6 +994,18 @@ async fn run_update_expiration(
 fn parse_wire_path(p: &str) -> Result<StoragePath, ShareError> {
     let trimmed = p.trim_start_matches('/');
     StoragePath::new(trimmed).map_err(|_| ShareError::PathNotOwned)
+}
+
+/// Build the absolute (or relative-fallback) share-link URL the
+/// templates expand into `{{ link_url }}`. When `instance_url` is
+/// empty or already ends in `/`, we avoid producing `//s/<token>`.
+pub(crate) fn build_link_url(instance_url: &str, token: &str) -> String {
+    let trimmed = instance_url.trim_end_matches('/');
+    if trimmed.is_empty() {
+        format!("/s/{token}")
+    } else {
+        format!("{trimmed}/s/{token}")
+    }
 }
 
 /// Resolve a uid's display name, falling back to the raw uid if the

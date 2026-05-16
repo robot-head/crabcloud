@@ -17,7 +17,7 @@ use chrono::NaiveDate;
 use crabcloud_core::AppState;
 use crabcloud_ocs::{render, Format, OcsResponse, OcsStatus, OcsVersion};
 use crabcloud_sharing::{CreateShareRequest, ShareError, ShareRow, ShareType, UpdateShareFields};
-use crabcloud_users::UserId;
+use crabcloud_users::{Email, UserId};
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -197,6 +197,15 @@ async fn create_handler(
         Ok(st) => st,
         Err(_) => return from_share_error(ShareError::InvalidShareType, fmt.0),
     };
+    // shareType=4 (Email) requires a valid email address in shareWith.
+    // Reject malformed addresses with 400 before hitting the service so
+    // we don't waste a filecache lookup on garbage input.
+    if matches!(st, ShareType::Email) {
+        let raw = form.share_with.as_deref().unwrap_or("");
+        if Email::parse(raw).is_err() {
+            return ocs_envelope(400, "invalid email address", Value::Null, fmt.0);
+        }
+    }
     let home_sid = match state.storage_factory.home_storage(&ctx.user_id).await {
         Ok(s) => s.id().to_string(),
         Err(_) => return from_share_error(ShareError::PathNotOwned, fmt.0),
