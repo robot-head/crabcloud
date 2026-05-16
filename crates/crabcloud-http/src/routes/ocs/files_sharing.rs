@@ -167,6 +167,8 @@ async fn create_handler(
         share_type: st,
         share_with: form.share_with.unwrap_or_default(),
         permissions: form.permissions,
+        password: None,
+        expire_date: None,
     };
     match state.shares.create(req).await {
         Ok(row) => {

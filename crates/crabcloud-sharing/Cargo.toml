@@ -10,6 +10,7 @@ async-trait.workspace = true
 chrono.workspace = true
 crabcloud-db.workspace = true
 crabcloud-filecache.workspace = true
+crabcloud-publiclinks.workspace = true
 crabcloud-storage.workspace = true
 crabcloud-users.workspace = true
 serde.workspace = true

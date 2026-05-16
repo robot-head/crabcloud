@@ -942,6 +942,7 @@ dependencies = [
  "crabcloud-core",
  "crabcloud-db",
  "crabcloud-filecache",
+ "crabcloud-publiclinks",
  "crabcloud-storage",
  "crabcloud-users",
  "paste",

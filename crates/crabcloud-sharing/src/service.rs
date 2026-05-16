@@ -33,8 +33,10 @@ impl Shares {
     }
 
     pub async fn create(&self, req: CreateShareRequest) -> Result<ShareRow, ShareError> {
+        // Link rows take a different code path: no `share_with` target,
+        // password and expiration handled, token generated. SP8 §5.
         if matches!(req.share_type, ShareType::Link) {
-            return Err(ShareError::NotImplemented);
+            return self.create_link(req).await;
         }
         if req.permissions & 1 == 0 {
             return Err(ShareError::BadPermissions);
@@ -204,6 +206,36 @@ impl Shares {
             DbPool::Postgres(p) => {
                 let row = sqlx::query(sql::SELECT_BY_ID_PG)
                     .bind(id)
+                    .fetch_optional(p)
+                    .await?;
+                row.map(row_from_postgres).transpose()
+            }
+        }
+    }
+
+    /// Look up a share row by token. Returns `None` for unknown / non-link
+    /// rows (the SQL is filtered to `share_type = 3`). Does NOT enforce
+    /// expiration — the caller must compare `expiration` to `now()` and
+    /// treat past-expired as missing. SP8 §5.
+    pub async fn resolve_by_token(&self, token: &str) -> Result<Option<ShareRow>, ShareError> {
+        match self.pool.as_ref() {
+            DbPool::Sqlite(p) => {
+                let row = sqlx::query(sql::SELECT_BY_TOKEN_QM)
+                    .bind(token)
+                    .fetch_optional(p)
+                    .await?;
+                row.map(row_from_sqlite).transpose()
+            }
+            DbPool::MySql(p) => {
+                let row = sqlx::query(sql::SELECT_BY_TOKEN_QM)
+                    .bind(token)
+                    .fetch_optional(p)
+                    .await?;
+                row.map(row_from_mysql).transpose()
+            }
+            DbPool::Postgres(p) => {
+                let row = sqlx::query(sql::SELECT_BY_TOKEN_PG)
+                    .bind(token)
                     .fetch_optional(p)
                     .await?;
                 row.map(row_from_postgres).transpose()
@@ -387,8 +419,29 @@ impl Shares {
         if existing.uid_owner != requester.as_str() {
             return Err(ShareError::Forbidden);
         }
-        if fields.password.is_some() || fields.note.is_some() {
+        if fields.note.is_some() {
             return Err(ShareError::NotImplemented);
+        }
+        if let Some(pw_opt) = &fields.password {
+            // Only Link rows accept password updates.
+            if !matches!(existing.share_type, ShareType::Link) {
+                return Err(ShareError::BadPermissions);
+            }
+            let hashed: Option<String> = match pw_opt {
+                Some(pw) => Some(
+                    crabcloud_publiclinks::Passwords::new()
+                        .hash(pw)
+                        .map_err(|_| {
+                            ShareError::DbError(sqlx::Error::Protocol(
+                                "password hash failed".into(),
+                            ))
+                        })?
+                        .as_str()
+                        .to_string(),
+                ),
+                None => None,
+            };
+            run_update_password(&self.pool, id, hashed.as_deref()).await?;
         }
         if let Some(raw) = fields.permissions {
             if raw & 1 == 0 {
@@ -474,6 +527,188 @@ impl Shares {
             Err(ShareError::Forbidden)
         }
     }
+
+    /// Create a `share_type=3` (public link) row. Separate from the
+    /// user/group path because link rows have a different shape: no
+    /// `share_with` recipient, a generated `token`, an optional bcrypt
+    /// `password` hash, an optional `expiration`, and the full owner path
+    /// in `file_target` (so `resolve_by_token` returns a usable subroot
+    /// for the auth layer). SP8 §5.
+    async fn create_link(&self, req: CreateShareRequest) -> Result<ShareRow, ShareError> {
+        // Link permissions: at minimum bit 1 (read) or bit 4 (create).
+        // bit 4 alone is the "file-drop" mode.
+        if req.permissions & 1 == 0 && req.permissions & 4 == 0 {
+            return Err(ShareError::BadPermissions);
+        }
+        let perms = SharePermissions::from_wire(req.permissions);
+
+        let storage_path = parse_wire_path(&req.path)?;
+        let row = self
+            .filecache
+            .lookup(&req.home_storage_id, &storage_path)
+            .await
+            .map_err(map_filecache)?
+            .ok_or(ShareError::PathNotOwned)?;
+        if row.storage_id != req.home_storage_id {
+            return Err(ShareError::ReshareRejected);
+        }
+
+        let item_type = if row.mimetype.as_str() == crabcloud_filecache::DIRECTORY_MIMETYPE {
+            ItemType::Folder
+        } else {
+            ItemType::File
+        };
+        // Link rows store the FULL owner path in `file_target` (unlike
+        // user/group shares which store only the basename). The auth layer
+        // reads this back via `Shares::resolve_by_token` and uses it as the
+        // `SharedSubrootStorage` root, so it must be unambiguous.
+        let file_target = format!("/{}", storage_path.as_str());
+        let stime = unix_now();
+        let share_type_db: i16 = req.share_type.into();
+        let perms_db = perms.as_u32() as i32;
+        let fileid = row.fileid;
+
+        // Hash the password (bcrypt — Batch A landed bcrypt for workspace
+        // consistency with `crabcloud-users`).
+        let password_hash: Option<String> = match req.password.as_deref() {
+            Some(pw) => {
+                let h = crabcloud_publiclinks::Passwords::new()
+                    .hash(pw)
+                    .map_err(|_| {
+                        ShareError::DbError(sqlx::Error::Protocol("password hash failed".into()))
+                    })?;
+                Some(h.as_str().to_string())
+            }
+            None => None,
+        };
+
+        let expiration: Option<NaiveDateTime> =
+            req.expire_date.and_then(|d| d.and_hms_opt(0, 0, 0));
+
+        // Token-collision retry: skipped for MVP. With 89 bits of entropy a
+        // collision is implausible during a single create; if it ever happens,
+        // `sqlx::Error::Database` surfaces a UNIQUE violation and the caller
+        // sees a 500.
+        let token = crabcloud_publiclinks::Tokens::new().generate();
+        let token_str = token.to_string();
+        let id = self
+            .insert_link_row(
+                share_type_db,
+                &req.requester,
+                fileid,
+                &file_target,
+                perms_db,
+                stime,
+                item_type,
+                expiration,
+                &token_str,
+                password_hash.as_deref(),
+            )
+            .await?;
+
+        Ok(ShareRow {
+            id,
+            share_type: ShareType::Link,
+            share_with: None,
+            uid_owner: req.requester.clone(),
+            uid_initiator: req.requester,
+            parent: None,
+            item_type,
+            item_source: fileid,
+            file_source: fileid,
+            file_target,
+            permissions: perms,
+            stime,
+            accepted: true,
+            expiration: expiration.map(|n| DateTime::<Utc>::from_naive_utc_and_offset(n, Utc)),
+            token: Some(token_str),
+            password_hash,
+        })
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn insert_link_row(
+        &self,
+        share_type_db: i16,
+        requester: &str,
+        fileid: i64,
+        file_target: &str,
+        perms_db: i32,
+        stime: i64,
+        item_type: ItemType,
+        expiration: Option<NaiveDateTime>,
+        token: &str,
+        password: Option<&str>,
+    ) -> Result<i64, ShareError> {
+        match self.pool.as_ref() {
+            DbPool::Sqlite(p) => {
+                let res = sqlx::query(sql::INSERT_QM)
+                    .bind(share_type_db)
+                    .bind::<Option<&str>>(None) // share_with
+                    .bind(requester) // uid_owner
+                    .bind(requester) // uid_initiator
+                    .bind::<Option<i64>>(None) // parent
+                    .bind(item_type.as_db_str())
+                    .bind(fileid)
+                    .bind(fileid)
+                    .bind(file_target)
+                    .bind(perms_db)
+                    .bind(stime)
+                    .bind(1_i16) // accepted
+                    .bind(expiration)
+                    .bind(token)
+                    .bind(password)
+                    .bind(0_i16) // mail_send
+                    .execute(p)
+                    .await?;
+                Ok(res.last_insert_rowid())
+            }
+            DbPool::MySql(p) => {
+                let res = sqlx::query(sql::INSERT_QM)
+                    .bind(share_type_db)
+                    .bind::<Option<&str>>(None)
+                    .bind(requester)
+                    .bind(requester)
+                    .bind::<Option<i64>>(None)
+                    .bind(item_type.as_db_str())
+                    .bind(fileid)
+                    .bind(fileid)
+                    .bind(file_target)
+                    .bind(perms_db)
+                    .bind(stime)
+                    .bind(1_i16)
+                    .bind(expiration)
+                    .bind(token)
+                    .bind(password)
+                    .bind(0_i16)
+                    .execute(p)
+                    .await?;
+                Ok(res.last_insert_id() as i64)
+            }
+            DbPool::Postgres(p) => {
+                let row = sqlx::query(sql::INSERT_PG)
+                    .bind(share_type_db)
+                    .bind::<Option<&str>>(None)
+                    .bind(requester)
+                    .bind(requester)
+                    .bind::<Option<i64>>(None)
+                    .bind(item_type.as_db_str())
+                    .bind(fileid)
+                    .bind(fileid)
+                    .bind(file_target)
+                    .bind(perms_db)
+                    .bind(stime)
+                    .bind(1_i16)
+                    .bind(expiration)
+                    .bind(token)
+                    .bind(password)
+                    .bind(0_i16)
+                    .fetch_one(p)
+                    .await?;
+                Ok(row.try_get::<i64, _>("id")?)
+            }
+        }
+    }
 }
 
 async fn run_update_permissions(pool: &DbPool, id: i64, perms_db: i32) -> Result<(), ShareError> {
@@ -495,6 +730,37 @@ async fn run_update_permissions(pool: &DbPool, id: i64, perms_db: i32) -> Result
         DbPool::Postgres(p) => {
             sqlx::query(sql::UPDATE_PERMISSIONS_PG)
                 .bind(perms_db)
+                .bind(id)
+                .execute(p)
+                .await?;
+        }
+    }
+    Ok(())
+}
+
+async fn run_update_password(
+    pool: &DbPool,
+    id: i64,
+    value: Option<&str>,
+) -> Result<(), ShareError> {
+    match pool {
+        DbPool::Sqlite(p) => {
+            sqlx::query(sql::UPDATE_PASSWORD_QM)
+                .bind(value)
+                .bind(id)
+                .execute(p)
+                .await?;
+        }
+        DbPool::MySql(p) => {
+            sqlx::query(sql::UPDATE_PASSWORD_QM)
+                .bind(value)
+                .bind(id)
+                .execute(p)
+                .await?;
+        }
+        DbPool::Postgres(p) => {
+            sqlx::query(sql::UPDATE_PASSWORD_PG)
+                .bind(value)
                 .bind(id)
                 .execute(p)
                 .await?;

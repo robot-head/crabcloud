@@ -404,6 +404,8 @@ async fn list_dir_decorates_shared_by_for_recipient_and_share_count_for_owner() 
             share_type: ShareType::User,
             share_with: "bob".into(),
             permissions: 3,
+            password: None,
+            expire_date: None,
         })
         .await
         .expect("share creation");
