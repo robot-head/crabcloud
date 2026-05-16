@@ -16,6 +16,41 @@ use crate::middleware::proxy_headers::ProxyHeadersLayer;
 use crate::middleware::security_headers::SecurityHeadersLayer;
 use crate::middleware::trusted_domain::TrustedDomainLayer;
 use crate::session::{SessionLayer, SessionStore};
+use axum::extract::State;
+use std::sync::Arc;
+
+/// Path-conditional wrapper around `public_link_auth`. The OCS+app sub-router
+/// catches every non-DAV request — including ordinary authenticated traffic
+/// (`/index.php/login`, `/api/files/list`, the `/apps/files` page, OCS calls,
+/// …). The real `public_link_auth` would 404 those because they don't carry a
+/// `/s/{token}` prefix, so we gate it on the path explicitly here. Requests
+/// matching `/s/...` flow through the real layer; everything else is passed
+/// straight to the inner service.
+///
+// TODO(sp8-followup): replace this path-conditional wrapper with axum's
+// `Router::nest("/s", router.route_layer(public_link_auth))`. The current
+// shape exists because `crabcloud_publiclinks::auth_layer::extract_token`
+// expects the absolute request path (it strips a leading `/s/`); a nested
+// router would hand it the post-strip path and short-circuit token parsing.
+// Fix: change `extract_token` (and the DAV equivalent) to accept the
+// already-stripped path, then drop this wrapper.
+async fn public_link_gate(
+    state: Arc<crabcloud_publiclinks::PublicLinkAuthState>,
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    if req.uri().path().starts_with("/s/") {
+        crabcloud_publiclinks::public_link_auth(
+            state,
+            crabcloud_publiclinks::AuthSurface::Browser,
+            req,
+            next,
+        )
+        .await
+    } else {
+        next.run(req).await
+    }
+}
 
 /// Default request body limit (matches spec §7.2): 512 MiB.
 const DEFAULT_BODY_LIMIT_BYTES: usize = 512 * 1024 * 1024;
@@ -86,9 +121,37 @@ pub fn build_router(state: AppState, app_router: Router) -> Router {
         crate::routes::ocs::router().with_state(state.clone()),
     );
 
+    // Public-link surface (`/s/{token}/...`). The unlock / download / upload
+    // handlers live in `routes::public_link`; the viewer PAGE (`/s/{token}`
+    // and `/s/{token}/{*path}`) is rendered by the dx fullstack SSR pipeline
+    // inside `ocs_app`. Both need `PublicLinkAuthContext` attached, so we
+    // wrap the entire OCS+app+publiclink merged tree in a path-conditional
+    // `public_link_auth` middleware: requests matching `/s/...` flow through
+    // the real auth layer, every other path is passed through untouched.
+    //
+    // CSRF is intentionally NOT applied to the public-link surface: it's
+    // anonymous (the `pl_<token>` cookie carries the password capability,
+    // not session identity), and the unlock POST is the only state-changing
+    // operation — protected separately by the per-token rate limiter and
+    // the bcrypt verification.
+    let public_link_rest = crate::routes::public_link::router().with_state(state.clone());
+    let pl_auth_state = state.publiclinks_auth.clone();
+    let ocs_app_layered = ocs_app
+        .merge(public_link_rest)
+        .layer(axum::middleware::from_fn_with_state(
+            pl_auth_state,
+            |State(state): State<Arc<crabcloud_publiclinks::PublicLinkAuthState>>,
+             req: axum::extract::Request,
+             next: axum::middleware::Next| async move {
+                public_link_gate(state, req, next).await
+            },
+        ))
+        .layer(CsrfLayer::new())
+        .layer(cors_layer);
+
     Router::new()
         .merge(dav_router)
-        .merge(ocs_app.layer(CsrfLayer::new()).layer(cors_layer))
+        .merge(ocs_app_layered)
         // Install AppState as a request extension so `FullstackContext::extension`
         // can pull it from inside `#[server]` function bodies.
         .layer(axum::Extension(state.clone()))

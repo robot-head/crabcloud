@@ -5,6 +5,8 @@
 //! explicit `endpoint` attributes so external Nextcloud-compatible clients
 //! keep working.
 
+pub mod public_link;
+
 use dioxus::fullstack::get;
 use dioxus::prelude::*;
 use serde::{Deserialize, Serialize};
