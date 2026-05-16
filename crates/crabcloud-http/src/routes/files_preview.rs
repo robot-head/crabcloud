@@ -148,9 +148,7 @@ async fn handler(
         Err(PreviewError::SourceTooLarge { .. }) => {
             return (StatusCode::PAYLOAD_TOO_LARGE, "").into_response()
         }
-        Err(PreviewError::SourceNotFound(_)) => {
-            return (StatusCode::NOT_FOUND, "").into_response()
-        }
+        Err(PreviewError::SourceNotFound(_)) => return (StatusCode::NOT_FOUND, "").into_response(),
         Err(e) => {
             tracing::warn!(error = %e, fileid, "preview render failed");
             return (StatusCode::INTERNAL_SERVER_ERROR, "").into_response();
@@ -233,10 +231,7 @@ pub(crate) async fn serve_cache_file(path: std::path::PathBuf, etag: String) -> 
     let body = Body::from_stream(stream);
 
     let mut headers = HeaderMap::new();
-    headers.insert(
-        header::CONTENT_TYPE,
-        HeaderValue::from_static("image/jpeg"),
-    );
+    headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("image/jpeg"));
     if let Ok(v) = HeaderValue::from_str(&meta.len().to_string()) {
         headers.insert(header::CONTENT_LENGTH, v);
     }
