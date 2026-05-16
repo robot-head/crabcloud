@@ -161,13 +161,18 @@ impl PreviewCache {
 }
 
 /// Strip characters that would be hostile to a path component. Storage ids
-/// in Crabcloud are ASCII-restricted (per `oc_storages`) and ETags from
-/// `crabcloud-storage` are 40 lowercase-hex chars (per SP6), but defensive
-/// sanitization costs nothing.
+/// in Crabcloud may include `::` segment separators and (under the local
+/// backend) absolute paths whose characters — `:`, `\`, `/`, drive
+/// letters — are invalid in Windows filenames. Replace anything outside
+/// `[A-Za-z0-9._-]` with `_` so the resulting component is safe on every
+/// platform the workspace builds on. The cache key is `(storage_id,
+/// fileid, size, etag)` and we already use `fileid` as a distinct
+/// directory level, so sanitization-induced collisions on `storage_id`
+/// alone are not a correctness risk.
 fn sanitize_path_component(s: &str) -> String {
     s.chars()
         .map(|c| {
-            if c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == ':' {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.' {
                 c
             } else {
                 '_'
