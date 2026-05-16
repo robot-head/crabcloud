@@ -122,6 +122,18 @@ async fn get_or_head(
     head_only: bool,
 ) -> DavResult<Response> {
     let view = state.view_for(uid).await?;
+    get_or_head_with_view(&view, user_path, headers, head_only).await
+}
+
+/// Surface-neutral GET/HEAD body builder. Lets the public-link DAV surface
+/// reuse the exact same response shape (Content-Type/Length, ETag, range
+/// math) without having access to `AppState::view_for`.
+pub async fn get_or_head_with_view(
+    view: &crabcloud_fs::View,
+    user_path: &crabcloud_fs::UserPath,
+    headers: &HeaderMap,
+    head_only: bool,
+) -> DavResult<Response> {
     let meta = view.stat(user_path).await?;
     if matches!(meta.kind, FileKind::Directory) {
         return Err(DavError::BadRequest("GET on a directory".into()));
@@ -178,7 +190,19 @@ async fn put(
     let locks = crabcloud_filecache::LockStore::new(state.filecache.pool().clone());
     crate::routes::dav::lock::lock_check(&locks, uid, user_path, headers).await?;
     let view = state.view_for(uid).await?;
+    put_with_view(&view, user_path, headers, body).await
+}
 
+/// Surface-neutral PUT. Honors If-Match / If-None-Match preconditions but
+/// does NOT consult the lock store — the public-link surface doesn't
+/// expose LOCK/UNLOCK so a lock check would always be a no-op there.
+/// The authed-surface `put` runs `lock_check` before calling this.
+pub async fn put_with_view(
+    view: &crabcloud_fs::View,
+    user_path: &crabcloud_fs::UserPath,
+    headers: &HeaderMap,
+    body: Body,
+) -> DavResult<Response> {
     // Conditional checks: resolve target IF needed.
     let if_match = parse_if_match(headers);
     let if_none_match_star = parse_if_none_match_wildcard(headers);
@@ -226,6 +250,16 @@ async fn mkcol(
     let locks = crabcloud_filecache::LockStore::new(state.filecache.pool().clone());
     crate::routes::dav::lock::lock_check(&locks, uid, user_path, headers).await?;
     let view = state.view_for(uid).await?;
+    mkcol_with_view(&view, user_path).await
+}
+
+/// Surface-neutral MKCOL. The public-link surface doesn't expose LOCK so
+/// no lock check is needed; on the authed surface, `mkcol` does the check
+/// before calling this.
+pub async fn mkcol_with_view(
+    view: &crabcloud_fs::View,
+    user_path: &crabcloud_fs::UserPath,
+) -> DavResult<Response> {
     view.mkdir(user_path).await?;
     Ok((StatusCode::CREATED, "").into_response())
 }
@@ -239,6 +273,16 @@ async fn delete(
     let locks = crabcloud_filecache::LockStore::new(state.filecache.pool().clone());
     crate::routes::dav::lock::lock_check(&locks, uid, user_path, headers).await?;
     let view = state.view_for(uid).await?;
+    delete_with_view(&view, user_path).await
+}
+
+/// Surface-neutral DELETE. Same lock-store skip as the other `_with_view`
+/// helpers; public-link permissions don't grant delete in MVP so this
+/// usually falls through to a storage-level 403 anyway.
+pub async fn delete_with_view(
+    view: &crabcloud_fs::View,
+    user_path: &crabcloud_fs::UserPath,
+) -> DavResult<Response> {
     view.delete(user_path).await?;
     Ok((StatusCode::NO_CONTENT, "").into_response())
 }

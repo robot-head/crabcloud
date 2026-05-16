@@ -24,6 +24,22 @@ use axum::response::{IntoResponse, Response};
 const FAVORITE_PROP: &str = "{http://owncloud.org/ns}favorite";
 const HREF_PREFIX: &str = "/remote.php/dav/files";
 
+/// Display-name shown in `<d:displayname>` for the root of the surface.
+/// For the authed surface this is the user id; for the public-link surface
+/// it's the link token. The caller picks per-surface.
+pub struct PropfindContext<'a> {
+    /// HREF prefix up to but not including the leading `/{root_label}/`.
+    /// e.g. `/remote.php/dav/files` for the authed surface,
+    /// `/public.php/dav/files` for the public surface.
+    pub href_prefix: &'a str,
+    /// Root segment under `href_prefix`: the user id for the authed
+    /// surface, the link token for the public surface.
+    pub root_label: &'a str,
+    /// Instance identifier for `oc:id` tail; used for cross-host stable
+    /// identifiers.
+    pub instanceid: &'a str,
+}
+
 /// Encode the permission bitmap to the Nextcloud letter-string convention
 /// (spec §7.4). The order matters — desktop clients pattern-match the
 /// string. Directories pick up an additional `K` when they accept children.
@@ -56,22 +72,13 @@ fn oc_id(fileid: i64, instanceid: &str) -> String {
     format!("{:020}{}", fileid, instanceid)
 }
 
-/// Map a `UserPath` to the storage-relative `StoragePath` (strips the
-/// leading `/`). Correct only for the home mount — SP5 ships home mounts
-/// only, so the simplification is safe; share / external storage land in
-/// later sub-projects.
-fn resolve_storage_path(p: &UserPath) -> DavResult<StoragePath> {
-    let trimmed = p.as_str().trim_start_matches('/');
-    StoragePath::new(trimmed).map_err(|e| DavError::BadRequest(format!("invalid path: {e}")))
-}
-
 /// Build the href value for a response entry. Root paths produce a
 /// trailing-slash href so clients reliably detect the collection.
-fn href_for(uid: &UserId, path: &UserPath) -> String {
+fn href_for(prefix: &str, label: &str, path: &UserPath) -> String {
     if path.is_root() {
-        format!("{}/{}/", HREF_PREFIX, uid.as_str())
+        format!("{prefix}/{label}/")
     } else {
-        format!("{}/{}{}", HREF_PREFIX, uid.as_str(), path.as_str())
+        format!("{prefix}/{label}{}", path.as_str())
     }
 }
 
@@ -81,31 +88,65 @@ pub async fn handle(
     user_path: &UserPath,
     headers: &HeaderMap,
 ) -> DavResult<Response> {
+    let view = state.view_for(uid).await?;
+    let ctx = PropfindContext {
+        href_prefix: HREF_PREFIX,
+        root_label: uid.as_str(),
+        instanceid: state.config.instanceid.as_str(),
+    };
+    handle_with_view(&view, &state.filecache, uid, user_path, headers, &ctx).await
+}
+
+/// Surface-neutral PROPFIND core. Accepts a pre-built `View` and a
+/// `PropfindContext` describing the href prefix + display label so the
+/// public-link DAV surface (`/public.php/dav/files/{token}`) can reuse
+/// the exact same body shape with token-rooted hrefs.
+pub async fn handle_with_view(
+    view: &crabcloud_fs::View,
+    filecache: &crabcloud_filecache::FileCache,
+    uid: &UserId,
+    user_path: &UserPath,
+    headers: &HeaderMap,
+    ctx: &PropfindContext<'_>,
+) -> DavResult<Response> {
     let depth = parse_depth(headers, Depth::One)?;
     if matches!(depth, Depth::Infinity) {
         return Err(DavError::PropfindFiniteDepth);
     }
 
-    let view = state.view_for(uid).await?;
     let meta = view.stat(user_path).await?;
-    let storage_id = view
-        .mounts()
-        .first()
-        .ok_or_else(|| DavError::Internal("no mounts for user".into()))?
-        .storage
-        .id()
-        .to_string();
+
+    // Compute the filecache key for the resource: routes through any
+    // `SharedSubrootStorage` wrapper so cache rows are looked up under the
+    // OWNING storage_id + owner-relative path. Falls through to the home
+    // storage id + recipient-relative path on the authed surface (where
+    // the wrapper isn't present).
+    let (self_cache_storage, self_cache_path) = view.cache_key_for(user_path)?;
+    let self_storage_id = self_cache_storage.id().to_string();
 
     // Build the list of (user_path, metadata, fileid) tuples we want to
     // emit one `<d:response>` block for. Depth 0 → just the resource.
-    let mut entries: Vec<(UserPath, crabcloud_storage::FileMetadata, i64)> = Vec::new();
-    let self_row = state
-        .filecache
-        .lookup(&storage_id, &resolve_storage_path(user_path)?)
+    // Each entry also carries its cache (storage_id, path) for the
+    // per-entry favorite lookup downstream.
+    let mut entries: Vec<(
+        UserPath,
+        crabcloud_storage::FileMetadata,
+        i64,
+        String,
+        StoragePath,
+    )> = Vec::new();
+    let self_row = filecache
+        .lookup(&self_storage_id, &self_cache_path)
         .await
         .map_err(DavError::from)?;
     let self_fileid = self_row.map(|r| r.fileid).unwrap_or(0);
-    entries.push((user_path.clone(), meta.clone(), self_fileid));
+    entries.push((
+        user_path.clone(),
+        meta.clone(),
+        self_fileid,
+        self_storage_id.clone(),
+        self_cache_path.clone(),
+    ));
 
     // Depth 1 → enumerate children when the resource is a directory.
     if matches!(depth, Depth::One) && matches!(meta.kind, FileKind::Directory) {
@@ -116,45 +157,52 @@ pub async fn handle(
             } else {
                 user_path.join(&entry.name)?
             };
-            let child_storage_path = resolve_storage_path(&child_user_path)?;
-            let row = state
-                .filecache
-                .lookup(&storage_id, &child_storage_path)
+            let (child_cache_storage, child_cache_path) = view.cache_key_for(&child_user_path)?;
+            let child_storage_id = child_cache_storage.id().to_string();
+            let row = filecache
+                .lookup(&child_storage_id, &child_cache_path)
                 .await
                 .map_err(DavError::from)?;
             let fileid = row.map(|r| r.fileid).unwrap_or(0);
-            entries.push((child_user_path, entry.metadata, fileid));
+            entries.push((
+                child_user_path,
+                entry.metadata,
+                fileid,
+                child_storage_id,
+                child_cache_path,
+            ));
         }
     }
 
     // Batched favorite lookup across the entire entry set. One round-trip,
-    // regardless of the directory's child count.
+    // regardless of the directory's child count. Favorites are stored
+    // per-user against owner-relative cache paths; for the public-link
+    // surface the `uid` is the owner uid (set by the resolver) so this
+    // continues to work without per-surface branching.
     let storage_paths: Vec<String> = entries
         .iter()
-        .map(|(p, _, _)| resolve_storage_path(p).map(|s| s.as_str().to_string()))
-        .collect::<Result<Vec<_>, _>>()?;
-    let favorites = state
-        .filecache
+        .map(|(_, _, _, _, sp)| sp.as_str().to_string())
+        .collect();
+    let favorites = filecache
         .get_property_many(uid, &storage_paths, FAVORITE_PROP)
         .await
         .map_err(DavError::from)?;
     let favorite_map: std::collections::HashMap<String, Option<String>> =
         favorites.into_iter().collect();
 
-    let instanceid = state.config.instanceid.clone();
+    let instanceid = ctx.instanceid.to_string();
+    let href_prefix = ctx.href_prefix.to_string();
+    let root_label = ctx.root_label.to_string();
 
     let body = multistatus(|w| {
-        for (path, m, fileid) in &entries {
-            let href = href_for(uid, path);
-            let sp = resolve_storage_path(path).map_err(|e| {
-                quick_xml::Error::Io(std::sync::Arc::new(std::io::Error::other(format!("{e:?}"))))
-            })?;
+        for (path, m, fileid, _sid, cache_path) in &entries {
+            let href = href_for(&href_prefix, &root_label, path);
             let favorite = favorite_map
-                .get(sp.as_str())
+                .get(cache_path.as_str())
                 .and_then(|v| v.as_deref())
                 .unwrap_or("0");
             let displayname = if path.is_root() {
-                uid.as_str()
+                root_label.as_str()
             } else {
                 path.basename()
             };

@@ -80,6 +80,21 @@ where
         let state = self.state.clone();
         let mut inner = self.inner.clone();
 
+        // Anonymous public-link DAV traffic carries HTTP Basic with the LINK
+        // password, not an app-password — feeding that header to the regular
+        // `try_basic` arm would 401 every request before the public-link
+        // auth layer downstream gets to verify against the link's bcrypt
+        // hash. Bypass the authed arms entirely for that prefix so the
+        // downstream `public_dav_gate` is the sole arbiter. The `/s/` (the
+        // browser viewer) traffic does NOT need this carve-out: those
+        // requests don't carry an Authorization header, so `try_basic`
+        // returns `NoInput` and `try_cookie` either succeeds (a logged-in
+        // user *can* preview their own link in-browser) or quietly falls
+        // through. DAV by contrast always sends Authorization.
+        if req.uri().path().starts_with("/public.php/dav/files/") {
+            return Box::pin(async move { inner.call(req).await });
+        }
+
         // Extract owned candidate inputs from the request synchronously so the
         // async block never borrows `&Request<B>` (which would force
         // `B: Sync` on callers — too restrictive for axum's Body types).

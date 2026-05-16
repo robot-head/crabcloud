@@ -4,4 +4,5 @@
 
 pub mod dav;
 pub mod ocs;
+pub mod public_dav;
 pub mod public_link;
