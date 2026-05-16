@@ -9,10 +9,12 @@
 
 mod envelope;
 mod error;
+mod mailer;
 mod transport;
 
 pub use envelope::{EventType, MailEnvelope};
 pub use error::MailError;
+pub use mailer::Mailer;
 pub use transport::{SmtpSecurity, Transport, TransportConfig, TransportKind};
 
 // Quiet `unused_crate_dependencies` for deps that later modules and Batch
