@@ -47,6 +47,8 @@ pub fn minimal_sqlite_config(db_path: PathBuf) -> FileConfig {
         filecache: FilecacheConfig::default(),
         folder_zip_max_entries: 500,
         folder_zip_max_bytes: 2 * 1024 * 1024 * 1024,
+        preview_root: None,
+        preview_max_pixels: 64 * 1024 * 1024,
         bootstrap_admin: None,
     }
 }

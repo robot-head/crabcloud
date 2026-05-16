@@ -121,6 +121,17 @@ pub struct FileConfig {
     #[serde(default = "default_folder_zip_max_bytes")]
     pub folder_zip_max_bytes: u64,
 
+    /// Filesystem root for the preview cache. Defaults to
+    /// `<datadirectory>/appdata/preview`. Operators can override to point
+    /// at a different mount.
+    #[serde(default)]
+    pub preview_root: Option<std::path::PathBuf>,
+    /// Maximum decoded source dimensions, in total pixels. Sources whose
+    /// decoded `width * height` exceeds this limit are rejected with 413.
+    /// Default: 64 megapixels (~8000x8000).
+    #[serde(default = "default_preview_max_pixels")]
+    pub preview_max_pixels: u32,
+
     /// Optional bootstrap admin (Phase 3 deferred-users stand-in).
     pub bootstrap_admin: Option<BootstrapAdminConfig>,
 }
@@ -203,6 +214,9 @@ fn default_folder_zip_max_entries() -> u64 {
 fn default_folder_zip_max_bytes() -> u64 {
     2 * 1024 * 1024 * 1024
 }
+fn default_preview_max_pixels() -> u32 {
+    64 * 1024 * 1024
+}
 
 /// Errors raised while validating a parsed config.
 #[derive(Debug, thiserror::Error)]
@@ -279,6 +293,8 @@ mod tests {
             filecache: FilecacheConfig::default(),
             folder_zip_max_entries: default_folder_zip_max_entries(),
             folder_zip_max_bytes: default_folder_zip_max_bytes(),
+            preview_root: None,
+            preview_max_pixels: default_preview_max_pixels(),
             bootstrap_admin: None,
         }
     }

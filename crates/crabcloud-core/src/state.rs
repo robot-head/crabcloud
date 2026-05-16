@@ -14,6 +14,7 @@ use crabcloud_fs::{
 };
 use crabcloud_i18n::I18n;
 use crabcloud_ocs::CapabilityProvider;
+use crabcloud_preview::PreviewCache;
 use crabcloud_publiclinks::{Passwords, PublicLinkAuthState, RateLimiter, TokenLookup};
 use crabcloud_storage::ChannelEventSink;
 use dashmap::DashMap;
@@ -68,6 +69,10 @@ pub struct AppState {
     /// (`pl_<token>`) and by the token being included in the MAC input, so
     /// no extra secret material is needed.
     pub publiclinks_auth: Arc<PublicLinkAuthState>,
+    /// Preview cache for thumbnail / first-page-PDF previews. Keyed on
+    /// `(storage_id, fileid, size, source_etag)` with a per-key dedup
+    /// lock so concurrent first-request renders share a single task.
+    pub preview: Arc<PreviewCache>,
     /// In-process map from the client-chosen URL-segment `upload_id` (the
     /// `{upload_id}` path component in `/dav/uploads/{user}/{upload_id}/...`)
     /// to the server-encoded `upload_id` returned by `Uploads::begin`. Holds
@@ -304,6 +309,21 @@ impl AppStateBuilder {
             secret: self.config.secret.expose_secret().as_bytes().to_vec(),
         });
 
+        // Preview cache: rooted at `<datadirectory>/appdata/preview` by
+        // default; operators can override via `preview_root`. The cache
+        // owns its on-disk layout (`<root>/<storage_id>/<fileid>/...`),
+        // so we just ensure the root exists.
+        let preview_root = self
+            .config
+            .preview_root
+            .clone()
+            .unwrap_or_else(|| self.config.datadirectory.join("appdata").join("preview"));
+        tokio::fs::create_dir_all(&preview_root).await.ok();
+        let preview = Arc::new(PreviewCache::new(
+            preview_root,
+            self.config.preview_max_pixels,
+        ));
+
         let state = AppState {
             config: self.config.clone(),
             pool,
@@ -319,6 +339,7 @@ impl AppStateBuilder {
             storage_factory,
             shares,
             publiclinks_auth,
+            preview,
             upload_id_map,
         };
 
