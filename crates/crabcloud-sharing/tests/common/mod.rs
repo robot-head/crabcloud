@@ -71,8 +71,48 @@ impl MailEnqueuer for RecordingEnqueuer {
     }
 }
 
+/// Test fixture that always returns an error from `enqueue`. Used to
+/// verify that the outer share-create succeeds even when mail enqueue
+/// fails (the "best-effort" contract).
+pub struct FailingEnqueuer;
+
+#[async_trait::async_trait]
+impl MailEnqueuer for FailingEnqueuer {
+    async fn enqueue(
+        &self,
+        _envelope: &crabcloud_mail::MailEnvelope,
+    ) -> Result<(), MailEnqueueError> {
+        Err(MailEnqueueError(
+            "simulated transient enqueue failure".to_string(),
+        ))
+    }
+}
+
 impl Fixture {
     pub async fn new(kind: FixtureKind) -> Self {
+        let mail = Arc::new(RecordingEnqueuer::new());
+        let mail_dyn: Arc<dyn MailEnqueuer> = mail.clone();
+        Self::build(kind, mail_dyn, Some(mail)).await
+    }
+
+    /// Build a fixture wired with a `FailingEnqueuer` instead of the
+    /// recording one. Used to assert the "share-create succeeds even
+    /// when mail enqueue fails" contract. The `mail` field on the
+    /// returned `Fixture` is left as an empty `RecordingEnqueuer`
+    /// (unused by callers of this variant).
+    pub async fn new_with_failing_enqueuer(kind: FixtureKind) -> Self {
+        let failing: Arc<dyn MailEnqueuer> = Arc::new(FailingEnqueuer);
+        // Keep the struct shape simple — `mail` is a no-op recorder for
+        // failing-enqueuer fixtures.
+        let placeholder = Arc::new(RecordingEnqueuer::new());
+        Self::build(kind, failing, Some(placeholder)).await
+    }
+
+    async fn build(
+        kind: FixtureKind,
+        enqueuer: Arc<dyn MailEnqueuer>,
+        recorder: Option<Arc<RecordingEnqueuer>>,
+    ) -> Self {
         let (pool, tempdir) = match kind {
             FixtureKind::Sqlite => {
                 let dir = tempfile::tempdir().unwrap();
@@ -111,16 +151,15 @@ impl Fixture {
         ));
         let filecache = Arc::new(FileCache::new((*pool_arc).clone()));
         let prefs = NotificationPrefs::new(pool_arc.clone());
-        let mail = Arc::new(RecordingEnqueuer::new());
-        let mail_dyn: Arc<dyn MailEnqueuer> = mail.clone();
         let shares = Shares::new(
             pool_arc.clone(),
             users.clone(),
             filecache.clone(),
-            mail_dyn,
+            enqueuer,
             prefs,
             "https://test.example".to_string(),
         );
+        let mail = recorder.unwrap_or_else(|| Arc::new(RecordingEnqueuer::new()));
         Self {
             pool: pool_arc,
             users,
