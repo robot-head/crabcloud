@@ -7,7 +7,8 @@
 use crate::context::RequestContext;
 use crate::pages::{
     home::Home, login::Login, login_v2_flow::LoginV2Flow, not_found::NotFound,
-    public_link::PublicLink as PublicLinkPage, settings_security::SettingsSecurity,
+    public_link::PublicLink as PublicLinkPage,
+    settings_notifications::SettingsNotifications, settings_security::SettingsSecurity,
 };
 use dioxus::prelude::*;
 
@@ -33,6 +34,10 @@ pub enum Route {
     /// log out everywhere else.
     #[route("/settings/security")]
     SettingsSecurityRoute {},
+
+    /// Per-user email-notification settings: toggle each event type.
+    #[route("/settings/notifications")]
+    SettingsNotificationsRoute {},
 
     /// Files browser. Catch-all so paths like `/apps/files/photos/vacation`
     /// route here and the page renders the folder identified by `segments`.
@@ -81,6 +86,12 @@ pub fn LoginV2FlowRoute(flow_id: String) -> Element {
 pub fn SettingsSecurityRoute() -> Element {
     let ctx = use_context::<RequestContext>();
     rsx! { SettingsSecurity { ctx: ctx.clone() } }
+}
+
+#[component]
+pub fn SettingsNotificationsRoute() -> Element {
+    let ctx = use_context::<RequestContext>();
+    rsx! { SettingsNotifications { ctx: ctx.clone() } }
 }
 
 #[component]

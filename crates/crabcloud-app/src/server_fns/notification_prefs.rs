@@ -29,7 +29,10 @@ pub struct NotificationPrefsDto {
 }
 
 /// The 3 event-type strings this surface accepts. Centralising the list
-/// keeps the set/validation/UI in lock-step.
+/// keeps the set-validation in one place. Only referenced server-side by
+/// `notification_prefs_set`, so we gate the constant on the `server`
+/// feature to avoid an unused-item warning on the WASM build.
+#[cfg(feature = "server")]
 pub const KNOWN_EVENT_TYPES: &[&str] = &["share_created", "link_emailed", "expiration_warning"];
 
 /// `POST /api/notification_prefs/get` — return the calling user's opt-in
