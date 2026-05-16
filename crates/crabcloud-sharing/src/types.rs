@@ -91,6 +91,10 @@ pub struct CreateShareRequest {
     /// `AppState` wiring) resolves this via the home `StorageFactory` and
     /// passes the resulting string in.
     pub home_storage_id: String,
+    /// Link-only. `None` = no password. User/group shares ignore this field.
+    pub password: Option<String>,
+    /// Link-only. `None` = no expiration. User/group shares ignore this field.
+    pub expire_date: Option<NaiveDate>,
 }
 
 #[derive(Debug, Clone, Default)]

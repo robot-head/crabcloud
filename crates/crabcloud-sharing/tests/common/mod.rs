@@ -280,6 +280,8 @@ pub fn share_request(
         share_with: with.to_string(),
         permissions: perms,
         home_storage_id: home_storage_id.to_string(),
+        password: None,
+        expire_date: None,
     }
 }
 
