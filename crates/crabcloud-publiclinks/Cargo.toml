@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 bcrypt = { workspace = true }
+rand = { workspace = true }
 thiserror = { workspace = true }
 
 [lints]

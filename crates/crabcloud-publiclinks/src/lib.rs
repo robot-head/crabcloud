@@ -7,5 +7,7 @@
 //! (passed in via a small trait), keeping the dependency arrows clean.
 
 mod error;
+mod tokens;
 
 pub use error::PublicLinkError;
+pub use tokens::{Token, Tokens};
