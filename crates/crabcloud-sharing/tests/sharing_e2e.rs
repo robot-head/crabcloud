@@ -11,7 +11,7 @@ use chrono::NaiveDate;
 use common::{
     add_user_to_group, seed_file, seed_group, seed_user, share_request, Fixture, FixtureKind,
 };
-use crabcloud_sharing::{ShareError, ShareType, UpdateShareFields};
+use crabcloud_sharing::{CreateShareRequest, ShareError, ShareType, UpdateShareFields};
 use crabcloud_users::UserId;
 
 // ---------------- create ----------------
@@ -110,16 +110,42 @@ async fn rejects_reshare_attempt(fx: &Fixture) {
     );
 }
 
-async fn rejects_link_share_type(fx: &Fixture) {
+async fn link_share_create_persists_token_and_password(fx: &Fixture) {
     seed_user(fx, "alice").await;
-    let _ = seed_file(fx, "alice", "/X", false).await;
+    let _ = seed_file(fx, "alice", "/Photos", true).await;
     let sid = fx.home_storage_id("alice");
-    let err = fx
+    let req = CreateShareRequest {
+        requester: "alice".into(),
+        path: "/Photos".into(),
+        share_type: ShareType::Link,
+        share_with: String::new(),
+        permissions: 1, // read
+        home_storage_id: sid,
+        password: Some("hunter2".into()),
+        expire_date: None,
+    };
+    let row = fx
         .shares
-        .create(share_request("alice", &sid, "/X", ShareType::Link, "", 3))
+        .create(req)
         .await
-        .unwrap_err();
-    assert!(matches!(err, ShareError::NotImplemented), "got {err:?}");
+        .expect("link share creates");
+    assert_eq!(row.share_type, ShareType::Link);
+    assert!(row.share_with.is_none());
+    assert_eq!(row.token.as_deref().map(str::len), Some(15));
+    // SP8 Batch A landed bcrypt (not argon2) — workspace consistency with
+    // `crabcloud-users`. Stored hash uses `$2a$`/`$2b$`/`$2y$` prefix.
+    assert!(
+        row.password_hash
+            .as_deref()
+            .unwrap()
+            .starts_with("$2"),
+        "expected bcrypt prefix, got {:?}",
+        row.password_hash
+    );
+    // file_target for link rows stores the full owner path (not just the
+    // basename) so resolve_by_token returns a usable mount root.
+    assert_eq!(row.file_target, "/Photos");
+    assert!(row.accepted);
 }
 
 async fn rejects_unknown_recipient(fx: &Fixture) {
@@ -637,7 +663,7 @@ per_dialect!(create_user_share_happy_path);
 per_dialect!(rejects_bit_one_cleared);
 per_dialect!(strips_bit_16);
 per_dialect!(rejects_reshare_attempt);
-per_dialect!(rejects_link_share_type);
+per_dialect!(link_share_create_persists_token_and_password);
 per_dialect!(rejects_unknown_recipient);
 
 per_dialect!(get_returns_the_inserted_share);
