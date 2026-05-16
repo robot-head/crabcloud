@@ -95,10 +95,34 @@ async fn group_display_name_of(state: &AppState, raw_gid: &str) -> String {
 }
 
 async fn share_to_json(row: &ShareRow, state: &AppState) -> Value {
-    let share_with_displayname = match (row.share_type, row.share_with.as_deref()) {
-        (ShareType::Group, Some(gid)) => group_display_name_of(state, gid).await,
-        (_, Some(s)) => display_name_of(state, s).await,
-        (_, None) => String::new(),
+    // For Link rows, `share_with` is `None` and `share_with_displayname` is
+    // Nextcloud's literal `"(Public link)"`. We deliberately do NOT surface
+    // the password hash or plaintext on the wire — clients only learn
+    // whether a password is set via the `share_with` masking convention
+    // (Nextcloud puts the bcrypt hash there in upstream PHP; we follow the
+    // safer "null + boolean" shape so handlers cannot accidentally leak).
+    let (share_with_value, share_with_displayname) = match row.share_type {
+        ShareType::Link => (Value::Null, "(Public link)".to_string()),
+        ShareType::Group => {
+            let dn = match row.share_with.as_deref() {
+                Some(gid) => group_display_name_of(state, gid).await,
+                None => String::new(),
+            };
+            (
+                Value::String(row.share_with.clone().unwrap_or_default()),
+                dn,
+            )
+        }
+        ShareType::User => {
+            let dn = match row.share_with.as_deref() {
+                Some(s) => display_name_of(state, s).await,
+                None => String::new(),
+            };
+            (
+                Value::String(row.share_with.clone().unwrap_or_default()),
+                dn,
+            )
+        }
     };
     let displayname_owner = display_name_of(state, &row.uid_owner).await;
     let storage_id = match UserId::new(&row.uid_owner) {
@@ -109,10 +133,15 @@ async fn share_to_json(row: &ShareRow, state: &AppState) -> Value {
         Err(_) => String::new(),
     };
     let share_type_int: i16 = row.share_type.into();
+    let url = row
+        .token
+        .as_deref()
+        .map(|t| Value::String(format!("/s/{t}")))
+        .unwrap_or(Value::Null);
     serde_json::json!({
         "id": row.id.to_string(),
         "share_type": share_type_int,
-        "share_with": row.share_with.clone().unwrap_or_default(),
+        "share_with": share_with_value,
         "share_with_displayname": share_with_displayname,
         "uid_owner": row.uid_owner,
         "uid_initiator": row.uid_initiator,
@@ -128,6 +157,8 @@ async fn share_to_json(row: &ShareRow, state: &AppState) -> Value {
             .expiration
             .map(|t| t.naive_utc().date().format("%Y-%m-%d").to_string()),
         "token": row.token,
+        "url": url,
+        "password_set": row.password_hash.is_some(),
         "parent": row.parent,
         "storage_id": storage_id,
         "mail_send": 0,
@@ -143,7 +174,10 @@ struct CreateShareForm {
     share_type: i16,
     #[serde(rename = "shareWith")]
     share_with: Option<String>,
-    permissions: u32,
+    permissions: Option<u32>,
+    password: Option<String>,
+    #[serde(rename = "expireDate")]
+    expire_date: Option<String>,
 }
 
 async fn create_handler(
@@ -160,15 +194,35 @@ async fn create_handler(
         Ok(s) => s.id().to_string(),
         Err(_) => return from_share_error(ShareError::PathNotOwned, fmt.0),
     };
+    // Link-only: default permissions to 1 (read) per Nextcloud's OCS contract.
+    // User/group shares fall through to the service's existing
+    // `permissions & 1 == 0 -> BadPermissions` gate when omitted.
+    let permissions = form.permissions.unwrap_or(1);
+    // Parse expireDate up-front so a malformed value short-circuits to 400
+    // without hitting the service. Empty string on create is treated as
+    // "no expiration" (same as omitted) — the create path has no notion of
+    // "clear", since the row is new.
+    let expire_date = match form.expire_date.as_deref() {
+        None | Some("") => None,
+        Some(s) => match NaiveDate::parse_from_str(s, "%Y-%m-%d") {
+            Ok(d) => Some(d),
+            Err(_) => return from_share_error(ShareError::BadPermissions, fmt.0),
+        },
+    };
+    // Empty password string on create is the same as "no password".
+    let password = match form.password.as_deref() {
+        None | Some("") => None,
+        Some(s) => Some(s.to_string()),
+    };
     let req = CreateShareRequest {
         requester: ctx.user_id.as_str().to_string(),
         home_storage_id: home_sid,
         path: form.path,
         share_type: st,
         share_with: form.share_with.unwrap_or_default(),
-        permissions: form.permissions,
-        password: None,
-        expire_date: None,
+        permissions,
+        password,
+        expire_date,
     };
     match state.shares.create(req).await {
         Ok(row) => {
@@ -278,17 +332,29 @@ async fn update_handler(
     Path(id): Path<i64>,
     Form(form): Form<UpdateShareForm>,
 ) -> Response {
-    let expire = match form.expire_date {
-        Some(s) => match NaiveDate::parse_from_str(&s, "%Y-%m-%d") {
+    // expireDate tristate:
+    //   field absent           -> None         (don't touch)
+    //   present, empty string  -> Some(None)   (clear expiration)
+    //   present, valid date    -> Some(Some(d))
+    //   present, malformed     -> 400 BadPermissions
+    let expire = match form.expire_date.as_deref() {
+        None => None,
+        Some("") => Some(None),
+        Some(s) => match NaiveDate::parse_from_str(s, "%Y-%m-%d") {
             Ok(d) => Some(Some(d)),
             Err(_) => return from_share_error(ShareError::BadPermissions, fmt.0),
         },
+    };
+    // password tristate — same shape as expireDate. Empty string clears.
+    let password = match form.password.as_deref() {
         None => None,
+        Some("") => Some(None),
+        Some(s) => Some(Some(s.to_string())),
     };
     let fields = UpdateShareFields {
         permissions: form.permissions,
         expire_date: expire,
-        password: form.password.map(Some),
+        password,
         note: form.note,
     };
     match state.shares.update(id, &ctx.user_id, fields).await {

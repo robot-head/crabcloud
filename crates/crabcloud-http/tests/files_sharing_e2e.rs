@@ -746,3 +746,285 @@ async fn dav_put_through_share_mount_honors_recipient_permissions() {
         "expected 403 on PUT to read-only share"
     );
 }
+
+// --- Batch E: link-share create/update wiring -----------------------------
+
+#[tokio::test]
+async fn ocs_create_link_returns_token_and_url() {
+    let dir = tempdir().unwrap();
+    let data = tempdir().unwrap();
+    let state = make_state(dir.path().join("link_url.db"), data.path().to_path_buf()).await;
+    seed_user(&state, "alice").await;
+    seed_folder(&state, "alice", "Photos").await;
+    let alice_token = issue_bearer(&state, "alice").await;
+    let app = crabcloud_http::build_router(state, axum::Router::new());
+
+    let resp = app
+        .oneshot(ocs_post(
+            &format!("{BASE}/shares?format=json"),
+            &alice_token,
+            "path=/Photos&shareType=3&permissions=1",
+        ))
+        .await
+        .unwrap();
+    let (status, v) = decode(resp).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(v["ocs"]["meta"]["statuscode"], 200);
+    assert_eq!(v["ocs"]["data"]["share_type"], 3);
+    let tok = v["ocs"]["data"]["token"].as_str().expect("token string");
+    assert_eq!(tok.len(), 15);
+    let url = v["ocs"]["data"]["url"].as_str().expect("url string");
+    assert_eq!(url, format!("/s/{tok}"));
+    // Link rows mask the recipient: `share_with` is null on the wire.
+    assert!(v["ocs"]["data"]["share_with"].is_null());
+    // password_set defaults to false when no password supplied.
+    assert_eq!(v["ocs"]["data"]["password_set"], false);
+}
+
+#[tokio::test]
+async fn ocs_create_link_with_password_persists_hash() {
+    let dir = tempdir().unwrap();
+    let data = tempdir().unwrap();
+    let state = make_state(dir.path().join("link_pw.db"), data.path().to_path_buf()).await;
+    seed_user(&state, "alice").await;
+    seed_folder(&state, "alice", "Photos").await;
+    let alice_token = issue_bearer(&state, "alice").await;
+    let app = crabcloud_http::build_router(state.clone(), axum::Router::new());
+
+    let resp = app
+        .clone()
+        .oneshot(ocs_post(
+            &format!("{BASE}/shares?format=json"),
+            &alice_token,
+            "path=/Photos&shareType=3&permissions=1&password=hunter2",
+        ))
+        .await
+        .unwrap();
+    let (status, v) = decode(resp).await;
+    assert_eq!(status, StatusCode::OK);
+    let id: i64 = v["ocs"]["data"]["id"].as_str().unwrap().parse().unwrap();
+
+    // Wire shape: password_set true, no plaintext or hash leaked.
+    assert_eq!(v["ocs"]["data"]["password_set"], true);
+    let body_str = serde_json::to_string(&v).unwrap();
+    assert!(
+        !body_str.contains("hunter2"),
+        "plaintext password leaked into OCS response: {body_str}"
+    );
+    assert!(
+        !body_str.contains("$2"),
+        "bcrypt hash leaked into OCS response: {body_str}"
+    );
+
+    // GET-by-id round trip preserves the masking.
+    let resp = app
+        .oneshot(ocs_get(
+            &format!("{BASE}/shares/{id}?format=json"),
+            &alice_token,
+        ))
+        .await
+        .unwrap();
+    let (_, v) = decode(resp).await;
+    assert!(v["ocs"]["data"]["share_with"].is_null());
+    assert_eq!(v["ocs"]["data"]["password_set"], true);
+
+    // The underlying row carries a real bcrypt hash.
+    let row = state.shares.get(id).await.unwrap().expect("row present");
+    let hash = row.password_hash.expect("password hash persisted");
+    assert!(hash.starts_with("$2"), "expected bcrypt prefix, got {hash}");
+}
+
+#[tokio::test]
+async fn ocs_create_link_with_expire_date_persists_date() {
+    let dir = tempdir().unwrap();
+    let data = tempdir().unwrap();
+    let state = make_state(dir.path().join("link_exp.db"), data.path().to_path_buf()).await;
+    seed_user(&state, "alice").await;
+    seed_folder(&state, "alice", "Photos").await;
+    let alice_token = issue_bearer(&state, "alice").await;
+    let app = crabcloud_http::build_router(state, axum::Router::new());
+
+    let resp = app
+        .oneshot(ocs_post(
+            &format!("{BASE}/shares?format=json"),
+            &alice_token,
+            "path=/Photos&shareType=3&permissions=1&expireDate=2030-01-01",
+        ))
+        .await
+        .unwrap();
+    let (status, v) = decode(resp).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(v["ocs"]["data"]["expiration"], "2030-01-01");
+}
+
+#[tokio::test]
+async fn ocs_create_link_invalid_expire_date_returns_400() {
+    let dir = tempdir().unwrap();
+    let data = tempdir().unwrap();
+    let state = make_state(dir.path().join("link_bad.db"), data.path().to_path_buf()).await;
+    seed_user(&state, "alice").await;
+    seed_folder(&state, "alice", "Photos").await;
+    let alice_token = issue_bearer(&state, "alice").await;
+    let app = crabcloud_http::build_router(state, axum::Router::new());
+
+    let resp = app
+        .oneshot(ocs_post(
+            &format!("{BASE}/shares?format=json"),
+            &alice_token,
+            "path=/Photos&shareType=3&permissions=1&expireDate=not-a-date",
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn ocs_update_link_password_sets_hash() {
+    let dir = tempdir().unwrap();
+    let data = tempdir().unwrap();
+    let state = make_state(dir.path().join("upd_pw.db"), data.path().to_path_buf()).await;
+    seed_user(&state, "alice").await;
+    seed_folder(&state, "alice", "Photos").await;
+    let alice_token = issue_bearer(&state, "alice").await;
+    let app = crabcloud_http::build_router(state.clone(), axum::Router::new());
+
+    // Create with an initial password so we can verify a NEW hash on update.
+    let resp = app
+        .clone()
+        .oneshot(ocs_post(
+            &format!("{BASE}/shares?format=json"),
+            &alice_token,
+            "path=/Photos&shareType=3&permissions=1&password=initial",
+        ))
+        .await
+        .unwrap();
+    let (status, v) = decode(resp).await;
+    assert_eq!(status, StatusCode::OK);
+    let id: i64 = v["ocs"]["data"]["id"].as_str().unwrap().parse().unwrap();
+    let initial_hash = state
+        .shares
+        .get(id)
+        .await
+        .unwrap()
+        .unwrap()
+        .password_hash
+        .expect("initial hash");
+
+    let resp = app
+        .oneshot(ocs_put(
+            &format!("{BASE}/shares/{id}?format=json"),
+            &alice_token,
+            "password=newpw",
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let updated_hash = state
+        .shares
+        .get(id)
+        .await
+        .unwrap()
+        .unwrap()
+        .password_hash
+        .expect("new hash");
+    assert!(updated_hash.starts_with("$2"));
+    assert_ne!(initial_hash, updated_hash);
+}
+
+#[tokio::test]
+async fn ocs_update_link_password_empty_clears_hash() {
+    let dir = tempdir().unwrap();
+    let data = tempdir().unwrap();
+    let state = make_state(
+        dir.path().join("upd_pw_clear.db"),
+        data.path().to_path_buf(),
+    )
+    .await;
+    seed_user(&state, "alice").await;
+    seed_folder(&state, "alice", "Photos").await;
+    let alice_token = issue_bearer(&state, "alice").await;
+    let app = crabcloud_http::build_router(state.clone(), axum::Router::new());
+
+    let resp = app
+        .clone()
+        .oneshot(ocs_post(
+            &format!("{BASE}/shares?format=json"),
+            &alice_token,
+            "path=/Photos&shareType=3&permissions=1&password=todrop",
+        ))
+        .await
+        .unwrap();
+    let (status, v) = decode(resp).await;
+    assert_eq!(status, StatusCode::OK);
+    let id: i64 = v["ocs"]["data"]["id"].as_str().unwrap().parse().unwrap();
+    assert!(state
+        .shares
+        .get(id)
+        .await
+        .unwrap()
+        .unwrap()
+        .password_hash
+        .is_some());
+
+    let resp = app
+        .oneshot(ocs_put(
+            &format!("{BASE}/shares/{id}?format=json"),
+            &alice_token,
+            "password=",
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let row = state.shares.get(id).await.unwrap().unwrap();
+    assert!(
+        row.password_hash.is_none(),
+        "expected hash to be cleared, got {:?}",
+        row.password_hash
+    );
+}
+
+#[tokio::test]
+async fn ocs_update_link_expire_date_sets() {
+    let dir = tempdir().unwrap();
+    let data = tempdir().unwrap();
+    let state = make_state(dir.path().join("upd_exp.db"), data.path().to_path_buf()).await;
+    seed_user(&state, "alice").await;
+    seed_folder(&state, "alice", "Photos").await;
+    let alice_token = issue_bearer(&state, "alice").await;
+    let app = crabcloud_http::build_router(state, axum::Router::new());
+
+    let resp = app
+        .clone()
+        .oneshot(ocs_post(
+            &format!("{BASE}/shares?format=json"),
+            &alice_token,
+            "path=/Photos&shareType=3&permissions=1",
+        ))
+        .await
+        .unwrap();
+    let (_, v) = decode(resp).await;
+    let id: i64 = v["ocs"]["data"]["id"].as_str().unwrap().parse().unwrap();
+
+    let resp = app
+        .clone()
+        .oneshot(ocs_put(
+            &format!("{BASE}/shares/{id}?format=json"),
+            &alice_token,
+            "expireDate=2030-06-15",
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let resp = app
+        .oneshot(ocs_get(
+            &format!("{BASE}/shares/{id}?format=json"),
+            &alice_token,
+        ))
+        .await
+        .unwrap();
+    let (_, v) = decode(resp).await;
+    assert_eq!(v["ocs"]["data"]["expiration"], "2030-06-15");
+}
