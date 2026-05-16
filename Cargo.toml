@@ -84,7 +84,7 @@ wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 web-sys = "0.3"
 xattr = "1"
-zip = { version = "5", default-features = false, features = ["deflate", "deflate-flate2"] }
+zip = { version = "8", default-features = false, features = ["deflate", "deflate-flate2"] }
 
 polib = "0.3"
 accept-language = "3.1"
