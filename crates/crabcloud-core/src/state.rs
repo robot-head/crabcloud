@@ -297,10 +297,26 @@ impl AppStateBuilder {
         // so accepted incoming shares surface as extra mounts.
         let storage_factory: Arc<dyn StorageFactory> =
             Arc::new(LocalStorageFactory::new(self.config.datadirectory.clone()));
+
+        // Mail wiring needs to be built BEFORE `Shares` because the share
+        // service owns an `Arc<dyn MailEnqueuer>` (impl'd by `MailQueue`).
+        // `Shares::new` also takes `NotificationPrefs` and the instance URL
+        // for templated link generation.
+        let mail_queue = MailQueue::new(Arc::new(pool.clone()));
+        let notification_prefs = crabcloud_users::NotificationPrefs::new(Arc::new(pool.clone()));
+        let instance_url = self
+            .config
+            .overwrite_cli_url
+            .clone()
+            .unwrap_or_default();
+
         let shares = Arc::new(crabcloud_sharing::Shares::new(
             Arc::new(pool.clone()),
             Arc::new(users.clone()),
             filecache.clone(),
+            Arc::new(mail_queue.clone()),
+            notification_prefs.clone(),
+            instance_url,
         ));
         let mount_resolver: Arc<dyn MountResolver> = Arc::new(ShareMountResolver::new(
             HomeMountResolver::new(storage_factory.clone()),
@@ -365,8 +381,8 @@ impl AppStateBuilder {
         let mailer = Arc::new(
             crabcloud_mail::Mailer::from_config(&mail_transport_cfg).map_err(Error::Mail)?,
         );
-        let mail_queue = MailQueue::new(Arc::new(pool.clone()));
-        let notification_prefs = crabcloud_users::NotificationPrefs::new(Arc::new(pool.clone()));
+        // `mail_queue` + `notification_prefs` were built above (Shares needs
+        // them at construction time); reuse those clones here.
         let (mail_worker, mail_worker_shutdown) =
             MailWorker::new(mail_queue.clone(), mailer.clone());
         if !matches!(

@@ -11,12 +11,14 @@
 #![cfg_attr(test, allow(unused_crate_dependencies))]
 
 mod error;
+mod mail;
 mod permissions;
 mod service;
 mod sql;
 mod types;
 
 pub use error::ShareError;
+pub use mail::{MailEnqueueError, MailEnqueuer, NullEnqueuer};
 pub use permissions::SharePermissions;
 pub use service::Shares;
 pub use types::{CreateShareRequest, ItemType, ShareRow, ShareType, UpdateShareFields};
@@ -26,7 +28,5 @@ pub use types::{CreateShareRequest, ItemType, ShareRow, ShareType, UpdateShareFi
 // Batch C). Keeps the workspace-wide `unused_crate_dependencies` lint quiet
 // without losing the manifest entries.
 use anyhow as _;
-use async_trait as _;
 use crabcloud_storage as _;
 use tokio as _;
-use tracing as _;

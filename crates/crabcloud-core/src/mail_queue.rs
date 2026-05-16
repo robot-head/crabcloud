@@ -7,9 +7,11 @@
 //! explicit `match self.pool.as_ref()` arms with per-dialect query
 //! strings (sqlite + mysql use `?` placeholders; postgres uses `$N`).
 
+use async_trait::async_trait;
 use chrono::Utc;
 use crabcloud_db::DbPool;
 use crabcloud_mail::{EventType, MailEnvelope};
+use crabcloud_sharing::{MailEnqueueError, MailEnqueuer};
 use sqlx::Row as _;
 use std::sync::Arc;
 use std::time::Duration;
@@ -424,6 +426,19 @@ impl MailQueue {
             .rows_affected(),
         };
         Ok(n)
+    }
+}
+
+/// Adapter so `Arc<MailQueue>` slots straight into `Shares::new`'s
+/// `Arc<dyn MailEnqueuer>` parameter without `crabcloud-sharing`
+/// taking a dependency on this crate (which would be cyclic).
+#[async_trait]
+impl MailEnqueuer for MailQueue {
+    async fn enqueue(&self, envelope: &MailEnvelope) -> Result<(), MailEnqueueError> {
+        MailQueue::enqueue(self, envelope)
+            .await
+            .map(|_| ())
+            .map_err(|e| MailEnqueueError(e.to_string()))
     }
 }
 

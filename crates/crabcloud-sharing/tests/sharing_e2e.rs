@@ -9,7 +9,8 @@ mod common;
 
 use chrono::NaiveDate;
 use common::{
-    add_user_to_group, seed_file, seed_group, seed_user, share_request, Fixture, FixtureKind,
+    add_user_to_group, seed_file, seed_group, seed_user, seed_user_with_email, share_request,
+    Fixture, FixtureKind,
 };
 use crabcloud_sharing::{CreateShareRequest, ShareError, ShareType, UpdateShareFields};
 use crabcloud_users::UserId;
@@ -755,6 +756,101 @@ async fn resolve_by_token_returns_row(fx: &Fixture) {
         .is_none());
 }
 
+// ---------------- notification hooks ----------------
+
+async fn share_created_enqueues_mail_for_user_with_email(fx: &Fixture) {
+    seed_user(fx, "alice").await;
+    seed_user_with_email(fx, "bob", "bob@example.com").await;
+    let _ = seed_file(fx, "alice", "/Vacation", true).await;
+
+    let sid = fx.home_storage_id("alice");
+    fx.shares
+        .create(share_request(
+            "alice",
+            &sid,
+            "/Vacation",
+            ShareType::User,
+            "bob",
+            3,
+        ))
+        .await
+        .unwrap();
+
+    let recorded = fx.mail.snapshot();
+    assert_eq!(recorded.len(), 1, "expected one mail enqueued");
+    assert_eq!(recorded[0].recipient, "bob@example.com");
+    assert!(
+        recorded[0].subject.contains("share"),
+        "subject: {}",
+        recorded[0].subject
+    );
+}
+
+async fn share_created_skips_recipient_without_email(fx: &Fixture) {
+    seed_user(fx, "alice").await;
+    seed_user(fx, "bob").await; // no email
+    let _ = seed_file(fx, "alice", "/Vacation", true).await;
+
+    let sid = fx.home_storage_id("alice");
+    fx.shares
+        .create(share_request(
+            "alice",
+            &sid,
+            "/Vacation",
+            ShareType::User,
+            "bob",
+            3,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(fx.mail.len(), 0);
+}
+
+async fn share_created_respects_opt_out(fx: &Fixture) {
+    seed_user(fx, "alice").await;
+    seed_user_with_email(fx, "bob", "bob@example.com").await;
+    let _ = seed_file(fx, "alice", "/Vacation", true).await;
+    // Bob opts out of share_created.
+    let prefs = crabcloud_users::NotificationPrefs::new(fx.pool.clone());
+    prefs.set("bob", "share_created", false).await.unwrap();
+
+    let sid = fx.home_storage_id("alice");
+    fx.shares
+        .create(share_request(
+            "alice",
+            &sid,
+            "/Vacation",
+            ShareType::User,
+            "bob",
+            3,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(fx.mail.len(), 0, "opt-out should suppress mail");
+}
+
+async fn share_created_skips_for_group_shares(fx: &Fixture) {
+    seed_user(fx, "alice").await;
+    seed_group(fx, "team").await;
+    seed_user_with_email(fx, "bob", "bob@example.com").await;
+    add_user_to_group(fx, "bob", "team").await;
+    let _ = seed_file(fx, "alice", "/Vacation", true).await;
+    let sid = fx.home_storage_id("alice");
+    fx.shares
+        .create(share_request(
+            "alice",
+            &sid,
+            "/Vacation",
+            ShareType::Group,
+            "team",
+            3,
+        ))
+        .await
+        .unwrap();
+    // Group fan-out is deferred — group shares should NOT enqueue mail.
+    assert_eq!(fx.mail.len(), 0);
+}
+
 // ---------------- per-dialect test wrappers ----------------
 
 macro_rules! per_dialect {
@@ -809,4 +905,9 @@ per_dialect!(delete_recipient_flips_accepted);
 per_dialect!(delete_third_party_forbidden);
 
 per_dialect!(share_counts_for_returns_owner_counts);
+
+per_dialect!(share_created_enqueues_mail_for_user_with_email);
+per_dialect!(share_created_skips_recipient_without_email);
+per_dialect!(share_created_respects_opt_out);
+per_dialect!(share_created_skips_for_group_shares);
 per_dialect!(share_counts_for_empty_input_is_empty);

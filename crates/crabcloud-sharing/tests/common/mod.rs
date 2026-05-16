@@ -10,13 +10,13 @@ use crabcloud_config::test_support::minimal_sqlite_config;
 use crabcloud_config::{DbType, FileConfig};
 use crabcloud_db::{core_set, DbError, DbPool, MigrationRunner};
 use crabcloud_filecache::{FileCache, DIRECTORY_MIMETYPE};
-use crabcloud_sharing::{CreateShareRequest, ShareType, Shares};
+use crabcloud_sharing::{CreateShareRequest, MailEnqueueError, MailEnqueuer, ShareType, Shares};
 use crabcloud_storage::{
     ETag, FileKind, FileMetadata, Mimetype, Permissions, StorageEvent, StoragePath,
 };
 use crabcloud_users::{
-    BcryptVerifier, Group, GroupId, SqlGroupStore, SqlPreferenceStore, SqlUserStore, User, UserId,
-    UsersService,
+    BcryptVerifier, Group, GroupId, NotificationPrefs, SqlGroupStore, SqlPreferenceStore,
+    SqlUserStore, User, UserId, UsersService,
 };
 use secrecy::SecretString;
 use std::path::PathBuf;
@@ -36,8 +36,39 @@ pub struct Fixture {
     pub users: Arc<UsersService>,
     pub filecache: Arc<FileCache>,
     pub shares: Shares,
+    pub mail: Arc<RecordingEnqueuer>,
     // Hold the tempdir alive for sqlite-backed fixtures so the file lasts.
     _tempdir: Option<TempDir>,
+}
+
+/// Test enqueuer that records every envelope handed to it. Tests assert
+/// on subject / recipient strings without standing up a real `MailQueue`.
+#[derive(Default)]
+pub struct RecordingEnqueuer {
+    inner: std::sync::Mutex<Vec<crabcloud_mail::MailEnvelope>>,
+}
+
+impl RecordingEnqueuer {
+    pub fn new() -> Self {
+        Self::default()
+    }
+    pub fn snapshot(&self) -> Vec<crabcloud_mail::MailEnvelope> {
+        self.inner.lock().unwrap().clone()
+    }
+    pub fn len(&self) -> usize {
+        self.inner.lock().unwrap().len()
+    }
+}
+
+#[async_trait::async_trait]
+impl MailEnqueuer for RecordingEnqueuer {
+    async fn enqueue(
+        &self,
+        envelope: &crabcloud_mail::MailEnvelope,
+    ) -> Result<(), MailEnqueueError> {
+        self.inner.lock().unwrap().push(envelope.clone());
+        Ok(())
+    }
 }
 
 impl Fixture {
@@ -79,12 +110,23 @@ impl Fixture {
             Arc::new(BcryptVerifier::new()),
         ));
         let filecache = Arc::new(FileCache::new((*pool_arc).clone()));
-        let shares = Shares::new(pool_arc.clone(), users.clone(), filecache.clone());
+        let prefs = NotificationPrefs::new(pool_arc.clone());
+        let mail = Arc::new(RecordingEnqueuer::new());
+        let mail_dyn: Arc<dyn MailEnqueuer> = mail.clone();
+        let shares = Shares::new(
+            pool_arc.clone(),
+            users.clone(),
+            filecache.clone(),
+            mail_dyn,
+            prefs,
+            "https://test.example".to_string(),
+        );
         Self {
             pool: pool_arc,
             users,
             filecache,
             shares,
+            mail,
             _tempdir: tempdir,
         }
     }
@@ -142,6 +184,25 @@ pub async fn seed_user(fx: &Fixture, uid: &str) {
         uid: UserId::new(uid).unwrap(),
         display_name: uid.to_string(),
         email: None,
+        enabled: true,
+        last_seen: 0,
+    };
+    fx.users.user_store().create(&user, None).await.unwrap();
+}
+
+/// Seed a user with a populated email so the notification hooks can
+/// resolve a recipient address. `display_name` is set to the
+/// capitalized uid.
+pub async fn seed_user_with_email(fx: &Fixture, uid: &str, email: &str) {
+    let mut cs = uid.chars();
+    let display = match cs.next() {
+        Some(c) => c.to_uppercase().collect::<String>() + cs.as_str(),
+        None => uid.to_string(),
+    };
+    let user = User {
+        uid: UserId::new(uid).unwrap(),
+        display_name: display,
+        email: Some(crabcloud_users::Email::parse(email).unwrap()),
         enabled: true,
         last_seen: 0,
     };

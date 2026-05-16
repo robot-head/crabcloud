@@ -313,6 +313,7 @@ mod tests {
             expiration: None,
             token: None,
             password_hash: None,
+            last_warned: None,
         }
     }
 

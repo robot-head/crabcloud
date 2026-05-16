@@ -4,14 +4,16 @@
 use chrono::{DateTime, NaiveDateTime, Utc};
 use crabcloud_db::DbPool;
 use crabcloud_filecache::FileCache;
+use crabcloud_mail::{render_template, EventType, TemplateContext};
 use crabcloud_storage::StoragePath;
-use crabcloud_users::{GroupId, UserId, UsersService};
+use crabcloud_users::{GroupId, NotificationPrefs, UserId, UsersService};
 use sqlx::Row as _;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::error::ShareError;
+use crate::mail::MailEnqueuer;
 use crate::permissions::SharePermissions;
 use crate::sql::{self, Dialect};
 use crate::types::{CreateShareRequest, ItemType, ShareRow, ShareType, UpdateShareFields};
@@ -21,14 +23,36 @@ pub struct Shares {
     pub(crate) pool: Arc<DbPool>,
     pub(crate) users: Arc<UsersService>,
     pub(crate) filecache: Arc<FileCache>,
+    pub(crate) mail: Arc<dyn MailEnqueuer>,
+    pub(crate) prefs: NotificationPrefs,
+    /// Base URL the templates use to build absolute links
+    /// (e.g. `https://crabcloud.example`). Falls back to `/s/<token>`
+    /// relative when not set.
+    pub(crate) instance_url: String,
 }
 
 impl Shares {
-    pub fn new(pool: Arc<DbPool>, users: Arc<UsersService>, filecache: Arc<FileCache>) -> Self {
+    /// Construct a `Shares` service.
+    ///
+    /// `instance_url` is the base URL inserted into mail templates'
+    /// `{{ link_url }}` (so callers see `https://host/s/<token>`).
+    /// Empty string is tolerated — the templates degrade to relative
+    /// `/s/<token>` URLs.
+    pub fn new(
+        pool: Arc<DbPool>,
+        users: Arc<UsersService>,
+        filecache: Arc<FileCache>,
+        mail: Arc<dyn MailEnqueuer>,
+        prefs: NotificationPrefs,
+        instance_url: String,
+    ) -> Self {
         Self {
             pool,
             users,
             filecache,
+            mail,
+            prefs,
+            instance_url,
         }
     }
 
@@ -172,6 +196,19 @@ impl Shares {
             }
         };
 
+        // Post-insert notification hook. Only User shares mail the
+        // recipient; group shares would require fan-out to N members
+        // and are deferred. Failures are logged + dropped — the share
+        // itself succeeded.
+        if matches!(req.share_type, ShareType::User) {
+            self.try_enqueue_share_created_mail(
+                req.share_with.as_str(),
+                req.requester.as_str(),
+                &storage_path,
+            )
+            .await;
+        }
+
         Ok(ShareRow {
             id,
             share_type: req.share_type,
@@ -191,6 +228,69 @@ impl Shares {
             password_hash: None,
             last_warned: None,
         })
+    }
+
+    /// Best-effort: look up the recipient's email + display name,
+    /// the owner's display name, gate on `share_created` opt-out,
+    /// render the `share_created` template, and enqueue.
+    ///
+    /// Never returns an error: every failure path logs + drops so the
+    /// caller's `create()` success is preserved.
+    async fn try_enqueue_share_created_mail(
+        &self,
+        recipient_uid: &str,
+        owner_uid: &str,
+        storage_path: &StoragePath,
+    ) {
+        let recipient = match UserId::new(recipient_uid) {
+            Ok(uid) => uid,
+            Err(_) => return,
+        };
+        // 1. Resolve recipient user (need their email + display name).
+        let user = match self.users.user_store().lookup(&recipient).await {
+            Ok(Some(u)) => u,
+            Ok(None) => return,
+            Err(e) => {
+                tracing::warn!(error = %e, "share_created: recipient lookup failed");
+                return;
+            }
+        };
+        let email = match &user.email {
+            Some(e) => e.as_str().to_string(),
+            None => return, // no email, nothing to send
+        };
+        // 2. Gate on opt-out (default true).
+        match self.prefs.get(recipient.as_str(), "share_created").await {
+            Ok(true) => {}
+            Ok(false) => return,
+            Err(e) => {
+                tracing::warn!(error = %e, "share_created: prefs.get failed");
+                return;
+            }
+        }
+        // 3. Owner display name (fall back to uid).
+        let owner_display = display_name_of(&self.users, owner_uid).await;
+        // 4. Render + enqueue.
+        let ctx = TemplateContext {
+            lang: "en".to_string(),
+            instance_url: self.instance_url.clone(),
+            recipient_display_name: user.display_name.clone(),
+            recipient_email: email,
+            event_specific: serde_json::json!({
+                "owner_display_name": owner_display,
+                "path_basename": storage_path.basename(),
+            }),
+        };
+        let env = match render_template(EventType::ShareCreated, ctx) {
+            Ok(e) => e,
+            Err(e) => {
+                tracing::warn!(error = %e, "share_created: render_template failed");
+                return;
+            }
+        };
+        if let Err(e) = self.mail.enqueue(&env).await {
+            tracing::warn!(error = %e, "share_created: mail.enqueue failed");
+        }
     }
 
     pub async fn get(&self, id: i64) -> Result<Option<ShareRow>, ShareError> {
@@ -833,6 +933,20 @@ async fn run_update_expiration(
 fn parse_wire_path(p: &str) -> Result<StoragePath, ShareError> {
     let trimmed = p.trim_start_matches('/');
     StoragePath::new(trimmed).map_err(|_| ShareError::PathNotOwned)
+}
+
+/// Resolve a uid's display name, falling back to the raw uid if the
+/// user row is missing or the display name is empty. Used by the
+/// notification hooks; mirrors the OCS-handler helper.
+async fn display_name_of(users: &UsersService, raw_uid: &str) -> String {
+    let uid = match UserId::new(raw_uid) {
+        Ok(u) => u,
+        Err(_) => return raw_uid.to_string(),
+    };
+    match users.user_store().lookup(&uid).await {
+        Ok(Some(u)) if !u.display_name.is_empty() => u.display_name,
+        _ => raw_uid.to_string(),
+    }
 }
 
 fn unix_now() -> i64 {
