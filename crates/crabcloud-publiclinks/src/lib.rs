@@ -7,7 +7,9 @@
 //! (passed in via a small trait), keeping the dependency arrows clean.
 
 mod error;
+mod passwords;
 mod tokens;
 
 pub use error::PublicLinkError;
+pub use passwords::{HashedPassword, Passwords};
 pub use tokens::{Token, Tokens};
