@@ -1,6 +1,7 @@
 //! Public types for the streaming-zip helper.
 
 use crabcloud_storage::StoragePath;
+use serde::Serialize;
 use std::time::SystemTime;
 
 /// Operator-tunable size caps. Pre-flight walk rejects anything over.
@@ -52,4 +53,40 @@ pub struct ZipPlan {
 pub struct ZipSummary {
     pub entries: u64,
     pub bytes: u64,
+}
+
+/// JSON body for HTTP 413 (folder too large) responses on either the authed
+/// or public-link zip surface. Shared so both handlers serialise the same
+/// shape; see `crates/crabcloud-http/src/routes/files_zip.rs` and
+/// `crates/crabcloud-http/src/routes/public_link/mod.rs`.
+#[derive(Debug, Clone, Serialize)]
+pub struct OverCapBody {
+    pub error: &'static str,
+    pub entries: u64,
+    pub bytes: u64,
+    pub limits: OverCapLimits,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct OverCapLimits {
+    pub max_entries: u64,
+    pub max_bytes: u64,
+}
+
+impl OverCapBody {
+    /// Convenience constructor. `count`/`bytes` come from a
+    /// [`crate::WalkError::TooLarge`] arm; `caps` echoes the configured
+    /// limits so callers can render both the overflow and the policy in
+    /// the same payload.
+    pub fn for_too_large(count: u64, bytes: u64, caps: ZipCaps) -> Self {
+        Self {
+            error: "folder too large",
+            entries: count,
+            bytes,
+            limits: OverCapLimits {
+                max_entries: caps.max_entries,
+                max_bytes: caps.max_bytes,
+            },
+        }
+    }
 }
