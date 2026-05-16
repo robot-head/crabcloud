@@ -90,10 +90,7 @@ impl View {
     /// owner-side cache row instead of a non-existent recipient-rooted
     /// row. Lets DAV adapters that talk to the filecache directly (e.g.
     /// PROPFIND for `oc:id` / favorites) stay correct under share mounts.
-    pub fn cache_key_for(
-        &self,
-        user_path: &UserPath,
-    ) -> FsResult<(Arc<dyn Storage>, StoragePath)> {
+    pub fn cache_key_for(&self, user_path: &UserPath) -> FsResult<(Arc<dyn Storage>, StoragePath)> {
         let (mount, storage_path) = self.resolve(user_path)?;
         cache_key_for(&mount.storage, &storage_path)
     }
