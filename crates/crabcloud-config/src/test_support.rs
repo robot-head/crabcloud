@@ -5,7 +5,9 @@
 //! integration and unit tests. Callers mutate specific fields to exercise
 //! particular code paths (e.g., setting `bootstrap_admin`).
 
-use crate::types::{BootstrapAdminConfig, CacheConfig, DbType, FileConfig, FilecacheConfig};
+use crate::types::{
+    BootstrapAdminConfig, CacheConfig, DbType, FileConfig, FilecacheConfig, MailConfig,
+};
 use secrecy::SecretString;
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -49,6 +51,7 @@ pub fn minimal_sqlite_config(db_path: PathBuf) -> FileConfig {
         folder_zip_max_bytes: 2 * 1024 * 1024 * 1024,
         preview_root: None,
         preview_max_pixels: 64 * 1024 * 1024,
+        mail: MailConfig::default(),
         bootstrap_admin: None,
     }
 }

@@ -52,6 +52,10 @@ pub enum Error {
     /// Wrapped users-crate error.
     #[error(transparent)]
     Users(#[from] crabcloud_users::UsersError),
+    /// Mail subsystem configuration or transport failure raised during
+    /// `AppStateBuilder::build`.
+    #[error("mail config invalid: {0}")]
+    Mail(crabcloud_mail::MailError),
     /// Catch-all for unexpected internal failures. The wrapped `anyhow::Error`
     /// is logged but not exposed to clients.
     #[error("internal error: {0:#}")]
@@ -74,6 +78,7 @@ impl Error {
             Error::Db(_) => 500,
             Error::Cache(_) => 500,
             Error::Users(u) => users_status(u),
+            Error::Mail(_) => 500,
             Error::Internal(_) => 500,
         }
     }
@@ -93,6 +98,7 @@ impl Error {
             | Error::ConfigValidation(_)
             | Error::Db(_)
             | Error::Cache(_)
+            | Error::Mail(_)
             | Error::Internal(_) => "Internal Server Error".into(),
             Error::Users(u) => match u {
                 crabcloud_users::UsersError::Db(_)

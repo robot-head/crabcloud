@@ -102,6 +102,8 @@ async fn run_migrations(pool: &DbPool, cfg: &FileConfig) {
 
 async fn reset_external(pool: &DbPool) {
     let tables = [
+        "oc_user_notification_prefs",
+        "oc_mail_queue",
         "oc_share",
         "oc_properties",
         "oc_filelocks",

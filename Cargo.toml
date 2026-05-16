@@ -85,6 +85,7 @@ tower = { version = "0.5", features = ["util"] }
 tower-http = { version = "0.6", features = ["trace", "limit", "cors", "catch-panic"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+tracing-test = { version = "0.2", features = ["no-env-filter"] }
 urlencoding = "2"
 uuid = { version = "1", default-features = false }
 wasm-bindgen = "0.2"

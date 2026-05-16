@@ -132,8 +132,68 @@ pub struct FileConfig {
     #[serde(default = "default_preview_max_pixels")]
     pub preview_max_pixels: u32,
 
+    /// Mail transport configuration (SMTP/log/disabled).
+    #[serde(default)]
+    pub mail: MailConfig,
+
     /// Optional bootstrap admin (Phase 3 deferred-users stand-in).
     pub bootstrap_admin: Option<BootstrapAdminConfig>,
+}
+
+/// Mail subsystem configuration. Selects the transport and (for SMTP) the
+/// server connection parameters. Default is `transport="disabled"` — no
+/// worker spawned and outbound mail is silently dropped.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MailConfig {
+    /// Transport mode: "smtp" (production), "log" (dev — emit envelopes as
+    /// tracing events), "disabled" (worker not spawned).
+    #[serde(default = "default_mail_transport")]
+    pub transport: String,
+    /// SMTP server hostname. Required when transport=smtp.
+    #[serde(default)]
+    pub smtp_host: Option<String>,
+    /// SMTP server port. Required when transport=smtp.
+    #[serde(default)]
+    pub smtp_port: Option<u16>,
+    /// SMTP authentication username. Optional.
+    #[serde(default)]
+    pub smtp_username: Option<String>,
+    /// SMTP authentication password. Optional. `SecretString` redacts in logs.
+    #[serde(default)]
+    pub smtp_password: Option<SecretString>,
+    /// Connection security: "tls" (implicit), "starttls", or "none".
+    #[serde(default = "default_smtp_security")]
+    pub smtp_security: String,
+    /// From address (envelope + From header). Required when transport=smtp.
+    #[serde(default)]
+    pub mail_from: Option<String>,
+    /// Optional display name for the From header.
+    #[serde(default)]
+    pub mail_from_name: Option<String>,
+}
+
+impl Default for MailConfig {
+    fn default() -> Self {
+        Self {
+            transport: default_mail_transport(),
+            smtp_host: None,
+            smtp_port: None,
+            smtp_username: None,
+            smtp_password: None,
+            smtp_security: default_smtp_security(),
+            mail_from: None,
+            mail_from_name: None,
+        }
+    }
+}
+
+fn default_mail_transport() -> String {
+    "disabled".to_string()
+}
+
+fn default_smtp_security() -> String {
+    "starttls".to_string()
 }
 
 /// Cache subsystem configuration. Currently selects the backend.
@@ -295,6 +355,7 @@ mod tests {
             folder_zip_max_bytes: default_folder_zip_max_bytes(),
             preview_root: None,
             preview_max_pixels: default_preview_max_pixels(),
+            mail: MailConfig::default(),
             bootstrap_admin: None,
         }
     }
