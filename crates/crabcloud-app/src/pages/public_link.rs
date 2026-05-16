@@ -15,15 +15,6 @@ use crate::server_fns::public_link::{list_public_link, meta_public_link, PublicL
 use crate::server_fns::FileEntry;
 use dioxus::prelude::*;
 
-/// Convenience: turn `(token, segments)` into the current `/s/<token>/<path>` URL.
-fn current_url(token: &str, segments: &[String]) -> String {
-    if segments.is_empty() {
-        format!("/s/{token}")
-    } else {
-        format!("/s/{token}{}", segments_to_path(segments))
-    }
-}
-
 #[component]
 pub fn PublicLinkRoot(token: String) -> Element {
     rsx! { PublicLink { token, path: Vec::<String>::new() } }
@@ -32,10 +23,10 @@ pub fn PublicLinkRoot(token: String) -> Element {
 #[component]
 pub fn PublicLink(token: String, path: Vec<String>) -> Element {
     let token_for_meta = token.clone();
-    let meta_resource = use_server_future(move || {
+    let meta_resource = use_resource(move || {
         let t = token_for_meta.clone();
         async move { meta_public_link(t).await.map_err(|e| format!("{e}")) }
-    })?;
+    });
 
     let meta_value: Option<Result<PublicLinkMeta, String>> = meta_resource.read().clone();
     match meta_value {
@@ -89,11 +80,11 @@ fn PublicLinkBody(token: String, path: Vec<String>, meta: PublicLinkMeta) -> Ele
     let current_path = segments_to_path(&path);
     let token_for_list = token.clone();
     let path_for_list = current_path.clone();
-    let entries = use_server_future(move || {
+    let entries = use_resource(move || {
         let t = token_for_list.clone();
         let p = path_for_list.clone();
         async move { list_public_link(t, p).await.map_err(|e| format!("{e}")) }
-    })?;
+    });
     let entries_value: Option<Result<Vec<FileEntry>, String>> = entries.read().clone();
 
     let create_only = meta.can_create && !meta.can_read;
@@ -324,16 +315,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn current_url_root() {
-        assert_eq!(current_url("ABCDEFGHIJKLMNO", &[]), "/s/ABCDEFGHIJKLMNO");
+    fn format_size_zero() {
+        assert_eq!(format_size(0), "0 B");
     }
 
     #[test]
-    fn current_url_nested() {
-        let segs = vec!["photos".to_string(), "vacation".to_string()];
-        assert_eq!(
-            current_url("ABCDEFGHIJKLMNO", &segs),
-            "/s/ABCDEFGHIJKLMNO/photos/vacation"
-        );
+    fn format_size_kb() {
+        assert_eq!(format_size(2048), "2.0 KB");
     }
 }
