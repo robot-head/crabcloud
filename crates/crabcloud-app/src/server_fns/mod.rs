@@ -5,6 +5,7 @@
 //! explicit `endpoint` attributes so external Nextcloud-compatible clients
 //! keep working.
 
+pub mod notification_prefs;
 pub mod public_link;
 
 use dioxus::fullstack::get;
