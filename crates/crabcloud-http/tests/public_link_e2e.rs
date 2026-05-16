@@ -8,156 +8,15 @@
 
 #![allow(unused_crate_dependencies)]
 
+mod support;
+
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
-use crabcloud_config::test_support::minimal_sqlite_config;
-use crabcloud_core::{AppState, AppStateBuilder};
-use crabcloud_filecache::DIRECTORY_MIMETYPE;
-use crabcloud_storage::{
-    ETag, FileKind, FileMetadata, Mimetype, NoopEventSink, Permissions, StorageEvent, StoragePath,
-};
-use crabcloud_users::{BcryptVerifier, PasswordVerifier, User, UserId};
-use std::pin::Pin;
-use std::time::{Duration, UNIX_EPOCH};
+use crabcloud_storage::StoragePath;
+use crabcloud_users::UserId;
+use support::{create_link, make_state, seed_file, seed_folder, seed_user, seed_zip_tree};
 use tempfile::tempdir;
-use tokio::io::AsyncRead;
 use tower::ServiceExt;
-
-async fn make_state(db: std::path::PathBuf, data: std::path::PathBuf) -> AppState {
-    let mut cfg = minimal_sqlite_config(db);
-    cfg.datadirectory = data;
-    cfg.filecache.enabled = false;
-    AppStateBuilder::new(cfg).build().await.unwrap()
-}
-
-async fn seed_user(state: &AppState, uid: &str) {
-    let hash = BcryptVerifier::new().hash("hunter2").unwrap();
-    state
-        .users
-        .user_store()
-        .create(
-            &User {
-                uid: UserId::new(uid).unwrap(),
-                display_name: format!("{uid} display"),
-                email: None,
-                enabled: true,
-                last_seen: 0,
-            },
-            Some(&hash),
-        )
-        .await
-        .unwrap();
-}
-
-/// Materialise a folder under `uid`'s home on disk and ensure the filecache
-/// has the chain `/`, `/seg1`, `/seg1/seg2`, … so `Shares::create_link` can
-/// locate it. Idempotent.
-async fn seed_folder(state: &AppState, uid: &str, path: &str) {
-    let storage = state
-        .storage_factory
-        .home_storage(&UserId::new(uid).unwrap())
-        .await
-        .unwrap();
-    let storage_id = storage.id().to_string();
-    apply_dir(state, &storage_id, &StoragePath::root()).await;
-    let stripped = path.trim_start_matches('/').trim_end_matches('/');
-    let segments: Vec<&str> = stripped.split('/').collect();
-    let mut cur = String::new();
-    for seg in segments {
-        if !cur.is_empty() {
-            cur.push('/');
-        }
-        cur.push_str(seg);
-        let sp = StoragePath::new(cur.clone()).unwrap();
-        if !storage.exists(&sp).await.unwrap() {
-            storage.mkdir(&sp, &NoopEventSink).await.unwrap();
-        }
-        apply_dir(state, &storage_id, &sp).await;
-    }
-}
-
-async fn apply_dir(state: &AppState, storage_id: &str, path: &StoragePath) {
-    if state
-        .filecache
-        .lookup(storage_id, path)
-        .await
-        .unwrap()
-        .is_some()
-    {
-        return;
-    }
-    let md = FileMetadata {
-        path: path.clone(),
-        kind: FileKind::Directory,
-        size: 0,
-        mtime: UNIX_EPOCH + Duration::from_secs(1_700_000_000),
-        etag: ETag::new(),
-        mimetype: Mimetype::parse(DIRECTORY_MIMETYPE).unwrap(),
-        permissions: Permissions::full(),
-    };
-    let ev = StorageEvent::DirCreated {
-        storage_id: storage_id.into(),
-        path: path.clone(),
-        metadata: md,
-    };
-    state.filecache.apply(&ev).await.unwrap();
-}
-
-/// Write a small file under `uid`'s home on disk + filecache so the public
-/// link's `download` can stream it back.
-async fn seed_file(state: &AppState, uid: &str, path: &str, body: &[u8]) {
-    let storage = state
-        .storage_factory
-        .home_storage(&UserId::new(uid).unwrap())
-        .await
-        .unwrap();
-    let sp = StoragePath::new(path.trim_start_matches('/').to_string()).unwrap();
-    let bytes = body.to_vec();
-    let reader: Pin<Box<dyn AsyncRead + Send>> = Box::pin(std::io::Cursor::new(bytes));
-    let meta = storage.put_file(&sp, reader, &NoopEventSink).await.unwrap();
-    let storage_id = storage.id().to_string();
-    // Mirror the storage `put_file` into the filecache so `View::stat` finds it.
-    let ev = StorageEvent::Written {
-        storage_id: storage_id.clone(),
-        path: sp.clone(),
-        metadata: meta,
-    };
-    state.filecache.apply(&ev).await.unwrap();
-}
-
-/// Create a public-link share via `Shares::create` directly. This sidesteps
-/// the OCS handler (which doesn't accept password/expireDate on Batch E's
-/// `sp8/e-public-surface` branch — the OCS wiring lives on the sibling
-/// `sp8/e-ocs-link-shape` branch and merges separately). Returns the
-/// 15-char token.
-async fn create_link(
-    state: &AppState,
-    requester: &str,
-    path: &str,
-    permissions: u32,
-    password: Option<&str>,
-) -> String {
-    use crabcloud_sharing::{CreateShareRequest, ShareType};
-    let home_sid = state
-        .storage_factory
-        .home_storage(&UserId::new(requester).unwrap())
-        .await
-        .unwrap()
-        .id()
-        .to_string();
-    let req = CreateShareRequest {
-        requester: requester.to_string(),
-        home_storage_id: home_sid,
-        path: path.to_string(),
-        share_type: ShareType::Link,
-        share_with: String::new(),
-        permissions,
-        password: password.map(|s| s.to_string()),
-        expire_date: None,
-    };
-    let row = state.shares.create(req).await.expect("create_link");
-    row.token.expect("link rows carry a token")
-}
 
 // --- download / read --------------------------------------------------------
 
@@ -169,7 +28,7 @@ async fn download_read_link_returns_body() {
     seed_user(&state, "alice").await;
     seed_folder(&state, "alice", "Photos").await;
     seed_file(&state, "alice", "Photos/cat.jpg", b"meow-meow").await;
-    let token = create_link(&state, "alice", "/Photos", 1, None).await;
+    let token = create_link(&state, "alice", "/Photos", 1, None, None).await;
     let app = crabcloud_http::build_router(state, axum::Router::new());
 
     let req = Request::builder()
@@ -192,7 +51,7 @@ async fn download_create_only_link_returns_403() {
     seed_folder(&state, "alice", "Drop").await;
     seed_file(&state, "alice", "Drop/secret.txt", b"NOPE").await;
     // File-drop: create-only (bit 4), no read.
-    let token = create_link(&state, "alice", "/Drop", 4, None).await;
+    let token = create_link(&state, "alice", "/Drop", 4, None, None).await;
     let app = crabcloud_http::build_router(state, axum::Router::new());
 
     let req = Request::builder()
@@ -212,7 +71,7 @@ async fn download_with_range_returns_partial_content() {
     seed_user(&state, "alice").await;
     seed_folder(&state, "alice", "Range").await;
     seed_file(&state, "alice", "Range/blob.bin", b"0123456789").await;
-    let token = create_link(&state, "alice", "/Range", 1, None).await;
+    let token = create_link(&state, "alice", "/Range", 1, None, None).await;
     let app = crabcloud_http::build_router(state, axum::Router::new());
 
     let req = Request::builder()
@@ -236,7 +95,7 @@ async fn unlock_wrong_password_returns_401() {
     let state = make_state(dir.path().join("u.db"), data.path().to_path_buf()).await;
     seed_user(&state, "alice").await;
     seed_folder(&state, "alice", "Secret").await;
-    let token = create_link(&state, "alice", "/Secret", 1, Some("correct-horse")).await;
+    let token = create_link(&state, "alice", "/Secret", 1, Some("correct-horse"), None).await;
     let app = crabcloud_http::build_router(state, axum::Router::new());
 
     let req = Request::builder()
@@ -256,7 +115,7 @@ async fn unlock_correct_password_sets_cookie_and_redirects() {
     let state = make_state(dir.path().join("uok.db"), data.path().to_path_buf()).await;
     seed_user(&state, "alice").await;
     seed_folder(&state, "alice", "Secret").await;
-    let token = create_link(&state, "alice", "/Secret", 1, Some("hunter2")).await;
+    let token = create_link(&state, "alice", "/Secret", 1, Some("hunter2"), None).await;
     let app = crabcloud_http::build_router(state, axum::Router::new());
 
     let req = Request::builder()
@@ -299,7 +158,7 @@ async fn download_before_unlock_returns_403() {
     seed_user(&state, "alice").await;
     seed_folder(&state, "alice", "Vault").await;
     seed_file(&state, "alice", "Vault/note.txt", b"top secret").await;
-    let token = create_link(&state, "alice", "/Vault", 1, Some("hunter2")).await;
+    let token = create_link(&state, "alice", "/Vault", 1, Some("hunter2"), None).await;
     let app = crabcloud_http::build_router(state, axum::Router::new());
 
     let req = Request::builder()
@@ -324,7 +183,7 @@ async fn upload_create_link_writes_file() {
     // but upload still works either way. We pick mixed mode here so the
     // collision-suffix test (below) can stat the resulting file via the
     // same link.
-    let token = create_link(&state, "alice", "/Drop", 5, None).await;
+    let token = create_link(&state, "alice", "/Drop", 5, None, None).await;
     let app = crabcloud_http::build_router(state.clone(), axum::Router::new());
 
     let req = Request::builder()
@@ -355,7 +214,7 @@ async fn upload_unsafe_filename_returns_400() {
     let state = make_state(dir.path().join("uns.db"), data.path().to_path_buf()).await;
     seed_user(&state, "alice").await;
     seed_folder(&state, "alice", "Drop").await;
-    let token = create_link(&state, "alice", "/Drop", 4, None).await;
+    let token = create_link(&state, "alice", "/Drop", 4, None, None).await;
     let app = crabcloud_http::build_router(state, axum::Router::new());
 
     // `..` prefix is rejected before any storage interaction.
@@ -376,7 +235,7 @@ async fn upload_read_only_link_returns_403() {
     seed_user(&state, "alice").await;
     seed_folder(&state, "alice", "RO").await;
     // Read-only link: bit 1, no create.
-    let token = create_link(&state, "alice", "/RO", 1, None).await;
+    let token = create_link(&state, "alice", "/RO", 1, None, None).await;
     let app = crabcloud_http::build_router(state, axum::Router::new());
 
     let req = Request::builder()
@@ -397,7 +256,7 @@ async fn upload_collision_appends_suffix() {
     seed_folder(&state, "alice", "C").await;
     // Pre-seed an existing file so the next upload must take a suffix.
     seed_file(&state, "alice", "C/file.txt", b"v1").await;
-    let token = create_link(&state, "alice", "/C", 5, None).await;
+    let token = create_link(&state, "alice", "/C", 5, None, None).await;
     let app = crabcloud_http::build_router(state.clone(), axum::Router::new());
 
     let req = Request::builder()
@@ -442,7 +301,7 @@ async fn upload_filename_with_percent_preserves_percent() {
     let state = make_state(dir.path().join("pct.db"), data.path().to_path_buf()).await;
     seed_user(&state, "alice").await;
     seed_folder(&state, "alice", "Drop").await;
-    let token = create_link(&state, "alice", "/Drop", 5, None).await;
+    let token = create_link(&state, "alice", "/Drop", 5, None, None).await;
     let app = crabcloud_http::build_router(state.clone(), axum::Router::new());
 
     // Send `foo%2520bar.txt` — axum decodes once to `foo%20bar.txt`.
@@ -485,52 +344,6 @@ async fn upload_filename_with_percent_preserves_percent() {
 
 // --- zip (folder zip via public link) -------------------------------------
 
-/// Mirror of `seed_zip_tree` from `files_zip_e2e.rs` — three small files
-/// across two directories so the resulting archive carries multiple entries
-/// and at least one nested folder.
-async fn seed_zip_tree(state: &AppState, uid: &str, root: &str) {
-    seed_folder(state, uid, root).await;
-    seed_folder(state, uid, &format!("{root}/vacation")).await;
-    seed_file(state, uid, &format!("{root}/cat.txt"), b"cat-text").await;
-    seed_file(state, uid, &format!("{root}/dog.txt"), b"dog-text").await;
-    seed_file(
-        state,
-        uid,
-        &format!("{root}/vacation/beach.txt"),
-        b"beach-text-bytes",
-    )
-    .await;
-}
-
-/// Create a public link with an explicit expiration date (`expire_date`
-/// goes through `Shares::create` verbatim; the service stores it as a
-/// `NaiveDateTime` at 00:00:00 UTC). Passing yesterday's date is enough to
-/// trip the auth layer's past-expiration arm without depending on a clock
-/// injection.
-async fn create_link_expired(state: &AppState, requester: &str, path: &str) -> String {
-    use crabcloud_sharing::{CreateShareRequest, ShareType};
-    let home_sid = state
-        .storage_factory
-        .home_storage(&UserId::new(requester).unwrap())
-        .await
-        .unwrap()
-        .id()
-        .to_string();
-    let yesterday = (chrono::Utc::now() - chrono::Duration::days(1)).date_naive();
-    let req = CreateShareRequest {
-        requester: requester.to_string(),
-        home_storage_id: home_sid,
-        path: path.to_string(),
-        share_type: ShareType::Link,
-        share_with: String::new(),
-        permissions: 1,
-        password: None,
-        expire_date: Some(yesterday),
-    };
-    let row = state.shares.create(req).await.expect("create_link_expired");
-    row.token.expect("link rows carry a token")
-}
-
 #[tokio::test]
 async fn public_zip_read_link_returns_200() {
     let dir = tempdir().unwrap();
@@ -538,7 +351,7 @@ async fn public_zip_read_link_returns_200() {
     let state = make_state(dir.path().join("pzr.db"), data.path().to_path_buf()).await;
     seed_user(&state, "alice").await;
     seed_zip_tree(&state, "alice", "/Photos").await;
-    let token = create_link(&state, "alice", "/Photos", 1, None).await;
+    let token = create_link(&state, "alice", "/Photos", 1, None, None).await;
     let app = crabcloud_http::build_router(state, axum::Router::new());
 
     let req = Request::builder()
@@ -586,7 +399,7 @@ async fn public_zip_create_only_link_returns_403() {
     seed_user(&state, "alice").await;
     seed_zip_tree(&state, "alice", "/Drop").await;
     // File-drop: create-only (bit 4), no read.
-    let token = create_link(&state, "alice", "/Drop", 4, None).await;
+    let token = create_link(&state, "alice", "/Drop", 4, None, None).await;
     let app = crabcloud_http::build_router(state, axum::Router::new());
 
     let req = Request::builder()
@@ -605,7 +418,8 @@ async fn public_zip_expired_token_returns_404() {
     let state = make_state(dir.path().join("pze.db"), data.path().to_path_buf()).await;
     seed_user(&state, "alice").await;
     seed_zip_tree(&state, "alice", "/Photos").await;
-    let token = create_link_expired(&state, "alice", "/Photos").await;
+    let yesterday = (chrono::Utc::now() - chrono::Duration::days(1)).date_naive();
+    let token = create_link(&state, "alice", "/Photos", 1, None, Some(yesterday)).await;
     let app = crabcloud_http::build_router(state, axum::Router::new());
 
     let req = Request::builder()
@@ -624,7 +438,7 @@ async fn public_zip_password_gated_no_cookie_returns_403() {
     let state = make_state(dir.path().join("pzg.db"), data.path().to_path_buf()).await;
     seed_user(&state, "alice").await;
     seed_zip_tree(&state, "alice", "/Vault").await;
-    let token = create_link(&state, "alice", "/Vault", 1, Some("hunter2")).await;
+    let token = create_link(&state, "alice", "/Vault", 1, Some("hunter2"), None).await;
     let app = crabcloud_http::build_router(state, axum::Router::new());
 
     let req = Request::builder()
@@ -652,7 +466,7 @@ async fn public_zip_root_uses_basename() {
     let state = make_state(dir.path().join("pzn.db"), data.path().to_path_buf()).await;
     seed_user(&state, "alice").await;
     seed_zip_tree(&state, "alice", "/Photos").await;
-    let token = create_link(&state, "alice", "/Photos", 1, None).await;
+    let token = create_link(&state, "alice", "/Photos", 1, None, None).await;
     let app = crabcloud_http::build_router(state, axum::Router::new());
 
     let req = Request::builder()
