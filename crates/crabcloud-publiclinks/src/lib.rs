@@ -6,10 +6,12 @@
 //! for tokens is delegated back to `crabcloud-sharing::Shares::resolve_by_token`
 //! (passed in via a small trait), keeping the dependency arrows clean.
 
+mod cookie;
 mod error;
 mod passwords;
 mod tokens;
 
+pub use cookie::UnlockCookie;
 pub use error::PublicLinkError;
 pub use passwords::{HashedPassword, Passwords};
 pub use tokens::{Token, Tokens};
