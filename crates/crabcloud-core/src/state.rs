@@ -3,6 +3,7 @@
 use crate::appconfig::AppConfigService;
 use crate::bootstrap::BootstrapRegistry;
 use crate::error::{CoreResult, Error};
+use crate::publiclinks::SharesTokenLookup;
 use crabcloud_cache::{Cache, MemoryCache};
 use crabcloud_config::FileConfig;
 use crabcloud_db::{core_set, DbPool, MigrationRunner};
@@ -13,8 +14,10 @@ use crabcloud_fs::{
 };
 use crabcloud_i18n::I18n;
 use crabcloud_ocs::CapabilityProvider;
+use crabcloud_publiclinks::{Passwords, PublicLinkAuthState, RateLimiter, TokenLookup};
 use crabcloud_storage::ChannelEventSink;
 use dashmap::DashMap;
+use secrecy::ExposeSecret;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -58,6 +61,13 @@ pub struct AppState {
     /// User + group sharing service. Reads / writes `oc_share` and resolves
     /// recipient memberships via `users`.
     pub shares: Arc<crabcloud_sharing::Shares>,
+    /// Public-link auth state: token lookup, password verifier, per-token
+    /// rate limiter, and unlock-cookie HMAC key. Mounted by the public-link
+    /// axum middleware (Batch E wires the routes). The HMAC key reuses
+    /// `FileConfig::secret` — cleanly domain-separated by cookie name
+    /// (`pl_<token>`) and by the token being included in the MAC input, so
+    /// no extra secret material is needed.
+    pub publiclinks_auth: Arc<PublicLinkAuthState>,
     /// In-process map from the client-chosen URL-segment `upload_id` (the
     /// `{upload_id}` path component in `/dav/uploads/{user}/{upload_id}/...`)
     /// to the server-encoded `upload_id` returned by `Uploads::begin`. Holds
@@ -281,6 +291,19 @@ impl AppStateBuilder {
 
         let upload_id_map = Arc::new(DashMap::new());
 
+        // Public-link auth: assembled after `shares` so the token-lookup
+        // adapter can borrow it. Reuses `config.secret` for unlock-cookie
+        // HMAC (rotation can split later if needed).
+        let publiclinks_lookup: Arc<dyn TokenLookup> = Arc::new(SharesTokenLookup {
+            shares: shares.clone(),
+        });
+        let publiclinks_auth = Arc::new(PublicLinkAuthState {
+            lookup: publiclinks_lookup,
+            passwords: Arc::new(Passwords::new()),
+            rate_limiter: Arc::new(RateLimiter::new()),
+            secret: self.config.secret.expose_secret().as_bytes().to_vec(),
+        });
+
         let state = AppState {
             config: self.config.clone(),
             pool,
@@ -295,6 +318,7 @@ impl AppStateBuilder {
             mount_resolver,
             storage_factory,
             shares,
+            publiclinks_auth,
             upload_id_map,
         };
 

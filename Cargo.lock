@@ -783,6 +783,7 @@ name = "crabcloud-core"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "crabcloud-cache",
  "crabcloud-config",
  "crabcloud-db",
@@ -790,10 +791,12 @@ dependencies = [
  "crabcloud-fs",
  "crabcloud-i18n",
  "crabcloud-ocs",
+ "crabcloud-publiclinks",
  "crabcloud-sharing",
  "crabcloud-storage",
  "crabcloud-users",
  "dashmap",
+ "secrecy",
  "sqlx",
  "tempfile",
  "thiserror 2.0.18",
