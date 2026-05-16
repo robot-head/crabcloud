@@ -3,7 +3,7 @@ mod support;
 use crabcloud_fs::{FsError, MountKind, UserPath};
 use crabcloud_storage::{memory::MemoryStorage, FileKind, NoopEventSink, Storage, StoragePath};
 use std::sync::Arc;
-use support::{harness, view_home, view_with_share_mount};
+use support::{harness, view_home, view_home_for, view_with_share_mount};
 use tokio::io::AsyncReadExt;
 
 // Silence unused-crate-dependencies for deps the lib uses but this
@@ -324,4 +324,122 @@ async fn view_read_range_returns_slice() {
     let mut buf = Vec::new();
     reader.read_to_end(&mut buf).await.unwrap();
     assert_eq!(buf, b"cde");
+}
+
+#[tokio::test]
+async fn view_descend_into_share_does_not_poison_owner_cache() {
+    // After bob descends into a share, alice's cache row at her actual
+    // home root must NOT be poisoned with the share's metadata. Before
+    // the cache-key-translation fix, bob's `view.list("/Photos")` was
+    // populating `(alice_id, root)` with `/Photos`-shaped metadata,
+    // which then leaked into alice's own `view.stat("/")` calls.
+    let h = harness().await;
+
+    let alice_home: Arc<dyn Storage> = Arc::new(MemoryStorage::new("alice"));
+    alice_home
+        .mkdir(&StoragePath::new("Photos").unwrap(), &NoopEventSink)
+        .await
+        .unwrap();
+    alice_home
+        .put_file(
+            &StoragePath::new("Photos/sunset.jpg").unwrap(),
+            body(b"jpeg".to_vec()),
+            &NoopEventSink,
+        )
+        .await
+        .unwrap();
+    alice_home
+        .put_file(
+            &StoragePath::new("notes.txt").unwrap(),
+            body(b"buy milk".to_vec()),
+            &NoopEventSink,
+        )
+        .await
+        .unwrap();
+
+    let bob_home: Arc<dyn Storage> = Arc::new(MemoryStorage::new("bob"));
+    let bob_view = view_with_share_mount(&h, bob_home, alice_home.clone(), "Photos", "Photos");
+
+    // 1. Bob descends into the share. WITHOUT the fix the wrapper's
+    //    `(alice_id, root)` cache key gets populated by `filecache.stat`
+    //    with alice's /Photos metadata (because `wrapper.stat(root) =
+    //    inner.stat(/Photos)`). WITH the fix that call is rerouted to
+    //    `(alice_id, /Photos)`, leaving `(alice_id, root)` alone.
+    let bob_entries = bob_view
+        .list(&UserPath::new("/Photos").unwrap())
+        .await
+        .unwrap();
+    let bob_names: Vec<&str> = bob_entries.iter().map(|e| e.name.as_str()).collect();
+    assert!(
+        bob_names.contains(&"sunset.jpg"),
+        "bob should see alice's /Photos children: got {bob_names:?}"
+    );
+
+    // 2. Inspect the raw cache rows. The fix routes bob's lookup to
+    //    `(alice_id, /Photos)`; the bug instead writes `(alice_id, root)`
+    //    with /Photos metadata, AND doesn't populate `/Photos`. So:
+    //      - WITH fix:    (alice_id, /Photos) is Some; (alice_id, root) is None.
+    //      - WITHOUT fix: (alice_id, root)   is Some; (alice_id, /Photos) is None.
+    let alice_id = alice_home.id();
+    let photos_row = h
+        .filecache
+        .lookup(alice_id, &StoragePath::new("Photos").unwrap())
+        .await
+        .unwrap();
+    let root_row = h
+        .filecache
+        .lookup(alice_id, &StoragePath::root())
+        .await
+        .unwrap();
+    assert!(
+        photos_row.is_some(),
+        "share-mount descend must populate alice's /Photos cache row (got None)"
+    );
+    assert!(
+        root_row.is_none(),
+        "share-mount descend must NOT poison alice's root cache row (got {root_row:?})"
+    );
+}
+
+#[tokio::test]
+async fn view_share_mount_preserves_file_id_continuity() {
+    // SP7 §3.2: a file accessed through a share mount must have the SAME
+    // identity as the owner's direct access — the recipient's sync client
+    // should see the same fileid as the owner's. We pin this via the
+    // etag: both views, going through the filecache, must read the same
+    // cache row for the same underlying file.
+    let h = harness().await;
+    let alice_home: Arc<dyn Storage> = Arc::new(MemoryStorage::new("alice"));
+    alice_home
+        .mkdir(&StoragePath::new("Photos").unwrap(), &NoopEventSink)
+        .await
+        .unwrap();
+    alice_home
+        .put_file(
+            &StoragePath::new("Photos/sunset.jpg").unwrap(),
+            body(b"jpeg-bytes".to_vec()),
+            &NoopEventSink,
+        )
+        .await
+        .unwrap();
+
+    let alice_view = view_home_for(&h, alice_home.clone());
+    let alice_meta = alice_view
+        .stat(&UserPath::new("/Photos/sunset.jpg").unwrap())
+        .await
+        .unwrap();
+
+    let bob_home: Arc<dyn Storage> = Arc::new(MemoryStorage::new("bob"));
+    let bob_view = view_with_share_mount(&h, bob_home, alice_home, "Photos", "Photos");
+    let bob_meta = bob_view
+        .stat(&UserPath::new("/Photos/sunset.jpg").unwrap())
+        .await
+        .unwrap();
+
+    assert_eq!(
+        alice_meta.etag.as_str(),
+        bob_meta.etag.as_str(),
+        "alice and bob must see the same etag for the same file (cache row)"
+    );
+    assert_eq!(alice_meta.size, bob_meta.size);
 }

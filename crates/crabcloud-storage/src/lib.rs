@@ -27,6 +27,7 @@ pub use path::StoragePath;
 use async_trait::async_trait;
 use std::ops::Range;
 use std::pin::Pin;
+use std::sync::Arc;
 use tokio::io::AsyncRead;
 
 /// Events emitted by [`Storage`] operations. Subscribers in sub-project 4b
@@ -120,6 +121,20 @@ pub trait Storage: Send + Sync {
     /// Stable identifier for this storage. Used as `storage_id` in events
     /// and (in 4b) as the foreign-key value for `oc_filecache.storage`.
     fn id(&self) -> &str;
+
+    /// For wrappers that delegate to an inner storage at a sub-path:
+    /// returns the inner storage and the owner-side path prefix.
+    ///
+    /// Callers that key caches by `(storage.id(), path)` should consult
+    /// this and translate to `(inner.id(), prefix.join(path))` before
+    /// lookup; otherwise the cache row keyed by the wrapper's
+    /// (recipient-relative) path will collide with the owner's actual
+    /// rows in the same storage namespace.
+    ///
+    /// Default: `None` — this storage is not a wrapper.
+    fn inner_storage(&self) -> Option<(&Arc<dyn Storage>, &StoragePath)> {
+        None
+    }
 
     async fn stat(&self, path: &StoragePath) -> StorageResult<FileMetadata>;
     async fn exists(&self, path: &StoragePath) -> StorageResult<bool>;

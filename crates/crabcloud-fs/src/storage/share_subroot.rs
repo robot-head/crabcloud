@@ -65,6 +65,10 @@ impl Storage for SharedSubrootStorage {
         self.inner.id()
     }
 
+    fn inner_storage(&self) -> Option<(&Arc<dyn Storage>, &StoragePath)> {
+        Some((&self.inner, &self.owner_path))
+    }
+
     async fn stat(&self, path: &StoragePath) -> StorageResult<FileMetadata> {
         self.inner.stat(&self.translate(path)?).await
     }
