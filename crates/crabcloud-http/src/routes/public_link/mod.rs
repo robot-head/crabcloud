@@ -8,6 +8,9 @@
 //! - `GET  /s/{token}/download/{*path}` — stream a file body. Honors Range.
 //!   Refuses when the password gate is still in force or the link lacks
 //!   the read bit (file-drop links).
+//! - `GET  /s/{token}/preview/{*path}?size=N` — anonymous thumbnail. Same
+//!   provider/cache backend as the authed preview endpoint, gated by the
+//!   read bit + password state.
 //! - `POST /s/{token}/upload/{filename}` — file-drop upload. Filename is
 //!   sanitized, collisions are resolved by suffixing ` (N)`, the request
 //!   body is streamed straight into the owner's home storage at the
@@ -24,8 +27,8 @@
 //! function set, not here.
 //!
 //! Per-handler bodies live in sibling files (`unlock.rs`, `download.rs`,
-//! `upload.rs`, `zip.rs`) and call back into the shared helpers in this
-//! module via `pub(super)` visibility.
+//! `preview.rs`, `upload.rs`, `zip.rs`) and call back into the shared
+//! helpers in this module via `pub(super)` visibility.
 //!
 //! `clippy::result_large_err` is allowed at the module level: the natural
 //! error type for these helpers is `axum::response::Response`, which clippy
@@ -35,6 +38,7 @@
 #![allow(clippy::result_large_err)]
 
 mod download;
+mod preview;
 mod unlock;
 mod upload;
 mod zip;
@@ -50,6 +54,7 @@ use crabcloud_sharing::SharePermissions;
 use std::sync::Arc;
 
 use download::download_handler;
+use preview::preview_handler;
 use unlock::unlock_handler;
 use upload::upload_handler;
 use zip::{zip_handler, zip_handler_root};
@@ -65,6 +70,7 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/s/{token}/unlock", post(unlock_handler))
         .route("/s/{token}/download/{*path}", get(download_handler))
+        .route("/s/{token}/preview/{*path}", get(preview_handler))
         .route("/s/{token}/upload/{filename}", post(upload_handler))
         .route("/s/{token}/zip/", get(zip_handler_root))
         .route("/s/{token}/zip/{*path}", get(zip_handler))
