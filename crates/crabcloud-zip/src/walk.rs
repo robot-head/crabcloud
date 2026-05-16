@@ -293,7 +293,10 @@ pub(crate) mod tests {
             .entries
             .iter()
             .find(|e| e.zip_name == "Photos/vacation/empty");
-        assert!(empty.is_some(), "empty dir must appear as a planned Dir entry");
+        assert!(
+            empty.is_some(),
+            "empty dir must appear as a planned Dir entry"
+        );
         assert_eq!(empty.unwrap().kind, PlanKind::Dir);
     }
 }

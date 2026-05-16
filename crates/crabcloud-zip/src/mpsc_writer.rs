@@ -11,9 +11,12 @@ use std::task::{Context, Poll};
 use tokio::io::AsyncWrite;
 use tokio::sync::mpsc;
 
+type PermitResult = Result<mpsc::OwnedPermit<Result<Bytes, io::Error>>, mpsc::error::SendError<()>>;
+type PermitFuture = Pin<Box<dyn Future<Output = PermitResult> + Send>>;
+
 pub struct MpscBytesWriter {
     tx: mpsc::Sender<Result<Bytes, io::Error>>,
-    in_flight: Option<Pin<Box<dyn Future<Output = Result<mpsc::OwnedPermit<Result<Bytes, io::Error>>, mpsc::error::SendError<()>>> + Send>>>,
+    in_flight: Option<PermitFuture>,
 }
 
 impl MpscBytesWriter {
