@@ -104,7 +104,20 @@ pub async fn public_link_auth(
     let row = match state.lookup.lookup(token.as_str()).await {
         Ok(Some(r)) => r,
         Ok(None) => return not_found(),
-        Err(_) => return server_error(),
+        Err(e) => {
+            // The lookup error type is opaque to this crate (the adapter in
+            // `crabcloud-core` boxes it), so we can only print via `Display`.
+            // Token is logged so operators can correlate to the failing
+            // share row; tokens are not secrets — possession of one is the
+            // capability, but the act of revealing it in a server-side log
+            // doesn't grant access to anyone reading the log.
+            tracing::warn!(
+                error = %e,
+                token = %token.as_str(),
+                "public-link token lookup failed"
+            );
+            return server_error();
+        }
     };
 
     // Past-expiration is indistinguishable from "no such token". We rely
