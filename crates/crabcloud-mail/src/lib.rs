@@ -7,8 +7,10 @@
 //! [`TemplateContext`]). The queue and worker layers (Batch B) own the
 //! "decide to send" path; this crate just transports.
 
+mod envelope;
 mod error;
 
+pub use envelope::{EventType, MailEnvelope};
 pub use error::MailError;
 
 // Quiet `unused_crate_dependencies` for deps that later modules and Batch
