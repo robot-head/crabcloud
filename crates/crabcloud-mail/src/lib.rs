@@ -9,9 +9,11 @@
 
 mod envelope;
 mod error;
+mod transport;
 
 pub use envelope::{EventType, MailEnvelope};
 pub use error::MailError;
+pub use transport::{SmtpSecurity, Transport, TransportConfig, TransportKind};
 
 // Quiet `unused_crate_dependencies` for deps that later modules and Batch
 // B/C consumers wire up. Anchored here to avoid drift as those modules land.
