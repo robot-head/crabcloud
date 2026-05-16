@@ -71,6 +71,10 @@ pub struct ShareRow {
     pub expiration: Option<DateTime<Utc>>,
     pub token: Option<String>,
     pub password_hash: Option<String>,
+    /// Timestamp when the expiration-warning mail was enqueued for this
+    /// row. `None` means "never warned"; the sweeper stamps this once it
+    /// has handed off (whether or not the user opted in).
+    pub last_warned: Option<DateTime<Utc>>,
 }
 
 /// Caller-supplied create request. The service validates and normalizes

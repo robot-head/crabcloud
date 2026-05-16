@@ -117,6 +117,7 @@ impl Shares {
                     .bind::<Option<String>>(None)
                     .bind::<Option<String>>(None)
                     .bind(0_i16)
+                    .bind::<Option<NaiveDateTime>>(None)
                     .execute(p)
                     .await?;
                 res.last_insert_rowid()
@@ -139,6 +140,7 @@ impl Shares {
                     .bind::<Option<String>>(None)
                     .bind::<Option<String>>(None)
                     .bind(0_i16)
+                    .bind::<Option<NaiveDateTime>>(None)
                     .execute(p)
                     .await?;
                 res.last_insert_id() as i64
@@ -161,6 +163,7 @@ impl Shares {
                     .bind::<Option<String>>(None)
                     .bind::<Option<String>>(None)
                     .bind(0_i16)
+                    .bind::<Option<NaiveDateTime>>(None)
                     .fetch_one(p)
                     .await?;
                 row.try_get::<i64, _>("id")?
@@ -184,6 +187,7 @@ impl Shares {
             expiration: None,
             token: None,
             password_hash: None,
+            last_warned: None,
         })
     }
 
@@ -630,6 +634,7 @@ impl Shares {
             expiration: expiration.map(|n| DateTime::<Utc>::from_naive_utc_and_offset(n, Utc)),
             token: Some(token_str),
             password_hash,
+            last_warned: None,
         })
     }
 
@@ -666,6 +671,7 @@ impl Shares {
                     .bind(token)
                     .bind(password)
                     .bind(0_i16) // mail_send
+                    .bind::<Option<NaiveDateTime>>(None) // last_warned
                     .execute(p)
                     .await?;
                 Ok(res.last_insert_rowid())
@@ -688,6 +694,7 @@ impl Shares {
                     .bind(token)
                     .bind(password)
                     .bind(0_i16)
+                    .bind::<Option<NaiveDateTime>>(None)
                     .execute(p)
                     .await?;
                 Ok(res.last_insert_id() as i64)
@@ -710,6 +717,7 @@ impl Shares {
                     .bind(token)
                     .bind(password)
                     .bind(0_i16)
+                    .bind::<Option<NaiveDateTime>>(None)
                     .fetch_one(p)
                     .await?;
                 Ok(row.try_get::<i64, _>("id")?)
@@ -862,6 +870,7 @@ struct RowParts {
     expiration: Option<NaiveDateTime>,
     token: Option<String>,
     password: Option<String>,
+    last_warned: Option<NaiveDateTime>,
 }
 
 fn assemble_row(parts: RowParts) -> Result<ShareRow, ShareError> {
@@ -875,6 +884,9 @@ fn assemble_row(parts: RowParts) -> Result<ShareRow, ShareError> {
     let permissions = SharePermissions::from_wire(parts.permissions as u32);
     let expiration = parts
         .expiration
+        .map(|n| DateTime::<Utc>::from_naive_utc_and_offset(n, Utc));
+    let last_warned = parts
+        .last_warned
         .map(|n| DateTime::<Utc>::from_naive_utc_and_offset(n, Utc));
     Ok(ShareRow {
         id: parts.id,
@@ -893,6 +905,7 @@ fn assemble_row(parts: RowParts) -> Result<ShareRow, ShareError> {
         expiration,
         token: parts.token,
         password_hash: parts.password,
+        last_warned,
     })
 }
 
@@ -914,6 +927,7 @@ fn row_from_sqlite(row: sqlx::sqlite::SqliteRow) -> Result<ShareRow, ShareError>
         expiration: row.try_get("expiration")?,
         token: row.try_get("token")?,
         password: row.try_get("password")?,
+        last_warned: row.try_get("last_warned")?,
     })
 }
 
@@ -944,6 +958,7 @@ fn row_from_mysql(row: sqlx::mysql::MySqlRow) -> Result<ShareRow, ShareError> {
         expiration: row.try_get_unchecked("expiration")?,
         token: row.try_get_unchecked("token")?,
         password: row.try_get_unchecked("password")?,
+        last_warned: row.try_get_unchecked("last_warned")?,
     })
 }
 
@@ -965,5 +980,6 @@ fn row_from_postgres(row: sqlx::postgres::PgRow) -> Result<ShareRow, ShareError>
         expiration: row.try_get("expiration")?,
         token: row.try_get("token")?,
         password: row.try_get("password")?,
+        last_warned: row.try_get("last_warned")?,
     })
 }

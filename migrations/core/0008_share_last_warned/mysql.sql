@@ -1,0 +1,1 @@
+ALTER TABLE oc_share ADD COLUMN last_warned TIMESTAMP NULL;
