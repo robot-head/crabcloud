@@ -918,6 +918,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "crabcloud-publiclinks"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "bcrypt",
+ "crabcloud-users",
+ "dashmap",
+ "hmac 0.13.0",
+ "rand 0.10.1",
+ "sha2 0.11.0",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "crabcloud-sharing"
 version = "0.1.0"
 dependencies = [
