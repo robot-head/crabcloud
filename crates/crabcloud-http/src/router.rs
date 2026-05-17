@@ -95,6 +95,21 @@ pub fn build_router(state: AppState, app_router: Router) -> Router {
             crate::routes::trashbin::trashbin_router().with_state(state.clone()),
         );
 
+    // DAV versions surface (`/dav/versions/{uid}/{fileid}/...`). Same
+    // shape as `trashbin_router`: shares the outer `AuthLayer`, mounted
+    // at both prefix aliases so desktop clients reach the same handler
+    // through either spelling. Inside: PROPFIND lists/inspects, GET
+    // streams the version bytes, COPY-with-Destination restores.
+    let versions_router = Router::new()
+        .nest(
+            "/remote.php/dav/versions",
+            crate::routes::versions::versions_router().with_state(state.clone()),
+        )
+        .nest(
+            "/dav/versions",
+            crate::routes::versions::versions_router().with_state(state.clone()),
+        );
+
     // Public-link DAV surface (`/public.php/dav/files/{token}/...`). Lives
     // alongside the authed DAV surface — same per-method response shape via
     // the surface-neutral helpers in `routes::dav` — but auth comes from
@@ -183,6 +198,7 @@ pub fn build_router(state: AppState, app_router: Router) -> Router {
     Router::new()
         .merge(dav_router)
         .merge(trashbin_router)
+        .merge(versions_router)
         .merge(public_dav_router)
         .merge(public_link_router)
         .merge(ocs_app_layered)
