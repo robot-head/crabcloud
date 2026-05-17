@@ -5,14 +5,19 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+chrono.workspace = true
+crabcloud-activity.workspace = true
 crabcloud-db.workspace = true
+crabcloud-users.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 sqlx.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["fs", "io-util"] }
 tracing.workspace = true
 
 [dev-dependencies]
+crabcloud-activity = { workspace = true }
 crabcloud-config = { workspace = true, features = ["test-support"] }
 tempfile.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

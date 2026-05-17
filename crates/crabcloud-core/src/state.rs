@@ -427,6 +427,7 @@ impl AppStateBuilder {
         let versions = Arc::new(crabcloud_versions::Versions::new(
             Arc::new(pool.clone()),
             self.config.datadirectory.clone(),
+            activity.clone(),
         ));
         let (versions_sweeper, versions_sweeper_shutdown) =
             VersionsSweeper::new(versions.clone(), self.config.versions_retention_disabled);

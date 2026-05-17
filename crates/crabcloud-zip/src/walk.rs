@@ -171,6 +171,7 @@ pub(crate) mod tests {
         let versions = Arc::new(crabcloud_versions::Versions::new(
             pool_arc.clone(),
             dir.path().to_path_buf(),
+            std::sync::Arc::new(crabcloud_activity::NoopEmitter),
         ));
         let trash = Arc::new(crabcloud_trash::Trash::new(
             pool_arc,

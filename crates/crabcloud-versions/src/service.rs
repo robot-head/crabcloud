@@ -21,11 +21,23 @@ pub struct Versions {
     /// Filesystem root that contains `<uid>/files/...` and
     /// `<uid>/files_versions/...`. Same value as `FileConfig::datadirectory`.
     datadir: PathBuf,
+    /// Activity emitter. Best-effort; failures are logged + swallowed
+    /// because the user-visible restore must not be rolled back by a
+    /// down activity log (SP14 spec §6 emit-failure row).
+    activity: Arc<dyn crabcloud_activity::ActivityEmitter>,
 }
 
 impl Versions {
-    pub fn new(pool: Arc<DbPool>, datadir: PathBuf) -> Self {
-        Self { pool, datadir }
+    pub fn new(
+        pool: Arc<DbPool>,
+        datadir: PathBuf,
+        activity: Arc<dyn crabcloud_activity::ActivityEmitter>,
+    ) -> Self {
+        Self {
+            pool,
+            datadir,
+            activity,
+        }
     }
 
     /// Filesystem root the service operates on. Same value as
@@ -372,6 +384,47 @@ impl Versions {
         tokio::fs::create_dir_all(&dst_dir).await?;
         let dst_abs = dst_dir.join(basename);
         tokio::fs::copy(&src_abs, &dst_abs).await?;
+
+        // Best-effort activity emit. Per SP14 spec §6 (emit-failure row),
+        // failure logs + continues; the user-visible restore must not be
+        // rolled back by a down activity log.
+        match crabcloud_users::UserId::new(uid) {
+            Ok(owner) => {
+                let event = crabcloud_activity::ActivityEvent {
+                    actor: uid.to_string(),
+                    event_type: crabcloud_activity::EventType::VersionRestored,
+                    subject_id_actor: "version_restored_you".into(),
+                    subject_id_recipient: "version_restored_by".into(),
+                    subject_params: serde_json::json!({
+                        "actor": uid,
+                        "file": Path::new(&entry.path)
+                            .file_name()
+                            .and_then(|s| s.to_str())
+                            .unwrap_or(&entry.path),
+                    }),
+                    object_type: crabcloud_activity::ObjectType::Version,
+                    object_id: Some(entry.id),
+                    recipients: vec![owner],
+                    occurred_at: chrono::Utc::now().timestamp(),
+                };
+                if let Err(e) = self.activity.emit(event).await {
+                    tracing::warn!(
+                        error = %e,
+                        uid,
+                        version_id = entry.id,
+                        "versions: activity emit failed"
+                    );
+                }
+            }
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    uid,
+                    "versions: skipping activity emit, invalid uid"
+                );
+            }
+        }
+
         Ok(())
     }
 

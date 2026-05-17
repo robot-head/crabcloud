@@ -94,6 +94,7 @@ mod tests {
         let versions = Arc::new(crabcloud_versions::Versions::new(
             pool.clone(),
             datadir.clone(),
+            std::sync::Arc::new(crabcloud_activity::NoopEmitter),
         ));
         Arc::new(Trash::new(pool, datadir, versions))
     }
