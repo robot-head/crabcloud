@@ -201,6 +201,11 @@ async fn build_view(state: &AppState, ctx: &PublicLinkAuthContext) -> Result<Vie
         state.filecache.clone(),
         state.storage_sink.clone(),
         state.trash.clone(),
+        crabcloud_fs::VersionsHooks {
+            versions: state.versions.clone(),
+            min_interval_secs: state.config.versions_min_interval_secs as i64,
+            max_bytes: state.config.versions_max_bytes,
+        },
     ))
 }
 

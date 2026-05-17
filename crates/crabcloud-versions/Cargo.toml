@@ -1,13 +1,11 @@
 [package]
-name = "crabcloud-trash"
+name = "crabcloud-versions"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-chrono.workspace = true
 crabcloud-db.workspace = true
-crabcloud-versions.workspace = true
 serde.workspace = true
 sqlx.workspace = true
 thiserror.workspace = true

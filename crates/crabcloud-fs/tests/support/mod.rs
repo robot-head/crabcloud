@@ -5,11 +5,12 @@
 use crabcloud_config::test_support::minimal_sqlite_config;
 use crabcloud_db::{core_set, DbPool, MigrationRunner};
 use crabcloud_filecache::FileCache;
-use crabcloud_fs::{Mount, MountKind, MountMetadata, SharedSubrootStorage, View};
+use crabcloud_fs::{Mount, MountKind, MountMetadata, SharedSubrootStorage, VersionsHooks, View};
 use crabcloud_sharing::SharePermissions;
 use crabcloud_storage::{memory::MemoryStorage, ChannelEventSink, Storage, StoragePath};
 use crabcloud_trash::Trash;
 use crabcloud_users::UserId;
+use crabcloud_versions::Versions;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tempfile::TempDir;
@@ -20,8 +21,15 @@ pub struct Harness {
     pub sink: Arc<ChannelEventSink>,
     pub storage: Arc<dyn Storage>,
     pub trash: Arc<Trash>,
+    pub versions: Arc<Versions>,
     pub datadir: PathBuf,
     pub _tempdir: TempDir,
+}
+
+impl Harness {
+    pub fn versions_hooks(&self) -> VersionsHooks {
+        VersionsHooks::permissive(self.versions.clone())
+    }
 }
 
 pub async fn harness() -> Harness {
@@ -35,13 +43,16 @@ pub async fn harness() -> Harness {
     let sink = Arc::new(ChannelEventSink::new(64));
     let storage: Arc<dyn Storage> = Arc::new(MemoryStorage::new("alice"));
     let datadir = dir.path().to_path_buf();
-    let trash = Arc::new(Trash::new(Arc::new(pool.clone()), datadir.clone()));
+    let pool_arc = Arc::new(pool.clone());
+    let versions = Arc::new(Versions::new(pool_arc.clone(), datadir.clone()));
+    let trash = Arc::new(Trash::new(pool_arc, datadir.clone(), versions.clone()));
     Harness {
         pool,
         filecache,
         sink,
         storage,
         trash,
+        versions,
         datadir,
         _tempdir: dir,
     }
@@ -59,6 +70,7 @@ pub fn view_home(h: &Harness) -> View {
         h.filecache.clone(),
         h.sink.clone(),
         h.trash.clone(),
+        h.versions_hooks(),
     )
 }
 
@@ -76,6 +88,7 @@ pub fn view_home_for(h: &Harness, storage: Arc<dyn Storage>) -> View {
         h.filecache.clone(),
         h.sink.clone(),
         h.trash.clone(),
+        h.versions_hooks(),
     )
 }
 
@@ -100,6 +113,7 @@ pub fn view_with_two_mounts(h: &Harness) -> View {
         h.filecache.clone(),
         h.sink.clone(),
         h.trash.clone(),
+        h.versions_hooks(),
     )
 }
 
@@ -139,5 +153,6 @@ pub fn view_with_share_mount(
         h.filecache.clone(),
         h.sink.clone(),
         h.trash.clone(),
+        h.versions_hooks(),
     )
 }

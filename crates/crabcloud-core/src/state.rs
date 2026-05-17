@@ -9,13 +9,14 @@ use crate::mail_worker::MailWorker;
 use crate::preview_cache_cleanup::PreviewCacheCleanup;
 use crate::publiclinks::SharesTokenLookup;
 use crate::trash_sweeper::TrashSweeper;
+use crate::versions_sweeper::VersionsSweeper;
 use crabcloud_cache::{Cache, MemoryCache};
 use crabcloud_config::FileConfig;
 use crabcloud_db::{core_set, DbPool, MigrationRunner};
 use crabcloud_filecache::{FileCache, Scanner};
 use crabcloud_fs::{
     HomeMountResolver, LocalStorageFactory, MountResolver, ShareMountResolver, StorageFactory,
-    Uploads, View,
+    Uploads, VersionsHooks, View,
 };
 use crabcloud_i18n::I18n;
 use crabcloud_ocs::CapabilityProvider;
@@ -116,6 +117,11 @@ pub struct AppState {
     /// Trash sweeper shutdown handle. Always present; spawned
     /// unconditionally in `AppStateBuilder::build`.
     pub trash_sweeper_shutdown: Arc<tokio::sync::Notify>,
+    /// File versions service. Cheap to clone.
+    pub versions: Arc<crabcloud_versions::Versions>,
+    /// Versions sweeper shutdown handle. Always present; spawned
+    /// unconditionally in `AppStateBuilder::build`.
+    pub versions_sweeper_shutdown: Arc<tokio::sync::Notify>,
 }
 
 impl std::fmt::Debug for AppState {
@@ -144,6 +150,11 @@ impl AppState {
             self.filecache.clone(),
             self.storage_sink.clone(),
             self.trash.clone(),
+            VersionsHooks {
+                versions: self.versions.clone(),
+                min_interval_secs: self.config.versions_min_interval_secs as i64,
+                max_bytes: self.config.versions_max_bytes,
+            },
         ))
     }
 
@@ -383,6 +394,19 @@ impl AppStateBuilder {
             async move { preview_cache_cleanup.run().await },
         ));
 
+        // Versions service + daily tiered-retention sweeper. Constructed
+        // BEFORE Trash so the trash service can hold an Arc to it for
+        // the hard-delete cascade. The sweeper is spawned
+        // unconditionally; tests can `notify_one()` on
+        // `versions_sweeper_shutdown` in teardown.
+        let versions = Arc::new(crabcloud_versions::Versions::new(
+            Arc::new(pool.clone()),
+            self.config.datadirectory.clone(),
+        ));
+        let (versions_sweeper, versions_sweeper_shutdown) =
+            VersionsSweeper::new(versions.clone(), self.config.versions_retention_disabled);
+        std::mem::drop(tokio::spawn(async move { versions_sweeper.run().await }));
+
         // Trash service + daily sweeper. The sweeper is spawned
         // unconditionally (trash exists regardless of mail transport);
         // tests can `notify_one()` on `trash_sweeper_shutdown` in
@@ -390,6 +414,7 @@ impl AppStateBuilder {
         let trash = Arc::new(crabcloud_trash::Trash::new(
             Arc::new(pool.clone()),
             self.config.datadirectory.clone(),
+            versions.clone(),
         ));
         let (trash_sweeper, trash_sweeper_shutdown) =
             TrashSweeper::new(trash.clone(), self.config.trash_retention_days);
@@ -480,6 +505,8 @@ impl AppStateBuilder {
             preview_cache_cleanup_shutdown,
             trash,
             trash_sweeper_shutdown,
+            versions,
+            versions_sweeper_shutdown,
         };
 
         self.registry.run(&state).await?;

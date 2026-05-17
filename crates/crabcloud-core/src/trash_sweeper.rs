@@ -90,10 +90,18 @@ mod tests {
         tokio::fs::write(&p, contents).await.unwrap();
     }
 
+    fn make_trash(pool: Arc<crabcloud_db::DbPool>, datadir: PathBuf) -> Arc<Trash> {
+        let versions = Arc::new(crabcloud_versions::Versions::new(
+            pool.clone(),
+            datadir.clone(),
+        ));
+        Arc::new(Trash::new(pool, datadir, versions))
+    }
+
     #[tokio::test]
     async fn sweep_once_with_retention_zero_returns_zero() {
         let (pool, datadir, _d, _dd) = setup().await;
-        let trash = Arc::new(Trash::new(pool.clone(), datadir.clone()));
+        let trash = make_trash(pool.clone(), datadir.clone());
         let (sweeper, _shutdown) = TrashSweeper::new(trash, 0);
         assert_eq!(sweeper.sweep_once().await.unwrap(), 0);
     }
@@ -103,7 +111,7 @@ mod tests {
         let (pool, datadir, _d, _dd) = setup().await;
         write_user_file(&datadir, "alice", "/old.txt", b"o").await;
         write_user_file(&datadir, "alice", "/new.txt", b"n").await;
-        let trash = Arc::new(Trash::new(pool.clone(), datadir.clone()));
+        let trash = make_trash(pool.clone(), datadir.clone());
         let old_id = trash
             .soft_delete("alice", "/old.txt", TrashType::File, None)
             .await

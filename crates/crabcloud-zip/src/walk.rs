@@ -167,9 +167,15 @@ pub(crate) mod tests {
         let filecache = Arc::new(FileCache::new(pool.clone()));
         let sink = Arc::new(ChannelEventSink::new(64));
         let storage: Arc<dyn Storage> = Arc::new(MemoryStorage::new("alice"));
-        let trash = Arc::new(crabcloud_trash::Trash::new(
-            Arc::new(pool),
+        let pool_arc = Arc::new(pool);
+        let versions = Arc::new(crabcloud_versions::Versions::new(
+            pool_arc.clone(),
             dir.path().to_path_buf(),
+        ));
+        let trash = Arc::new(crabcloud_trash::Trash::new(
+            pool_arc,
+            dir.path().to_path_buf(),
+            versions.clone(),
         ));
 
         // Seed:
@@ -227,6 +233,7 @@ pub(crate) mod tests {
             filecache,
             sink,
             trash,
+            crabcloud_fs::VersionsHooks::permissive(versions),
         );
         (view, dir)
     }

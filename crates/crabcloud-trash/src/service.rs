@@ -23,11 +23,24 @@ pub struct Trash {
     /// Filesystem root that contains `<uid>/files/...` and `<uid>/files_trashbin/...`.
     /// Same value as `FileConfig::datadirectory`.
     datadir: PathBuf,
+    /// Versions service for hard-delete cascade. `Trash::purge_entry`
+    /// calls `versions.purge_for_user_fileid(uid, fileid_legacy)` so
+    /// the version rows + on-disk version bytes don't leak after a
+    /// hard-delete (SP13 §6 / decision #10).
+    versions: Arc<crabcloud_versions::Versions>,
 }
 
 impl Trash {
-    pub fn new(pool: Arc<DbPool>, datadir: PathBuf) -> Self {
-        Self { pool, datadir }
+    pub fn new(
+        pool: Arc<DbPool>,
+        datadir: PathBuf,
+        versions: Arc<crabcloud_versions::Versions>,
+    ) -> Self {
+        Self {
+            pool,
+            datadir,
+            versions,
+        }
     }
 
     /// Filesystem root the service operates on. Same value as
@@ -598,6 +611,28 @@ impl Trash {
     }
 
     async fn purge_entry(&self, entry: &TrashEntry) -> Result<(), TrashError> {
+        // SP13 cascade: purge any versions for the pre-trash fileid
+        // BEFORE we touch the bytes or the trash row, so version rows
+        // + on-disk files don't outlive their source file. Failure
+        // here is logged but does NOT abort the purge — orphan
+        // version rows are recoverable (later sweep / manual purge);
+        // a stuck trash row is not.
+        if let Some(fileid) = entry.fileid_legacy {
+            if let Err(e) = self
+                .versions
+                .purge_for_user_fileid(&entry.user, fileid)
+                .await
+            {
+                tracing::warn!(
+                    error = %e,
+                    trash_id = entry.id,
+                    fileid,
+                    user = %entry.user,
+                    "trash purge: versions cascade failed; row purge continues"
+                );
+            }
+        }
+
         let src = self
             .datadir
             .join(&entry.user)

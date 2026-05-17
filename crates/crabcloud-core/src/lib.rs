@@ -20,6 +20,7 @@ mod preview_cache_cleanup;
 mod publiclinks;
 mod state;
 mod trash_sweeper;
+mod versions_sweeper;
 
 pub use appconfig::AppConfigService;
 pub use bootstrap::{boxed_hook, BootstrapHook, BootstrapRegistry};
@@ -32,3 +33,4 @@ pub use preview_cache_cleanup::PreviewCacheCleanup;
 pub use publiclinks::SharesTokenLookup;
 pub use state::{AppState, AppStateBuilder};
 pub use trash_sweeper::TrashSweeper;
+pub use versions_sweeper::VersionsSweeper;

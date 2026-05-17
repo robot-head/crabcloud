@@ -55,6 +55,9 @@ pub fn minimal_sqlite_config(db_path: PathBuf) -> FileConfig {
         mail: MailConfig::default(),
         mail_queue_retention_days: 30,
         trash_retention_days: 30,
+        versions_min_interval_secs: 2,
+        versions_max_bytes: 1024 * 1024 * 1024,
+        versions_retention_disabled: false,
         bootstrap_admin: None,
     }
 }

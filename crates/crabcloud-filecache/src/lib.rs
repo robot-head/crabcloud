@@ -67,6 +67,16 @@ impl FileCache {
         &self.pool
     }
 
+    /// Intern a `Storage::id()` string into the numeric `oc_storages.numeric_id`
+    /// that the rest of the schema (filecache, versions, etc.) joins against.
+    /// Pass-through to [`storages::intern_storage`] using this cache's own
+    /// per-process intern map — downstream crates that need the numeric id
+    /// (e.g. `crabcloud-versions`'s storage_id column) can call this without
+    /// poking at private fields.
+    pub async fn intern_storage(&self, storage_id: &str) -> FileCacheResult<i64> {
+        storages::intern_storage(&self.pool, &self.storage_ids, storage_id).await
+    }
+
     /// Pass-through to [`PropertyStore::get_many`] for one named property
     /// across many paths. Used by PROPFIND to fetch `{oc:}favorite` (or
     /// any per-resource custom prop) for an entire directory listing in
