@@ -8,6 +8,7 @@ use crate::mail_queue_cleanup::MailQueueCleanup;
 use crate::mail_worker::MailWorker;
 use crate::preview_cache_cleanup::PreviewCacheCleanup;
 use crate::publiclinks::SharesTokenLookup;
+use crate::trash_sweeper::TrashSweeper;
 use crabcloud_cache::{Cache, MemoryCache};
 use crabcloud_config::FileConfig;
 use crabcloud_db::{core_set, DbPool, MigrationRunner};
@@ -110,6 +111,11 @@ pub struct AppState {
     /// regardless of mail transport, and tests can `notify_one()` here
     /// in teardown if needed.
     pub preview_cache_cleanup_shutdown: Arc<tokio::sync::Notify>,
+    /// Trash bin service. Cheap to clone.
+    pub trash: Arc<crabcloud_trash::Trash>,
+    /// Trash sweeper shutdown handle. Always present; spawned
+    /// unconditionally in `AppStateBuilder::build`.
+    pub trash_sweeper_shutdown: Arc<tokio::sync::Notify>,
 }
 
 impl std::fmt::Debug for AppState {
@@ -376,6 +382,18 @@ impl AppStateBuilder {
             async move { preview_cache_cleanup.run().await },
         ));
 
+        // Trash service + daily sweeper. The sweeper is spawned
+        // unconditionally (trash exists regardless of mail transport);
+        // tests can `notify_one()` on `trash_sweeper_shutdown` in
+        // teardown.
+        let trash = Arc::new(crabcloud_trash::Trash::new(
+            Arc::new(pool.clone()),
+            self.config.datadirectory.clone(),
+        ));
+        let (trash_sweeper, trash_sweeper_shutdown) =
+            TrashSweeper::new(trash.clone(), self.config.trash_retention_days);
+        std::mem::drop(tokio::spawn(async move { trash_sweeper.run().await }));
+
         // Mail wiring: build transport, queue, prefs, and (when not
         // disabled) spawn the worker. The transport kind is mapped from
         // the string in `config.mail.transport`; unknown values degrade
@@ -459,6 +477,8 @@ impl AppStateBuilder {
             expiration_sweeper_shutdown,
             mail_queue_cleanup_shutdown,
             preview_cache_cleanup_shutdown,
+            trash,
+            trash_sweeper_shutdown,
         };
 
         self.registry.run(&state).await?;
