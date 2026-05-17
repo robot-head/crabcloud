@@ -76,8 +76,8 @@ impl PreviewCacheCleanup {
         if !self.root.exists() {
             return Ok(0);
         }
-        let cutoff = SystemTime::now()
-            - Duration::from_secs(self.retention.num_seconds().max(0) as u64);
+        let cutoff =
+            SystemTime::now() - Duration::from_secs(self.retention.num_seconds().max(0) as u64);
         let mut deleted = 0u64;
 
         let mut storages = match tokio::fs::read_dir(&self.root).await {
