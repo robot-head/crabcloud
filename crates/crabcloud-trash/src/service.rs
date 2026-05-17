@@ -192,6 +192,91 @@ impl Trash {
         }
     }
 
+    /// Soft-delete an entry whose bytes live OUTSIDE
+    /// `<datadir>/<deleter_uid>/files/...` (i.e. a share-mount target
+    /// in another user's storage). Streams the bytes through `reader`
+    /// into the deleter's `files_trashbin/files/` and writes the
+    /// trash-row metadata under the deleter. Source removal is the
+    /// caller's responsibility — the caller already holds the share-
+    /// mount storage handle and is in the best position to honor that
+    /// backend's `delete` semantics (and emit the right storage event
+    /// for the filecache scanner).
+    ///
+    /// Use this for the spec §2 decision #7 path: "shared-with-me
+    /// delete lands in the DELETER's bin". For ordinary home deletes
+    /// (single-user) use [`Self::soft_delete`] which does the cheaper
+    /// same-filesystem rename.
+    ///
+    /// `location_for_row` is the path the trash row should record as
+    /// the original location; for share-mount deletes it's the
+    /// deleter's view path's parent (e.g. `/Shared/Vacation`), NOT the
+    /// owner-relative storage path — restoring back to that location
+    /// keeps the deleter's mental model intact.
+    pub async fn soft_delete_from_reader(
+        &self,
+        deleter_uid: &str,
+        location_for_row: &str,
+        basename: &str,
+        kind: TrashType,
+        fileid_legacy: Option<i64>,
+        mut reader: std::pin::Pin<Box<dyn tokio::io::AsyncRead + Send>>,
+    ) -> Result<i64, TrashError> {
+        if basename.is_empty()
+            || basename.contains('/')
+            || basename.contains('\\')
+            || basename.contains('\0')
+            || basename == ".."
+            || basename == "."
+        {
+            return Err(TrashError::SourceMissing);
+        }
+        let now = chrono::Utc::now().timestamp();
+        let suffix = self.resolve_unique_suffix(deleter_uid, basename, now).await?;
+        let trash_dir = self
+            .datadir
+            .join(deleter_uid)
+            .join("files_trashbin")
+            .join("files");
+        tokio::fs::create_dir_all(&trash_dir).await?;
+        let dst = trash_dir.join(format!("{basename}.{suffix}"));
+        // Copy reader → dst. Use create_new to avoid clobbering on the
+        // off-chance a stale file with the same suffix already lives
+        // there.
+        let mut file = tokio::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&dst)
+            .await?;
+        tokio::io::copy(&mut reader, &mut file).await?;
+        file.sync_all().await?;
+        drop(file);
+
+        let id = match self
+            .insert_row(
+                deleter_uid,
+                basename,
+                &suffix,
+                location_for_row,
+                now,
+                kind,
+                fileid_legacy,
+            )
+            .await
+        {
+            Ok(id) => id,
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    orphan_path = %dst.display(),
+                    deleter_uid,
+                    "trash soft_delete_from_reader: INSERT failed after copy; bytes stranded"
+                );
+                return Err(e);
+            }
+        };
+        Ok(id)
+    }
+
     // -------- list --------
 
     pub async fn list(&self, uid: &str) -> Result<Vec<TrashEntry>, TrashError> {

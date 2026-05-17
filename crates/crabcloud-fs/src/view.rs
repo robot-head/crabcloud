@@ -314,25 +314,26 @@ impl View {
     /// the filecache scanner sees the file disappear from
     /// `<datadir>/<uid>/files/...` and removes its row.
     ///
-    /// Non-home mounts (share mounts, public-link mounts) fall through
-    /// to `hard_delete`: the trash service moves bytes within
-    /// `<datadir>/<uid>/files/...` which doesn't apply to bytes that
-    /// live under another user's home storage. The storage backend on
-    /// the share / link mount enforces the relevant permission check
-    /// (e.g. `SharedSubrootStorage` returns `PermissionDenied` on a
-    /// read-only link), so the original 403 behavior is preserved.
-    /// Cross-storage trash is out of scope for the MVP — see spec §6.
+    /// Share / public-link mounts (where the bytes live under another
+    /// user's home storage) follow the spec §2 decision #7 path:
+    /// the trash row's `user` column is the DELETER (`self.uid`), the
+    /// `location` mirrors the deleter's view of the path, and the
+    /// bytes are STREAMED into the deleter's `files_trashbin/files/`
+    /// before the share-mount storage's `delete` runs. If `delete`
+    /// fails (e.g. `PermissionDenied` on a read-only share), the
+    /// trash file is rolled back so the storage layer's 403 still
+    /// surfaces verbatim — `delete_read_link_returns_403` keeps
+    /// passing.
+    ///
+    /// Directories on share mounts currently fall back to hard delete
+    /// (the streaming flow is file-only). Promotes to a tracing warn
+    /// so we can spot it in logs.
     pub async fn delete(&self, user_path: &UserPath) -> FsResult<()> {
         let (mount, storage_path) = self.resolve(user_path)?;
         if mount.metadata.is_some() {
-            // Share / public-link mount: defer to the storage backend's
-            // permission check + hard-delete semantics. Trash is only
-            // meaningful for files in the user's own home.
-            mount
-                .storage
-                .delete(&storage_path, &*self.storage_sink)
-                .await?;
-            return Ok(());
+            return self
+                .delete_via_share_mount(mount, storage_path, user_path)
+                .await;
         }
         // Look up the type and best-effort fileid_legacy from
         // filecache before the bytes move. Errors here are
@@ -366,6 +367,111 @@ impl View {
                 path: storage_path,
             })
             .await;
+        Ok(())
+    }
+
+    /// Share-mount soft-delete: stream the file into the deleter's
+    /// trashbin, then ask the share-mount storage to delete the source.
+    /// Used by [`Self::delete`] when the resolved mount belongs to a
+    /// share or public-link (i.e. `mount.metadata.is_some()`).
+    ///
+    /// Permission enforcement is delegated to the share-mount storage
+    /// backend: if the deleter lacks delete on the share, the backend's
+    /// `delete` returns `PermissionDenied` and we roll back the trash
+    /// file before surfacing that error. The deleter never gets a
+    /// trash row for bytes they couldn't legitimately delete.
+    async fn delete_via_share_mount(
+        &self,
+        mount: &Mount,
+        storage_path: StoragePath,
+        user_path: &UserPath,
+    ) -> FsResult<()> {
+        // Look up the type before reading. Directory support on share
+        // mounts is intentionally out of scope for MVP — recursive
+        // streaming + per-entry trash rows would balloon the implementation;
+        // we fall back to hard delete with a warn so the case is visible
+        // in logs. Files are the common case.
+        let (cache_storage, cache_path) = cache_key_for(&mount.storage, &storage_path)?;
+        let row = self
+            .filecache
+            .lookup(cache_storage.id(), &cache_path)
+            .await
+            .ok()
+            .flatten();
+        let kind = match row.as_ref().map(|r| r.kind) {
+            Some(crabcloud_storage::FileKind::Directory) => crabcloud_trash::TrashType::Dir,
+            _ => crabcloud_trash::TrashType::File,
+        };
+        if matches!(kind, crabcloud_trash::TrashType::Dir) {
+            tracing::warn!(
+                deleter = %self.uid.as_str(),
+                path = %user_path.as_str(),
+                "share-mount directory delete: falling back to hard-delete (MVP scope)"
+            );
+            mount
+                .storage
+                .delete(&storage_path, &*self.storage_sink)
+                .await?;
+            return Ok(());
+        }
+        let fileid_legacy = row.as_ref().map(|r| r.fileid);
+
+        // Read the source bytes from the share-mount storage. Reads on
+        // a share mount don't go through the permission gate for delete,
+        // so this succeeds for any link/share that grants read. (Read-
+        // only shares are the read-only case we explicitly preserve a
+        // 403 for: see the rollback after the delete attempt below.)
+        let reader = mount.storage.read(&storage_path).await?;
+
+        // Stream into the deleter's trashbin. Trash row records the
+        // deleter as `user` and the deleter's view path as `location`.
+        let basename = match std::path::Path::new(user_path.as_str())
+            .file_name()
+            .and_then(|s| s.to_str())
+        {
+            Some(b) => b.to_string(),
+            None => return Err(FsError::InvalidPath(user_path.as_str().into())),
+        };
+        let location = match std::path::Path::new(user_path.as_str())
+            .parent()
+            .and_then(|p| p.to_str())
+        {
+            Some("") | None => "/".to_string(),
+            Some(parent) => parent.to_string(),
+        };
+
+        let trash_id = self
+            .trash
+            .soft_delete_from_reader(
+                self.uid.as_str(),
+                &location,
+                &basename,
+                kind,
+                fileid_legacy,
+                reader,
+            )
+            .await
+            .map_err(map_trash_err)?;
+
+        // Now delete the source. If this fails — typically `PermissionDenied`
+        // for a read-only share — roll back the trash entry so we don't
+        // leak a copy of bytes the user couldn't legitimately remove.
+        if let Err(e) = mount
+            .storage
+            .delete(&storage_path, &*self.storage_sink)
+            .await
+        {
+            if let Err(purge_err) = self.trash.purge(self.uid.as_str(), trash_id).await {
+                tracing::warn!(
+                    error = %purge_err,
+                    trash_id,
+                    deleter = %self.uid.as_str(),
+                    "share-mount delete rolled back, but trash purge of staged copy failed"
+                );
+            }
+            return Err(e.into());
+        }
+
         Ok(())
     }
 
