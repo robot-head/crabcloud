@@ -51,7 +51,9 @@ pub fn minimal_sqlite_config(db_path: PathBuf) -> FileConfig {
         folder_zip_max_bytes: 2 * 1024 * 1024 * 1024,
         preview_root: None,
         preview_max_pixels: 64 * 1024 * 1024,
+        preview_retention_days: 60,
         mail: MailConfig::default(),
+        mail_queue_retention_days: 30,
         bootstrap_admin: None,
     }
 }

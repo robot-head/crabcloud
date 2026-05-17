@@ -14,7 +14,9 @@ mod bootstrap;
 mod error;
 mod expiration_sweeper;
 mod mail_queue;
+mod mail_queue_cleanup;
 mod mail_worker;
+mod preview_cache_cleanup;
 mod publiclinks;
 mod state;
 
@@ -23,6 +25,8 @@ pub use bootstrap::{boxed_hook, BootstrapHook, BootstrapRegistry};
 pub use error::{CoreResult, Error};
 pub use expiration_sweeper::ExpirationWarningSweeper;
 pub use mail_queue::{MailQueue, MailQueueError, MailQueueRow};
+pub use mail_queue_cleanup::MailQueueCleanup;
 pub use mail_worker::MailWorker;
+pub use preview_cache_cleanup::PreviewCacheCleanup;
 pub use publiclinks::SharesTokenLookup;
 pub use state::{AppState, AppStateBuilder};
