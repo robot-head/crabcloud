@@ -6,16 +6,16 @@
 //! `state.storage_factory` (the `Shares` service is storage-agnostic and
 //! takes the id as a string).
 
+use super::envelope::ocs_envelope;
 use crate::auth_context::AuthContext;
 use crate::extractors::format::OcsFormat;
 use axum::extract::{Path, Query, State};
-use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
-use axum::response::{IntoResponse, Response};
+use axum::response::Response;
 use axum::routing::{get, post};
 use axum::{Extension, Form};
 use chrono::NaiveDate;
 use crabcloud_core::AppState;
-use crabcloud_ocs::{render, Format, OcsResponse, OcsStatus, OcsVersion};
+use crabcloud_ocs::Format;
 use crabcloud_sharing::{CreateShareRequest, ShareError, ShareRow, ShareType, UpdateShareFields};
 use crabcloud_users::{Email, UserId};
 use serde::Deserialize;
@@ -31,42 +31,6 @@ pub fn router() -> axum::Router<AppState> {
 }
 
 // --- envelope helpers ------------------------------------------------------
-
-fn http_status_from(code: u16) -> StatusCode {
-    StatusCode::from_u16(code).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR)
-}
-
-fn ocs_status_for_http(code: u16) -> OcsStatus {
-    match code {
-        200 => OcsStatus::Ok,
-        201 => OcsStatus::Created,
-        400 => OcsStatus::BadRequest,
-        401 => OcsStatus::Unauthorized,
-        403 => OcsStatus::Forbidden,
-        // 404 → Nextcloud's NotFound (998). Everything else we don't have
-        // a dedicated OcsStatus for (501, 5xx, anything custom) falls
-        // through to UnknownError (999); the HTTP code itself remains
-        // distinct on the response line so clients can branch on it.
-        404 => OcsStatus::NotFound,
-        _ => OcsStatus::UnknownError,
-    }
-}
-
-/// Wrap `data` in `{ ocs: { meta, data } }` (or XML equivalent). HTTP status
-/// is `code`; OCS-envelope `statuscode` mirrors it via `OcsStatus`.
-fn ocs_envelope(code: u16, message: &str, data: Value, fmt: Format) -> Response {
-    let status = ocs_status_for_http(code);
-    let envelope = OcsResponse {
-        status,
-        message: message.to_string(),
-        data,
-        version: OcsVersion::V2,
-    };
-    let (body, ct) = render(&envelope, fmt);
-    let mut headers = HeaderMap::new();
-    headers.insert(header::CONTENT_TYPE, HeaderValue::from_static(ct));
-    (http_status_from(code), headers, body).into_response()
-}
 
 fn from_share_error(err: ShareError, fmt: Format) -> Response {
     ocs_envelope(err.http_status(), &err.to_string(), Value::Null, fmt)

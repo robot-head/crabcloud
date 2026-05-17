@@ -10,18 +10,18 @@
 //! * `DELETE /trash/{id}`            — purge one entry
 //! * `DELETE /trash`                 — empty the bin
 //!
-//! Envelope helpers mirror `files_sharing.rs` exactly (`ocs_envelope` ->
-//! `{ ocs: { meta, data } }` via `crabcloud_ocs::render`).
+//! Envelope helpers live in [`super::envelope`] and are shared with
+//! `files_sharing.rs` so the OCS wire shape stays single-sourced.
 
+use super::envelope::ocs_envelope;
 use crate::auth_context::AuthContext;
 use crate::extractors::format::OcsFormat;
 use axum::extract::{Path, State};
-use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
-use axum::response::{IntoResponse, Response};
+use axum::response::Response;
 use axum::routing::{delete, get, post};
 use axum::Extension;
 use crabcloud_core::AppState;
-use crabcloud_ocs::{render, Format, OcsResponse, OcsStatus, OcsVersion};
+use crabcloud_ocs::Format;
 use crabcloud_trash::{TrashEntry, TrashError};
 use serde::Serialize;
 use serde_json::Value;
@@ -34,37 +34,7 @@ pub fn router() -> axum::Router<AppState> {
         .route("/trash", delete(empty_handler))
 }
 
-// --- envelope helpers (verbatim from files_sharing.rs) ---------------------
-
-fn http_status_from(code: u16) -> StatusCode {
-    StatusCode::from_u16(code).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR)
-}
-
-fn ocs_status_for_http(code: u16) -> OcsStatus {
-    match code {
-        200 => OcsStatus::Ok,
-        201 => OcsStatus::Created,
-        400 => OcsStatus::BadRequest,
-        401 => OcsStatus::Unauthorized,
-        403 => OcsStatus::Forbidden,
-        404 => OcsStatus::NotFound,
-        _ => OcsStatus::UnknownError,
-    }
-}
-
-fn ocs_envelope(code: u16, message: &str, data: Value, fmt: Format) -> Response {
-    let status = ocs_status_for_http(code);
-    let envelope = OcsResponse {
-        status,
-        message: message.to_string(),
-        data,
-        version: OcsVersion::V2,
-    };
-    let (body, ct) = render(&envelope, fmt);
-    let mut headers = HeaderMap::new();
-    headers.insert(header::CONTENT_TYPE, HeaderValue::from_static(ct));
-    (http_status_from(code), headers, body).into_response()
-}
+// --- error mapping ---------------------------------------------------------
 
 fn from_trash_error(err: TrashError, fmt: Format) -> Response {
     let (code, msg) = match err {

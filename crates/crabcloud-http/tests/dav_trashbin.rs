@@ -369,8 +369,7 @@ async fn move_with_destination_restores_to_explicit_path() {
 async fn move_works_via_remote_php_alias() {
     let dir = tempdir().unwrap();
     let data = tempdir().unwrap();
-    let (state, token) =
-        make_alice(dir.path().join("m_alias.db"), data.path().to_path_buf()).await;
+    let (state, token) = make_alice(dir.path().join("m_alias.db"), data.path().to_path_buf()).await;
     seed_file(&state, "alice", "/a.txt", b"hello").await;
     let (basename, suffix) = soft_delete(&state, "alice", "/a.txt").await;
     let state_for_app = state.clone();
