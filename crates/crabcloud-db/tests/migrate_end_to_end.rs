@@ -91,7 +91,7 @@ async fn migrate_sqlite() {
     let mut runner = MigrationRunner::new(&pool, &cfg.dbtableprefix);
     runner.register(core_set());
     let applied = runner.run().await.unwrap();
-    assert_eq!(applied, 10);
+    assert_eq!(applied, 11);
 
     assert_appconfig_table_usable(&pool).await;
     pool.close().await;
@@ -110,6 +110,8 @@ async fn migrate_mysql() {
     // (`filecache.mimetype → mimetypes.id`, `filecache.storage → storages.numeric_id`).
     if let DbPool::MySql(p) = &pool {
         for table in [
+            "oc_activity_settings",
+            "oc_activity",
             "oc_files_versions",
             "oc_files_trash",
             "oc_user_notification_prefs",
@@ -137,7 +139,7 @@ async fn migrate_mysql() {
     let mut runner = MigrationRunner::new(&pool, &cfg.dbtableprefix);
     runner.register(core_set());
     let applied = runner.run().await.unwrap();
-    assert_eq!(applied, 10);
+    assert_eq!(applied, 11);
 
     assert_appconfig_table_usable(&pool).await;
     pool.close().await;
@@ -155,6 +157,8 @@ async fn migrate_postgres() {
     // (`filecache.mimetype → mimetypes.id`, `filecache.storage → storages.numeric_id`).
     if let DbPool::Postgres(p) = &pool {
         for table in [
+            "oc_activity_settings",
+            "oc_activity",
             "oc_files_versions",
             "oc_files_trash",
             "oc_user_notification_prefs",
@@ -182,7 +186,7 @@ async fn migrate_postgres() {
     let mut runner = MigrationRunner::new(&pool, &cfg.dbtableprefix);
     runner.register(core_set());
     let applied = runner.run().await.unwrap();
-    assert_eq!(applied, 10);
+    assert_eq!(applied, 11);
 
     assert_appconfig_table_usable(&pool).await;
     pool.close().await;
