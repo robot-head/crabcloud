@@ -47,8 +47,12 @@ pub const GET_BY_NAME_PG: &str = "\
 pub const DELETE_QM: &str = "DELETE FROM oc_files_trash WHERE id = ?";
 pub const DELETE_PG: &str = "DELETE FROM oc_files_trash WHERE id = $1";
 
-// -- DELETE all rows for a user (empty-trash).
+// -- DELETE all rows for a user (empty-trash). Reserved for Batch C
+//    when the OCS `DELETE /trash` empty-bin handler lands; gated behind
+//    `#[allow(dead_code)]` so clippy stays clean today.
+#[allow(dead_code)]
 pub const DELETE_ALL_QM: &str = "DELETE FROM oc_files_trash WHERE \"user\" = ?";
+#[allow(dead_code)]
 pub const DELETE_ALL_PG: &str = "DELETE FROM oc_files_trash WHERE \"user\" = $1";
 
 // -- SELECT a batch of expired rows for sweeping.

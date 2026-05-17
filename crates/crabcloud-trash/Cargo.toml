@@ -7,8 +7,6 @@ rust-version.workspace = true
 [dependencies]
 chrono.workspace = true
 crabcloud-db.workspace = true
-crabcloud-filecache.workspace = true
-crabcloud-storage.workspace = true
 serde.workspace = true
 sqlx.workspace = true
 thiserror.workspace = true

@@ -38,7 +38,7 @@ impl TrashType {
         }
     }
 
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s {
             "file" => Some(Self::File),
             "dir" => Some(Self::Dir),
