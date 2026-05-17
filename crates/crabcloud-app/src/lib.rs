@@ -71,6 +71,11 @@ pub use app::{App, Route};
 pub use context::RequestContext;
 // re-exported for integration tests (tests/server_fns_public_link.rs)
 pub use server_fns::public_link::PublicLinkMeta;
+// re-exported for integration tests (tests/server_fns_trash.rs) and the
+// Dioxus UI (Batch D).
+pub use server_fns::trash::{
+    empty_trash, list_trash, purge_trash, restore_trash, RestoredDto, TrashEntryDto,
+};
 pub use server_fns::{
     count_incoming_shares, delete, list_dir, login, mkdir, move_paths, rename,
     share_recipient_search, status, upload_begin, FileEntry, RecipientCandidate, StatusInfo,
