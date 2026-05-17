@@ -164,9 +164,13 @@ pub(crate) mod tests {
         let mut runner = MigrationRunner::new(&pool, &cfg.dbtableprefix);
         runner.register(core_set());
         runner.run().await.unwrap();
-        let filecache = Arc::new(FileCache::new(pool));
+        let filecache = Arc::new(FileCache::new(pool.clone()));
         let sink = Arc::new(ChannelEventSink::new(64));
         let storage: Arc<dyn Storage> = Arc::new(MemoryStorage::new("alice"));
+        let trash = Arc::new(crabcloud_trash::Trash::new(
+            Arc::new(pool),
+            dir.path().to_path_buf(),
+        ));
 
         // Seed:
         //   /Photos/
@@ -222,6 +226,7 @@ pub(crate) mod tests {
             }],
             filecache,
             sink,
+            trash,
         );
         (view, dir)
     }

@@ -19,6 +19,7 @@ mod mail_worker;
 mod preview_cache_cleanup;
 mod publiclinks;
 mod state;
+mod trash_sweeper;
 
 pub use appconfig::AppConfigService;
 pub use bootstrap::{boxed_hook, BootstrapHook, BootstrapRegistry};
@@ -30,3 +31,4 @@ pub use mail_worker::MailWorker;
 pub use preview_cache_cleanup::PreviewCacheCleanup;
 pub use publiclinks::SharesTokenLookup;
 pub use state::{AppState, AppStateBuilder};
+pub use trash_sweeper::TrashSweeper;

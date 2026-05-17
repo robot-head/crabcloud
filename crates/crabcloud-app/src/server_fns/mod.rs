@@ -929,5 +929,10 @@ fn map_fs_err(err: crabcloud_fs::FsError) -> ServerFnError {
         FsError::Storage(s) => ServerFnError::new(format!("storage: {s}")),
         FsError::FileCache(c) => ServerFnError::new(format!("filecache: {c}")),
         FsError::Upload(m) => ServerFnError::new(format!("upload: {m}")),
+        FsError::Forbidden => ServerFnError::new("forbidden"),
+        FsError::Conflict => ServerFnError::new("conflict"),
+        FsError::Unsupported => ServerFnError::new("unsupported"),
+        FsError::CrossStorage => ServerFnError::new("cross_storage"),
+        FsError::Trash(m) => ServerFnError::new(format!("trash: {m}")),
     }
 }

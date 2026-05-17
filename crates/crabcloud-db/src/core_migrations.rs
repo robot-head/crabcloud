@@ -74,6 +74,13 @@ pub const CORE_MIGRATIONS: &[Migration] = &[
         mysql: include_str!("../../../migrations/core/0008_share_last_warned/mysql.sql"),
         postgres: include_str!("../../../migrations/core/0008_share_last_warned/postgres.sql"),
     },
+    Migration {
+        version: 9,
+        name: "files_trash",
+        sqlite: include_str!("../../../migrations/core/0009_files_trash/sqlite.sql"),
+        mysql: include_str!("../../../migrations/core/0009_files_trash/mysql.sql"),
+        postgres: include_str!("../../../migrations/core/0009_files_trash/postgres.sql"),
+    },
 ];
 
 /// Returns the `core` migration set ready to be registered with a
@@ -101,7 +108,7 @@ mod tests {
         let mut runner = MigrationRunner::new(&pool, &cfg.dbtableprefix);
         runner.register(core_set());
         let applied = runner.run().await.unwrap();
-        assert_eq!(applied, 8);
+        assert_eq!(applied, 9);
 
         // Verify oc_appconfig exists and accepts a row.
         match &pool {

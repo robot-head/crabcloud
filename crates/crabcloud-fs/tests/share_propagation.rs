@@ -112,10 +112,14 @@ async fn delete_through_alice_propagates_to_bob_view_via_share_mount() {
         "expected x.jpg visible to bob pre-delete, got {pre_names:?}",
     );
 
-    // Now alice deletes /Vacation/x.jpg through her home view. The
-    // storage emits StorageEvent::Deleted → scanner apply → row removed.
+    // Now alice deletes /Vacation/x.jpg through her home view. We use
+    // `hard_delete` here so the bytes actually leave alice's MemoryStorage
+    // and emit a `StorageEvent::Deleted` for the scanner to apply. The
+    // SP12 soft-delete path (`View::delete`) moves bytes on disk under
+    // `<datadir>/<uid>/files/...`, which doesn't apply to MemoryStorage
+    // and isn't what this share-propagation test is verifying anyway.
     alice_view
-        .delete(&UserPath::new("/Vacation/x.jpg").unwrap())
+        .hard_delete(&UserPath::new("/Vacation/x.jpg").unwrap())
         .await
         .unwrap();
 

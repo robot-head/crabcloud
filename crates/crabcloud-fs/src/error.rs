@@ -13,10 +13,20 @@ pub enum FsError {
     MountNotFound,
     #[error("cross-mount operation not supported in this sub-project")]
     CrossMount,
+    #[error("forbidden")]
+    Forbidden,
+    #[error("conflict")]
+    Conflict,
+    #[error("operation not supported")]
+    Unsupported,
+    #[error("cross-storage trash not supported in MVP")]
+    CrossStorage,
     #[error("storage: {0}")]
     Storage(#[from] StorageError),
     #[error("filecache: {0}")]
     FileCache(#[from] FileCacheError),
+    #[error("trash: {0}")]
+    Trash(String),
     #[error("upload: {0}")]
     Upload(String),
 }

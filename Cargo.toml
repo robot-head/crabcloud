@@ -15,6 +15,7 @@ members = [
     "crates/crabcloud-publiclinks",
     "crates/crabcloud-sharing",
     "crates/crabcloud-storage",
+    "crates/crabcloud-trash",
     "crates/crabcloud-users",
     "crates/crabcloud-zip",
     "xtask",
@@ -114,6 +115,7 @@ crabcloud-preview = { path = "crates/crabcloud-preview" }
 crabcloud-publiclinks = { path = "crates/crabcloud-publiclinks" }
 crabcloud-sharing = { path = "crates/crabcloud-sharing" }
 crabcloud-storage = { path = "crates/crabcloud-storage" }
+crabcloud-trash = { path = "crates/crabcloud-trash" }
 crabcloud-users = { path = "crates/crabcloud-users" }
 crabcloud-zip = { path = "crates/crabcloud-zip" }
 email_address = "0.2"

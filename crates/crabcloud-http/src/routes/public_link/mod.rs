@@ -102,6 +102,7 @@ pub(super) async fn build_view(
         mounts,
         state.filecache.clone(),
         state.storage_sink.clone(),
+        state.trash.clone(),
     ))
 }
 
@@ -191,6 +192,11 @@ pub(super) fn fs_err_to_response(err: crabcloud_fs::FsError) -> Response {
         )
             .into_response(),
         FsError::Upload(m) => (StatusCode::INTERNAL_SERVER_ERROR, m).into_response(),
+        FsError::Forbidden => (StatusCode::FORBIDDEN, "").into_response(),
+        FsError::Conflict => (StatusCode::CONFLICT, "").into_response(),
+        FsError::Unsupported => (StatusCode::METHOD_NOT_ALLOWED, "").into_response(),
+        FsError::CrossStorage => (StatusCode::BAD_GATEWAY, "").into_response(),
+        FsError::Trash(m) => (StatusCode::INTERNAL_SERVER_ERROR, m).into_response(),
     }
 }
 

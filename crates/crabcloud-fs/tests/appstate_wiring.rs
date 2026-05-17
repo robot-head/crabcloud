@@ -18,6 +18,7 @@ use crabcloud_db as _;
 use crabcloud_filecache as _;
 use crabcloud_sharing as _;
 use crabcloud_storage as _;
+use crabcloud_trash as _;
 use thiserror as _;
 use tracing as _;
 

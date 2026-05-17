@@ -8,7 +8,9 @@ use crabcloud_filecache::FileCache;
 use crabcloud_fs::{Mount, MountKind, MountMetadata, SharedSubrootStorage, View};
 use crabcloud_sharing::SharePermissions;
 use crabcloud_storage::{memory::MemoryStorage, ChannelEventSink, Storage, StoragePath};
+use crabcloud_trash::Trash;
 use crabcloud_users::UserId;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tempfile::TempDir;
 
@@ -17,6 +19,8 @@ pub struct Harness {
     pub filecache: Arc<FileCache>,
     pub sink: Arc<ChannelEventSink>,
     pub storage: Arc<dyn Storage>,
+    pub trash: Arc<Trash>,
+    pub datadir: PathBuf,
     pub _tempdir: TempDir,
 }
 
@@ -30,11 +34,15 @@ pub async fn harness() -> Harness {
     let filecache = Arc::new(FileCache::new(pool.clone()));
     let sink = Arc::new(ChannelEventSink::new(64));
     let storage: Arc<dyn Storage> = Arc::new(MemoryStorage::new("alice"));
+    let datadir = dir.path().to_path_buf();
+    let trash = Arc::new(Trash::new(Arc::new(pool.clone()), datadir.clone()));
     Harness {
         pool,
         filecache,
         sink,
         storage,
+        trash,
+        datadir,
         _tempdir: dir,
     }
 }
@@ -50,6 +58,7 @@ pub fn view_home(h: &Harness) -> View {
         }],
         h.filecache.clone(),
         h.sink.clone(),
+        h.trash.clone(),
     )
 }
 
@@ -66,6 +75,7 @@ pub fn view_home_for(h: &Harness, storage: Arc<dyn Storage>) -> View {
         }],
         h.filecache.clone(),
         h.sink.clone(),
+        h.trash.clone(),
     )
 }
 
@@ -89,6 +99,7 @@ pub fn view_with_two_mounts(h: &Harness) -> View {
         ],
         h.filecache.clone(),
         h.sink.clone(),
+        h.trash.clone(),
     )
 }
 
@@ -127,5 +138,6 @@ pub fn view_with_share_mount(
         ],
         h.filecache.clone(),
         h.sink.clone(),
+        h.trash.clone(),
     )
 }
