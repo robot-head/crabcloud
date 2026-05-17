@@ -250,4 +250,64 @@ form button { margin-top: 1rem; padding: 0.5rem 1rem; font: inherit; cursor: poi
   padding: 64px 16px; font-style: italic;
 }
 .trash-error { color: #d33; font-style: normal; }
+
+/* Versions panel (SP13 D): per-file version list rendered as a modal
+ * over the files page. Reuses .files-modal-backdrop + .files-modal
+ * chrome for centering, dimming, and the rounded card shell; only the
+ * inner list + per-row controls need custom styling. Wider than the
+ * default .files-modal because it lists rows with timestamp + size +
+ * two action buttons. */
+.versions-panel { max-width: 480px; width: 100%; padding: 16px 18px; }
+.versions-panel-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 8px;
+}
+.versions-panel-close {
+  background: none; border: 0; padding: 2px 8px;
+  font: inherit; font-size: 16px;
+  color: #666; cursor: pointer; opacity: 0.7;
+}
+.versions-panel-close:hover { opacity: 1; color: #333; }
+.versions-panel-banner {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px; border-radius: 4px; margin-bottom: 10px;
+  background: #fdecec; border: 1px solid #f5c6c6; color: #a02020;
+  font-size: 12px;
+}
+.versions-panel-banner-icon { font-size: 14px; line-height: 1; }
+.versions-panel-banner-text { flex: 1; }
+.versions-panel-banner-close {
+  background: none; border: 0; padding: 0 4px;
+  font: inherit; color: inherit; cursor: pointer; opacity: 0.7;
+}
+.versions-panel-banner-close:hover { opacity: 1; }
+.versions-panel-list { list-style: none; padding: 0; margin: 0; max-height: 360px; overflow-y: auto; }
+.versions-panel-row {
+  display: grid;
+  grid-template-columns: 1fr 80px auto;
+  gap: 10px; align-items: center;
+  padding: 8px 4px;
+  border-bottom: 1px solid #f5f5f5;
+}
+.versions-panel-row:last-child { border-bottom: 0; }
+.versions-panel-row:hover { background: #f5fafd; }
+.versions-panel-row-when { color: #444; font-size: 12px; }
+.versions-panel-row-size { color: #888; font-size: 12px; text-align: right; }
+.versions-panel-row-actions { display: flex; gap: 6px; justify-content: flex-end; }
+.versions-panel-restore-btn, .versions-panel-delete-btn {
+  padding: 3px 10px; border-radius: 4px;
+  border: 1px solid #d0d0d0; background: white;
+  font: inherit; font-size: 11px; cursor: pointer;
+  transition: border-color 0.12s, color 0.12s, background 0.12s;
+}
+.versions-panel-restore-btn:hover:not([disabled]) { border-color: #0082c9; color: #0082c9; background: #f5fafd; }
+.versions-panel-delete-btn { border-color: #e5b7b7; color: #d33; }
+.versions-panel-delete-btn:hover:not([disabled]) { background: #fff5f5; border-color: #d33; }
+.versions-panel-restore-btn[disabled], .versions-panel-delete-btn[disabled] { opacity: 0.5; cursor: not-allowed; }
+.versions-panel-empty, .versions-panel-error, .versions-panel-loading {
+  text-align: center; color: #888;
+  padding: 32px 16px; font-style: italic; font-size: 12px;
+}
+.versions-panel-error { color: #d33; font-style: normal; }
+
 .sidebar-link-disabled { color: #aaa; cursor: default; }

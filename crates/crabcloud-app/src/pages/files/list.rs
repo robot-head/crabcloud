@@ -20,6 +20,7 @@ pub struct FileListProps {
     pub on_rename_cancel: EventHandler<()>,
     pub on_delete: EventHandler<String>,
     pub on_share: EventHandler<String>,
+    pub on_show_versions: EventHandler<(i64, String)>,
     pub on_retry: EventHandler<()>,
 }
 
@@ -37,6 +38,7 @@ pub fn FileList(props: FileListProps) -> Element {
         on_rename_cancel,
         on_delete,
         on_share,
+        on_show_versions,
         on_retry,
     } = props;
 
@@ -69,6 +71,7 @@ pub fn FileList(props: FileListProps) -> Element {
                             on_rename_cancel,
                             on_delete,
                             on_share,
+                            on_show_versions,
                         }
                     }
                 }

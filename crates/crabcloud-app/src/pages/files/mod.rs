@@ -14,6 +14,7 @@ pub mod share_modal;
 pub mod states;
 pub mod toolbar;
 pub mod upload;
+pub mod versions_panel;
 
 #[cfg(feature = "server")]
 pub mod ssr;
@@ -27,6 +28,7 @@ use crate::pages::files::progress_strip::UploadProgressStrip;
 use crate::pages::files::share_modal::ShareModal;
 use crate::pages::files::toolbar::Toolbar;
 use crate::pages::files::upload::{DropOverlay, JobState, UploadQueue};
+use crate::pages::files::versions_panel::VersionsPanel;
 use crate::server_fns::{delete, list_dir, mkdir, move_paths, rename, FileEntry};
 #[cfg(target_arch = "wasm32")]
 use dioxus::html::HasFileData;
@@ -104,6 +106,11 @@ pub fn Files(ctx: RequestContext, path: String) -> Element {
     // Share-modal target — SP7 E2/E3. When `Some(path)`, `ShareModal` is
     // mounted at the bottom of the page DOM (similar to `DeleteModal`).
     let mut share_path: Signal<Option<String>> = use_signal(|| None);
+    // Versions panel target — SP13 D. When `Some((fileid, name))`, the
+    // `VersionsPanel` modal is mounted at the bottom of the page DOM.
+    // The filename is captured at click time so the header reads
+    // sensibly even if the row's data shifts between open and close.
+    let mut pending_versions: Signal<Option<(i64, String)>> = use_signal(|| None);
 
     // Cut/paste state — D3. The clipboard intentionally outlives a single
     // folder view so the user can navigate from source to destination
@@ -138,6 +145,8 @@ pub fn Files(ctx: RequestContext, path: String) -> Element {
     };
     let on_delete = move |p: String| delete_target.set(Some(vec![p]));
     let on_share = move |p: String| share_path.set(Some(p));
+    let on_show_versions =
+        move |(fid, name): (i64, String)| pending_versions.set(Some((fid, name)));
     let on_delete_confirm = move |_| {
         if let Some(paths) = delete_target() {
             spawn(async move {
@@ -391,6 +400,7 @@ pub fn Files(ctx: RequestContext, path: String) -> Element {
                         on_rename_cancel,
                         on_delete,
                         on_share,
+                        on_show_versions,
                         on_retry,
                     }
                     DropOverlay { visible: drag_active(), current_folder: path_sig() }
@@ -407,6 +417,13 @@ pub fn Files(ctx: RequestContext, path: String) -> Element {
                 ShareModal {
                     path: p,
                     on_close: move |_| share_path.set(None),
+                }
+            }
+            if let Some((fid, name)) = pending_versions() {
+                VersionsPanel {
+                    fileid: fid,
+                    filename: name,
+                    on_close: move |_| pending_versions.set(None),
                 }
             }
         }
