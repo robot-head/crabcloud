@@ -49,15 +49,40 @@ pub struct PublicLinkMeta {
 /// scoped to authenticated session POSTs in `csrf.rs`).
 #[get("/api/public_link/meta")]
 pub async fn meta_public_link(token: String) -> Result<PublicLinkMeta, ServerFnError> {
-    use crabcloud_publiclinks::{PublicLinkAuthContext, Token};
+    use crabcloud_publiclinks::{resolve_browser_context, Token};
     use dioxus::fullstack::FullstackContext;
 
     let _validated = Token::parse(&token).ok_or_else(|| ServerFnError::new("bad_token"))?;
     let fs =
         FullstackContext::current().ok_or_else(|| ServerFnError::new("not running on server"))?;
-    let ctx = fs
-        .extension::<PublicLinkAuthContext>()
-        .ok_or_else(|| ServerFnError::new("public_link_context_missing"))?;
+    let state = fs
+        .extension::<crabcloud_core::AppState>()
+        .ok_or_else(|| ServerFnError::new("AppState extension missing"))?;
+    // The fullstack `#[server]` route lives under `/api/...` and never
+    // passes through the `public_link_auth` middleware mounted on
+    // `/s/{token}`, so we have to resolve the context ourselves from
+    // the token query param + the request's cookie headers.
+    let cookies: Vec<String> = fs
+        .parts_mut()
+        .headers
+        .get_all(axum::http::header::COOKIE)
+        .iter()
+        .filter_map(|h| h.to_str().ok().map(|s| s.to_string()))
+        .collect();
+    let ctx = match resolve_browser_context(
+        &state.publiclinks_auth,
+        &token,
+        cookies.iter().map(|s| s.as_str()),
+    )
+    .await
+    {
+        Ok(Some(c)) => c,
+        Ok(None) => return Err(ServerFnError::new("not_found")),
+        Err(e) => {
+            tracing::warn!(error = %e, "public-link meta: backend lookup failed");
+            return Err(ServerFnError::new("lookup_failed"));
+        }
+    };
 
     let perms = crabcloud_sharing::SharePermissions::from_wire(ctx.permissions);
     let root_name = if ctx.owner_path.is_root() {
@@ -84,7 +109,7 @@ pub async fn list_public_link(
     path: String,
 ) -> Result<Vec<FileEntry>, ServerFnError> {
     use crabcloud_fs::{PublicLinkMountResolver, UserPath, View};
-    use crabcloud_publiclinks::{PublicLinkAuthContext, Token};
+    use crabcloud_publiclinks::{resolve_browser_context, Token};
     use crabcloud_users::UserId;
     use dioxus::fullstack::FullstackContext;
     use std::sync::Arc;
@@ -95,9 +120,29 @@ pub async fn list_public_link(
     let state = fs
         .extension::<crabcloud_core::AppState>()
         .ok_or_else(|| ServerFnError::new("AppState extension missing"))?;
-    let ctx = fs
-        .extension::<PublicLinkAuthContext>()
-        .ok_or_else(|| ServerFnError::new("public_link_context_missing"))?;
+    // Same self-resolve dance as `meta_public_link` — the route lives
+    // under `/api/...`, outside the `public_link_auth` middleware nest.
+    let cookies: Vec<String> = fs
+        .parts_mut()
+        .headers
+        .get_all(axum::http::header::COOKIE)
+        .iter()
+        .filter_map(|h| h.to_str().ok().map(|s| s.to_string()))
+        .collect();
+    let ctx = match resolve_browser_context(
+        &state.publiclinks_auth,
+        &token,
+        cookies.iter().map(|s| s.as_str()),
+    )
+    .await
+    {
+        Ok(Some(c)) => c,
+        Ok(None) => return Err(ServerFnError::new("not_found")),
+        Err(e) => {
+            tracing::warn!(error = %e, "public-link list: backend lookup failed");
+            return Err(ServerFnError::new("lookup_failed"));
+        }
+    };
     if ctx.password_gate_required {
         return Err(ServerFnError::new("password_required"));
     }

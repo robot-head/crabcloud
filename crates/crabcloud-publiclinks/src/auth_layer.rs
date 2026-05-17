@@ -101,64 +101,71 @@ pub async fn public_link_auth(
     // we run, `req.uri().path()` has already been re-rooted to the path
     // *after* the surface prefix (`/{token}/…`). `extract_token` just takes
     // the first segment of whatever we hand it — no prefix-stripping needed.
-    let token = match extract_token(req.uri().path()) {
-        Some(t) => t,
+    let token_str = match extract_token(req.uri().path()) {
+        Some(t) => t.as_str().to_string(),
         None => return not_found(),
     };
 
-    let row = match state.lookup.lookup(token.as_str()).await {
-        Ok(Some(r)) => r,
-        Ok(None) => return not_found(),
-        Err(e) => {
-            // The lookup error type is opaque to this crate (the adapter in
-            // `crabcloud-core` boxes it), so we can only print via `Display`.
-            // Token is logged so operators can correlate to the failing
-            // share row; tokens are not secrets — possession of one is the
-            // capability, but the act of revealing it in a server-side log
-            // doesn't grant access to anyone reading the log.
-            tracing::warn!(
-                error = %e,
-                token = %token.as_str(),
-                "public-link token lookup failed"
-            );
-            return server_error();
+    match surface {
+        AuthSurface::Browser => {
+            // Browser branch is now shared with the `#[server]` fns under
+            // `/api/public_link/*` via `resolve_browser_context`. Same
+            // resolution semantics either way — only the way the gate is
+            // signalled to downstream code differs (this middleware also
+            // inserts a `PasswordGateRequired` marker extension; the
+            // server fns inspect the `password_gate_required` field).
+            let cookie_iter = req
+                .headers()
+                .get_all(header::COOKIE)
+                .iter()
+                .filter_map(|h| h.to_str().ok());
+            let ctx = match resolve_browser_context(&state, &token_str, cookie_iter).await {
+                Ok(Some(c)) => c,
+                Ok(None) => return not_found(),
+                Err(e) => {
+                    tracing::warn!(
+                        error = %e,
+                        token = %token_str,
+                        "public-link token lookup failed"
+                    );
+                    return server_error();
+                }
+            };
+            if ctx.password_gate_required {
+                // Marker extension stays the legacy "render the gate page"
+                // signal alongside the field on the context. See the
+                // commentary on `PasswordGateRequired`.
+                req.extensions_mut().insert(PasswordGateRequired);
+            }
+            req.extensions_mut().insert(ctx);
         }
-    };
-
-    // Past-expiration is indistinguishable from "no such token". We rely
-    // on `chrono::Utc::now()` rather than an injected clock; the auth
-    // layer does not have a clock dependency yet and shaving microseconds
-    // off this comparison doesn't justify the plumbing.
-    if let Some(exp) = row.expiration {
-        if exp < chrono::Utc::now() {
-            return not_found();
-        }
-    }
-
-    // Tracked separately from the `PasswordGateRequired` marker extension so
-    // we can also stamp it onto `PublicLinkAuthContext`. The marker remains
-    // the "render the gate page" signal for the viewer; the field is the
-    // "is this context safe to act on?" signal that every downstream handler
-    // is forced to acknowledge (the only legitimate consumer when it's `true`
-    // is the unlock POST handler, which needs the resolved share to mint a
-    // cookie). Dav never sets this — Dav 401s on missing/wrong credentials
-    // before reaching the context-build step.
-    let mut gate_required = false;
-
-    if let Some(hashed) = row.password_hash.as_deref() {
-        match surface {
-            AuthSurface::Browser => {
-                if !browser_unlocked(&state, &token, &req) {
-                    // Note: no 401. The viewer renders the gate variant
-                    // based on this marker. Returning 401 here would pop a
-                    // browser auth dialog, which is the wrong UX.
-                    req.extensions_mut().insert(PasswordGateRequired);
-                    gate_required = true;
+        AuthSurface::Dav => {
+            // DAV branch keeps its inline shape: different unlock mechanism
+            // (HTTP Basic vs. cookie), different failure modes (401 with
+            // WWW-Authenticate vs. fall-through-with-gate-marker), and a
+            // pre-verification rate-limit step. No benefit to factoring.
+            let token = match Token::parse(&token_str) {
+                Some(t) => t,
+                None => return not_found(),
+            };
+            let row = match state.lookup.lookup(token.as_str()).await {
+                Ok(Some(r)) => r,
+                Ok(None) => return not_found(),
+                Err(e) => {
+                    tracing::warn!(
+                        error = %e,
+                        token = %token.as_str(),
+                        "public-link token lookup failed"
+                    );
+                    return server_error();
+                }
+            };
+            if let Some(exp) = row.expiration {
+                if exp < chrono::Utc::now() {
+                    return not_found();
                 }
             }
-            AuthSurface::Dav => {
-                // Rate-limit *before* verification so a throttled token
-                // doesn't reveal correctness via timing.
+            if let Some(hashed) = row.password_hash.as_deref() {
                 if let RateLimitDecision::Throttled { retry_after_secs } =
                     state.rate_limiter.check_password_attempt(token.as_str())
                 {
@@ -168,27 +175,90 @@ pub async fn public_link_auth(
                     return basic_challenge();
                 }
             }
+            let owner_uid = match UserId::new(row.owner_uid) {
+                Ok(u) => u,
+                Err(_) => return server_error(),
+            };
+            let owner_path =
+                match StoragePath::new(row.owner_path.trim_start_matches('/').to_string()) {
+                    Ok(p) => p,
+                    Err(_) => return server_error(),
+                };
+            req.extensions_mut().insert(PublicLinkAuthContext {
+                link_share_id: row.share_id,
+                owner_uid,
+                owner_path,
+                permissions: normalise_permissions(row.permissions),
+                // DAV 401s on missing/wrong credentials before reaching
+                // here, so this is always false on the DAV surface.
+                password_gate_required: false,
+            });
         }
     }
 
-    let owner_uid = match UserId::new(row.owner_uid) {
-        Ok(u) => u,
-        Err(_) => return server_error(),
+    next.run(req).await
+}
+
+/// Browser-surface equivalent of `public_link_auth`, callable directly
+/// without going through the axum middleware. Used by `#[server]` fns
+/// that live under `/api/...` (outside the middleware-gated nest) but
+/// still need a `PublicLinkAuthContext`.
+///
+/// Returns:
+/// - `Ok(Some(ctx))` — token resolved; caller must inspect
+///   `ctx.password_gate_required` and decide whether to serve content
+///   or render the gate.
+/// - `Ok(None)` — token not found, malformed, or past expiration
+///   (the three are deliberately indistinguishable; see middleware
+///   commentary above).
+/// - `Err(io)` — backend lookup failure.
+pub async fn resolve_browser_context<'a, I>(
+    state: &PublicLinkAuthState,
+    token_str: &str,
+    cookie_headers: I,
+) -> Result<Option<PublicLinkAuthContext>, std::io::Error>
+where
+    I: IntoIterator<Item = &'a str>,
+{
+    let token = match Token::parse(token_str) {
+        Some(t) => t,
+        None => return Ok(None),
     };
-    let owner_path = match StoragePath::new(row.owner_path.trim_start_matches('/').to_string()) {
-        Ok(p) => p,
-        Err(_) => return server_error(),
+    let row = match state.lookup.lookup(token.as_str()).await? {
+        Some(r) => r,
+        None => return Ok(None),
+    };
+    if let Some(exp) = row.expiration {
+        if exp < chrono::Utc::now() {
+            return Ok(None);
+        }
+    }
+
+    // If the row has a password, walk the cookie header(s) for a valid
+    // unlock cookie. The result drives the `password_gate_required`
+    // field — we always build and return a context so the caller can
+    // distinguish "gate" from "not found".
+    let gate_required = if row.password_hash.is_some() {
+        !cookies_contain_valid_unlock(state, &token, cookie_headers)
+    } else {
+        false
     };
 
-    req.extensions_mut().insert(PublicLinkAuthContext {
+    let owner_uid = UserId::new(row.owner_uid).map_err(|e| {
+        std::io::Error::new(std::io::ErrorKind::InvalidData, format!("owner_uid: {e}"))
+    })?;
+    let owner_path = StoragePath::new(row.owner_path.trim_start_matches('/').to_string())
+        .map_err(|e| {
+            std::io::Error::new(std::io::ErrorKind::InvalidData, format!("owner_path: {e}"))
+        })?;
+
+    Ok(Some(PublicLinkAuthContext {
         link_share_id: row.share_id,
         owner_uid,
         owner_path,
         permissions: normalise_permissions(row.permissions),
         password_gate_required: gate_required,
-    });
-
-    next.run(req).await
+    }))
 }
 
 /// Extract the token from the post-prefix path. The caller mounts this
@@ -205,20 +275,26 @@ fn extract_token(path_after_prefix: &str) -> Option<Token> {
     Token::parse(first)
 }
 
-/// True iff the request carries a valid `pl_<token>` unlock cookie. We
-/// iterate every `Cookie` header (axum may report multiples) and every
+/// True iff some cookie header carries a valid `pl_<token>` unlock cookie.
+/// Iterates every header value (axum may report multiples) and every
 /// `name=value` pair within each header, so the verifier sees the cookie
 /// regardless of how the client packs them.
-fn browser_unlocked(state: &PublicLinkAuthState, token: &Token, req: &Request) -> bool {
+///
+/// Factored out of the request-bound check so `resolve_browser_context`
+/// (called from `#[server]` fns) and the middleware can share one source
+/// of truth for cookie verification.
+fn cookies_contain_valid_unlock<'a, I>(
+    state: &PublicLinkAuthState,
+    token: &Token,
+    cookie_headers: I,
+) -> bool
+where
+    I: IntoIterator<Item = &'a str>,
+{
     let name = UnlockCookie::cookie_name_for(token.as_str());
     let prefix = format!("{name}=");
     let now = chrono::Utc::now().timestamp();
-    for header_value in req
-        .headers()
-        .get_all(header::COOKIE)
-        .iter()
-        .filter_map(|h| h.to_str().ok())
-    {
+    for header_value in cookie_headers {
         for pair in header_value.split(';') {
             let pair = pair.trim();
             if let Some(rest) = pair.strip_prefix(&prefix) {
