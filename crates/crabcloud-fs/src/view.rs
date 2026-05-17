@@ -325,9 +325,11 @@ impl View {
     /// surfaces verbatim — `delete_read_link_returns_403` keeps
     /// passing.
     ///
-    /// Directories on share mounts currently fall back to hard delete
-    /// (the streaming flow is file-only). Promotes to a tracing warn
-    /// so we can spot it in logs.
+    /// Directories on share mounts recurse: the whole subtree is copied
+    /// into the deleter's trashbin under a single trash row of type
+    /// `Dir`, then the source tree is removed from the share-owner's
+    /// storage. On any failure during the copy, the partial trash
+    /// destination is rolled back and the source is left intact.
     pub async fn delete(&self, user_path: &UserPath) -> FsResult<()> {
         let (mount, storage_path) = self.resolve(user_path)?;
         if mount.metadata.is_some() {
@@ -398,23 +400,33 @@ impl View {
             .await
             .ok()
             .flatten();
+        // Filecache might not have a row for share-mount entries that
+        // were never scanned (no scanner is wired up for share mounts in
+        // SP12 MVP — the owner-side scanner sees them, but writes from
+        // the owner-side aren't always reflected in tests that bypass
+        // the scanner). Fall back to a storage `stat` to decide
+        // file-vs-directory so the dir branch can fire for trees the
+        // cache hasn't seen.
         let kind = match row.as_ref().map(|r| r.kind) {
             Some(crabcloud_storage::FileKind::Directory) => crabcloud_trash::TrashType::Dir,
-            _ => crabcloud_trash::TrashType::File,
+            Some(crabcloud_storage::FileKind::File) => crabcloud_trash::TrashType::File,
+            None => match mount.storage.stat(&storage_path).await {
+                Ok(meta) => match meta.kind {
+                    crabcloud_storage::FileKind::Directory => crabcloud_trash::TrashType::Dir,
+                    crabcloud_storage::FileKind::File => crabcloud_trash::TrashType::File,
+                },
+                // If stat fails (e.g. read-only file-drop), assume File
+                // and let the downstream read/delete surface the right
+                // error — same behavior as the file-only path used to.
+                Err(_) => crabcloud_trash::TrashType::File,
+            },
         };
-        if matches!(kind, crabcloud_trash::TrashType::Dir) {
-            tracing::warn!(
-                deleter = %self.uid.as_str(),
-                path = %user_path.as_str(),
-                "share-mount directory delete: falling back to hard-delete (MVP scope)"
-            );
-            mount
-                .storage
-                .delete(&storage_path, &*self.storage_sink)
-                .await?;
-            return Ok(());
-        }
         let fileid_legacy = row.as_ref().map(|r| r.fileid);
+        if matches!(kind, crabcloud_trash::TrashType::Dir) {
+            return self
+                .delete_directory_via_share_mount(mount, storage_path, user_path, fileid_legacy)
+                .await;
+        }
 
         // Read the source bytes from the share-mount storage. Reads on
         // a share mount don't go through the permission gate for delete,
@@ -472,6 +484,167 @@ impl View {
             return Err(e.into());
         }
 
+        Ok(())
+    }
+
+    /// Share-mount directory soft-delete: recursively copy the subtree
+    /// into the deleter's trashbin under a single `Dir` trash row, then
+    /// remove the source from the share-owner's storage.
+    ///
+    /// Permission enforcement still belongs to the share-mount storage:
+    /// the source `delete` runs through `mount.storage` so a read-only
+    /// share surfaces `PermissionDenied` and we roll back the staged
+    /// trash tree before returning. Like the file case the deleter
+    /// never gets a trash row for a tree they couldn't legitimately
+    /// remove.
+    ///
+    /// Local-only for SP12 MVP: the source path is computed as
+    /// `<datadir>/<owner_uid>/files/<owner_storage_path>`, mirroring
+    /// `LocalStorage`'s on-disk layout. Non-local share-mount backends
+    /// (S3 etc.) aren't in scope — the spec already calls out cross-
+    /// storage trash as deferred for non-local. Falls back to a
+    /// `tracing::warn!` hard-delete if `owner_uid` isn't recorded on
+    /// the mount (defensive — every share-mount the resolver builds
+    /// sets it, but the public `Mount` struct allows `None`).
+    async fn delete_directory_via_share_mount(
+        &self,
+        mount: &Mount,
+        storage_path: StoragePath,
+        user_path: &UserPath,
+        fileid_legacy: Option<i64>,
+    ) -> FsResult<()> {
+        let Some(metadata) = mount.metadata.as_ref() else {
+            // Shouldn't happen — caller verified is_some() — but be loud
+            // if it ever does.
+            tracing::warn!(
+                deleter = %self.uid.as_str(),
+                path = %user_path.as_str(),
+                "share-mount directory delete: mount has no metadata; hard-deleting"
+            );
+            mount
+                .storage
+                .delete(&storage_path, &*self.storage_sink)
+                .await?;
+            return Ok(());
+        };
+        let Some(owner_uid) = metadata.owner_uid.as_deref() else {
+            tracing::warn!(
+                deleter = %self.uid.as_str(),
+                path = %user_path.as_str(),
+                "share-mount directory delete: mount metadata missing owner_uid; hard-deleting"
+            );
+            mount
+                .storage
+                .delete(&storage_path, &*self.storage_sink)
+                .await?;
+            return Ok(());
+        };
+
+        // Translate recipient-relative storage_path back to the owner-
+        // side path via the SharedSubrootStorage wrapper's
+        // `inner_storage` accessor. If the storage isn't wrapped (e.g.
+        // an unwrapped share-owner home reused verbatim — not the path
+        // any current resolver takes, but the trait permits it) we
+        // assume the recipient path == owner path.
+        let owner_relative = match mount.storage.inner_storage() {
+            Some((_, prefix)) => {
+                if storage_path.is_root() {
+                    prefix.clone()
+                } else if prefix.is_root() {
+                    storage_path.clone()
+                } else {
+                    prefix.join(storage_path.as_str())?
+                }
+            }
+            None => storage_path.clone(),
+        };
+
+        let basename = match std::path::Path::new(user_path.as_str())
+            .file_name()
+            .and_then(|s| s.to_str())
+        {
+            Some(b) => b.to_string(),
+            None => return Err(FsError::InvalidPath(user_path.as_str().into())),
+        };
+        let location = match std::path::Path::new(user_path.as_str())
+            .parent()
+            .and_then(|p| p.to_str())
+        {
+            Some("") | None => "/".to_string(),
+            Some(parent) => parent.to_string(),
+        };
+
+        // Permission gate: enforce the recipient's delete-bit BEFORE
+        // staging any bytes. We can't rely on `mount.storage.delete()`
+        // alone here because the underlying `Storage::delete` is empty-
+        // dir only (returns `NotEmpty` for a populated tree), so a
+        // read-write share with a non-empty subtree would error
+        // `NotEmpty` for the wrong reason. Consult the recipient's
+        // permission mask directly.
+        if let Some(perms) = metadata.permissions {
+            if !perms.allows_delete() {
+                return Err(FsError::Storage(
+                    crabcloud_storage::StorageError::PermissionDenied,
+                ));
+            }
+        }
+
+        let src_abs = self
+            .trash
+            .datadir()
+            .join(owner_uid)
+            .join("files")
+            .join(owner_relative.as_str());
+
+        // Stream the tree into bob's trashbin under one Dir row. On
+        // any failure the trash side has already rolled back its
+        // partial destination.
+        let trash_id = self
+            .trash
+            .soft_delete_directory_from_path(
+                self.uid.as_str(),
+                &location,
+                &basename,
+                &src_abs,
+                fileid_legacy,
+            )
+            .await
+            .map_err(map_trash_err)?;
+
+        // Source removal. `Storage::delete` only handles empty dirs,
+        // so for the populated subtree we go straight to the local FS
+        // — the spec is local-first for share-mount trash and the
+        // source path was derived from `<datadir>/<owner_uid>/files/...`
+        // a few lines above. If removal fails partway, roll back the
+        // staged trash entry so we don't leak a copy of bytes that are
+        // still partly present at the source.
+        if let Err(e) = tokio::fs::remove_dir_all(&src_abs).await {
+            if let Err(purge_err) = self.trash.purge(self.uid.as_str(), trash_id).await {
+                tracing::warn!(
+                    error = %purge_err,
+                    trash_id,
+                    deleter = %self.uid.as_str(),
+                    "share-mount dir delete rolled back, but trash purge of staged copy failed"
+                );
+            }
+            return Err(FsError::Storage(crabcloud_storage::StorageError::Io(e)));
+        }
+
+        // Emit a Deleted event on the deleter's behalf so the
+        // filecache scanner removes the owner-side row. Path is the
+        // owner-relative path under the owner's home storage; the
+        // event's `storage_id` is the inner (owner) storage's id, NOT
+        // the wrapper's recipient-rooted id.
+        let event_storage_id = match mount.storage.inner_storage() {
+            Some((inner, _)) => inner.id().to_string(),
+            None => mount.storage.id().to_string(),
+        };
+        self.storage_sink
+            .emit(crabcloud_storage::StorageEvent::Deleted {
+                storage_id: event_storage_id,
+                path: owner_relative,
+            })
+            .await;
         Ok(())
     }
 

@@ -234,7 +234,9 @@ async fn seed_owner_tree(datadir: &Path, owner: &str, rel: &str) {
         .join("files")
         .join(rel.trim_start_matches('/'));
     tokio::fs::create_dir_all(&base).await.unwrap();
-    tokio::fs::write(base.join("a.txt"), b"alpha").await.unwrap();
+    tokio::fs::write(base.join("a.txt"), b"alpha")
+        .await
+        .unwrap();
     tokio::fs::write(base.join("b.txt"), b"beta").await.unwrap();
     let sub = base.join("sub");
     tokio::fs::create_dir(&sub).await.unwrap();
@@ -317,10 +319,7 @@ async fn soft_delete_directory_from_path_missing_source_returns_source_missing()
             None,
         )
         .await;
-    assert!(matches!(
-        r,
-        Err(crabcloud_trash::TrashError::SourceMissing)
-    ));
+    assert!(matches!(r, Err(crabcloud_trash::TrashError::SourceMissing)));
     assert!(trash.list("bob").await.unwrap().is_empty());
 }
 
@@ -357,6 +356,47 @@ async fn restore_directory_round_trips_full_subtree() {
     );
     // Row gone.
     assert!(trash.list("bob").await.unwrap().is_empty());
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn soft_delete_directory_from_path_rolls_back_partial_destination_on_failure() {
+    // Construct a source tree that contains an unsupported file type
+    // (a symlink) so the recursive walker errors mid-traversal. The
+    // failure must trigger a full rollback: bob's bin ends up empty,
+    // no row was written, and (since the trash service doesn't touch
+    // the source) the source remains intact.
+    let (pool, datadir, _d, _dd) = setup().await;
+    let owner_files = datadir.join("alice/files/Photos/D");
+    tokio::fs::create_dir_all(&owner_files).await.unwrap();
+    tokio::fs::write(owner_files.join("good.txt"), b"ok")
+        .await
+        .unwrap();
+    // Symlink (unsupported file type) — the walker hits the else branch
+    // and returns InvalidData partway through.
+    std::os::unix::fs::symlink("/dev/null", owner_files.join("weird_link")).unwrap();
+    tokio::fs::write(owner_files.join("also_good.txt"), b"ok2")
+        .await
+        .unwrap();
+
+    let trash = Trash::new(pool.clone(), datadir.clone());
+    let r = trash
+        .soft_delete_directory_from_path("bob", "/Shared/Photos", "D", &owner_files, None)
+        .await;
+    assert!(r.is_err(), "expected error from symlink in source");
+
+    // No trash row for bob.
+    assert!(trash.list("bob").await.unwrap().is_empty());
+    // Bob's bin contains no leftover bytes from the rolled-back tree.
+    let bob_bin = datadir.join("bob/files_trashbin/files");
+    let entries: Vec<_> = std::fs::read_dir(&bob_bin)
+        .map(|d| d.filter_map(|r| r.ok()).collect())
+        .unwrap_or_default();
+    assert!(entries.is_empty(), "bin should be empty after rollback");
+    // Source intact — the trash service never touches it; the caller
+    // owns source removal.
+    assert!(owner_files.join("good.txt").exists());
+    assert!(owner_files.join("also_good.txt").exists());
 }
 
 #[tokio::test]
