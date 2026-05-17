@@ -5,6 +5,7 @@
 use crabcloud_config::test_support::minimal_sqlite_config;
 use crabcloud_db::{core_set, DbPool, MigrationRunner};
 use crabcloud_trash::{Trash, TrashType};
+use crabcloud_versions::Versions;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tempfile::TempDir;
@@ -32,6 +33,14 @@ async fn setup() -> (Arc<DbPool>, PathBuf, TempDir, TempDir) {
     (Arc::new(pool), datadir, db_dir, data_dir)
 }
 
+/// Make a fresh `Trash` for `(pool, datadir)` with a real (no-op for
+/// most tests) `Versions` cascade target. Tests that exercise the
+/// cascade itself build their own.
+fn make_trash(pool: Arc<DbPool>, datadir: PathBuf) -> Trash {
+    let versions = Arc::new(Versions::new(pool.clone(), datadir.clone()));
+    Trash::new(pool, datadir, versions)
+}
+
 /// Seed: write a file inside a user's "files" dir so we can soft-delete it.
 async fn write_user_file(datadir: &Path, uid: &str, rel: &str, contents: &[u8]) {
     let p = datadir
@@ -48,7 +57,7 @@ async fn write_user_file(datadir: &Path, uid: &str, rel: &str, contents: &[u8]) 
 async fn soft_delete_writes_row_and_moves_file() {
     let (pool, datadir, _d, _dd) = setup().await;
     write_user_file(&datadir, "alice", "/notes/todo.txt", b"hello").await;
-    let trash = Trash::new(pool.clone(), datadir.clone());
+    let trash = make_trash(pool.clone(), datadir.clone());
 
     let id = trash
         .soft_delete("alice", "/notes/todo.txt", TrashType::File, None)
@@ -84,7 +93,7 @@ async fn soft_delete_writes_row_and_moves_file() {
 async fn restore_moves_file_back_and_deletes_row() {
     let (pool, datadir, _d, _dd) = setup().await;
     write_user_file(&datadir, "bob", "/photos/cat.jpg", b"jpeg-bytes").await;
-    let trash = Trash::new(pool.clone(), datadir.clone());
+    let trash = make_trash(pool.clone(), datadir.clone());
 
     let id = trash
         .soft_delete("bob", "/photos/cat.jpg", TrashType::File, None)
@@ -106,7 +115,7 @@ async fn restore_moves_file_back_and_deletes_row() {
 async fn restore_auto_creates_missing_parents() {
     let (pool, datadir, _d, _dd) = setup().await;
     write_user_file(&datadir, "carol", "/a/b/c/file.txt", b"x").await;
-    let trash = Trash::new(pool.clone(), datadir.clone());
+    let trash = make_trash(pool.clone(), datadir.clone());
     let id = trash
         .soft_delete("carol", "/a/b/c/file.txt", TrashType::File, None)
         .await
@@ -124,7 +133,7 @@ async fn restore_auto_creates_missing_parents() {
 async fn restore_collision_suffixes_with_restored() {
     let (pool, datadir, _d, _dd) = setup().await;
     write_user_file(&datadir, "dave", "/doc.txt", b"v1").await;
-    let trash = Trash::new(pool.clone(), datadir.clone());
+    let trash = make_trash(pool.clone(), datadir.clone());
     let id = trash
         .soft_delete("dave", "/doc.txt", TrashType::File, None)
         .await
@@ -142,7 +151,7 @@ async fn restore_collision_suffixes_with_restored() {
 async fn purge_deletes_row_and_file() {
     let (pool, datadir, _d, _dd) = setup().await;
     write_user_file(&datadir, "eve", "/x.txt", b"z").await;
-    let trash = Trash::new(pool.clone(), datadir.clone());
+    let trash = make_trash(pool.clone(), datadir.clone());
     let id = trash
         .soft_delete("eve", "/x.txt", TrashType::File, None)
         .await
@@ -160,7 +169,7 @@ async fn sweep_expired_deletes_old_rows_only() {
     let (pool, datadir, _d, _dd) = setup().await;
     write_user_file(&datadir, "fay", "/old.txt", b"o").await;
     write_user_file(&datadir, "fay", "/new.txt", b"n").await;
-    let trash = Trash::new(pool.clone(), datadir.clone());
+    let trash = make_trash(pool.clone(), datadir.clone());
     let old_id = trash
         .soft_delete("fay", "/old.txt", TrashType::File, None)
         .await
@@ -192,7 +201,7 @@ async fn sweep_expired_deletes_old_rows_only() {
 async fn sub_second_collision_suffix_increments() {
     let (pool, datadir, _d, _dd) = setup().await;
     write_user_file(&datadir, "gail", "/a.txt", b"1").await;
-    let trash = Trash::new(pool.clone(), datadir.clone());
+    let trash = make_trash(pool.clone(), datadir.clone());
     // Two soft-deletes of the same basename within one second.
     let id1 = trash
         .soft_delete("gail", "/a.txt", TrashType::File, None)
@@ -249,7 +258,7 @@ async fn soft_delete_directory_from_path_copies_tree_and_writes_dir_row() {
     // Owner "alice" has /Photos/D with the seeded subtree. Deleter "bob"
     // owns the trash row.
     seed_owner_tree(&datadir, "alice", "/Photos/D").await;
-    let trash = Trash::new(pool.clone(), datadir.clone());
+    let trash = make_trash(pool.clone(), datadir.clone());
 
     let src = datadir.join("alice/files/Photos/D");
     let id = trash
@@ -296,7 +305,7 @@ async fn soft_delete_directory_from_path_copies_tree_and_writes_dir_row() {
 async fn soft_delete_directory_from_path_rejects_bad_basename() {
     let (pool, datadir, _d, _dd) = setup().await;
     seed_owner_tree(&datadir, "alice", "/Photos/D").await;
-    let trash = Trash::new(pool.clone(), datadir.clone());
+    let trash = make_trash(pool.clone(), datadir.clone());
     let src = datadir.join("alice/files/Photos/D");
     for bad in ["", ".", "..", "a/b", "a\\b", "a\0b"] {
         let r = trash
@@ -309,7 +318,7 @@ async fn soft_delete_directory_from_path_rejects_bad_basename() {
 #[tokio::test]
 async fn soft_delete_directory_from_path_missing_source_returns_source_missing() {
     let (pool, datadir, _d, _dd) = setup().await;
-    let trash = Trash::new(pool.clone(), datadir.clone());
+    let trash = make_trash(pool.clone(), datadir.clone());
     let r = trash
         .soft_delete_directory_from_path(
             "bob",
@@ -327,7 +336,7 @@ async fn soft_delete_directory_from_path_missing_source_returns_source_missing()
 async fn restore_directory_round_trips_full_subtree() {
     let (pool, datadir, _d, _dd) = setup().await;
     seed_owner_tree(&datadir, "alice", "/Photos/D").await;
-    let trash = Trash::new(pool.clone(), datadir.clone());
+    let trash = make_trash(pool.clone(), datadir.clone());
     let src = datadir.join("alice/files/Photos/D");
     let id = trash
         .soft_delete_directory_from_path("bob", "/Shared/Photos", "D", &src, None)
@@ -379,7 +388,7 @@ async fn soft_delete_directory_from_path_rolls_back_partial_destination_on_failu
         .await
         .unwrap();
 
-    let trash = Trash::new(pool.clone(), datadir.clone());
+    let trash = make_trash(pool.clone(), datadir.clone());
     let r = trash
         .soft_delete_directory_from_path("bob", "/Shared/Photos", "D", &owner_files, None)
         .await;
@@ -403,7 +412,7 @@ async fn soft_delete_directory_from_path_rolls_back_partial_destination_on_failu
 async fn purge_directory_removes_subtree_and_row() {
     let (pool, datadir, _d, _dd) = setup().await;
     seed_owner_tree(&datadir, "alice", "/Photos/D").await;
-    let trash = Trash::new(pool.clone(), datadir.clone());
+    let trash = make_trash(pool.clone(), datadir.clone());
     let src = datadir.join("alice/files/Photos/D");
     let id = trash
         .soft_delete_directory_from_path("bob", "/Shared/Photos", "D", &src, None)
@@ -416,4 +425,65 @@ async fn purge_directory_removes_subtree_and_row() {
         .map(|d| d.filter_map(|r| r.ok()).collect())
         .unwrap_or_default();
     assert!(entries.is_empty(), "bin should be empty after purge");
+}
+
+#[tokio::test]
+async fn purge_cascades_to_versions_for_fileid() {
+    // SP13: Trash::purge_entry must call
+    // versions.purge_for_user_fileid so version bytes don't outlive
+    // the source file on hard-delete.
+    let (pool, datadir, _d, _dd) = setup().await;
+    let versions = Arc::new(Versions::new(pool.clone(), datadir.clone()));
+    let trash = Trash::new(pool.clone(), datadir.clone(), versions.clone());
+
+    // Seed: alice has a file at /report.docx with two snapshotted
+    // versions tied to fileid 100.
+    write_user_file(&datadir, "alice", "/report.docx", b"v1").await;
+    versions
+        .snapshot_if_needed("alice", 1, 100, "/report.docx", 2, 1_000, 0, 1024)
+        .await
+        .unwrap();
+    write_user_file(&datadir, "alice", "/report.docx", b"v2").await;
+    versions
+        .snapshot_if_needed("alice", 1, 100, "/report.docx", 2, 1_001, 0, 1024)
+        .await
+        .unwrap();
+    assert_eq!(versions.list_for("alice", 100).await.unwrap().len(), 2);
+
+    // Soft-delete → purge.
+    let id = trash
+        .soft_delete("alice", "/report.docx", TrashType::File, Some(100))
+        .await
+        .unwrap();
+    trash.purge("alice", id).await.unwrap();
+
+    // Cascade: every version for fileid 100 is gone.
+    assert!(versions.list_for("alice", 100).await.unwrap().is_empty());
+    // On-disk version files are gone too.
+    assert!(!datadir.join("alice/files_versions/report.docx.v1000").exists());
+    assert!(!datadir.join("alice/files_versions/report.docx.v1001").exists());
+}
+
+#[tokio::test]
+async fn soft_delete_does_not_cascade_to_versions() {
+    // Soft-delete keeps the trash row alive; versions must survive
+    // until the row is purged.
+    let (pool, datadir, _d, _dd) = setup().await;
+    let versions = Arc::new(Versions::new(pool.clone(), datadir.clone()));
+    let trash = Trash::new(pool.clone(), datadir.clone(), versions.clone());
+
+    write_user_file(&datadir, "alice", "/notes.md", b"hello").await;
+    versions
+        .snapshot_if_needed("alice", 1, 200, "/notes.md", 5, 1_000, 0, 1024)
+        .await
+        .unwrap();
+    assert_eq!(versions.list_for("alice", 200).await.unwrap().len(), 1);
+
+    let _id = trash
+        .soft_delete("alice", "/notes.md", TrashType::File, Some(200))
+        .await
+        .unwrap();
+
+    // Soft-delete did NOT touch versions.
+    assert_eq!(versions.list_for("alice", 200).await.unwrap().len(), 1);
 }
