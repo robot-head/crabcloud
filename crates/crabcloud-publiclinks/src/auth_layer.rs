@@ -247,8 +247,8 @@ where
     let owner_uid = UserId::new(row.owner_uid).map_err(|e| {
         std::io::Error::new(std::io::ErrorKind::InvalidData, format!("owner_uid: {e}"))
     })?;
-    let owner_path = StoragePath::new(row.owner_path.trim_start_matches('/').to_string())
-        .map_err(|e| {
+    let owner_path =
+        StoragePath::new(row.owner_path.trim_start_matches('/').to_string()).map_err(|e| {
             std::io::Error::new(std::io::ErrorKind::InvalidData, format!("owner_path: {e}"))
         })?;
 
