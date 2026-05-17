@@ -13,12 +13,13 @@ use crabcloud_db::{core_set, DbPool, MigrationRunner};
 use crabcloud_filecache::FileCache;
 use crabcloud_fs::{
     LocalStorageFactory, Mount, MountKind, MountMetadata, SharedSubrootStorage, StorageFactory,
-    UserPath, View,
+    UserPath, VersionsHooks, View,
 };
 use crabcloud_sharing::SharePermissions;
 use crabcloud_storage::{ChannelEventSink, NoopEventSink, Storage, StorageError, StoragePath};
 use crabcloud_trash::Trash;
 use crabcloud_users::UserId;
+use crabcloud_versions::Versions;
 use std::sync::Arc;
 use tempfile::TempDir;
 
@@ -51,7 +52,9 @@ async fn local_harness(uid: &str) -> LocalHarness {
     let factory = LocalStorageFactory::new(datadir.clone());
     let uid = UserId::new(uid).unwrap();
     let storage = factory.home_storage(&uid).await.unwrap();
-    let trash = Arc::new(Trash::new(Arc::new(pool), datadir.clone()));
+    let pool_arc = Arc::new(pool);
+    let versions = Arc::new(Versions::new(pool_arc.clone(), datadir.clone()));
+    let trash = Arc::new(Trash::new(pool_arc, datadir.clone(), versions.clone()));
     let view = View::new(
         uid.clone(),
         vec![Mount {
@@ -62,6 +65,7 @@ async fn local_harness(uid: &str) -> LocalHarness {
         filecache,
         sink,
         trash.clone(),
+        VersionsHooks::permissive(versions),
     );
     LocalHarness {
         view,
@@ -136,7 +140,9 @@ async fn share_harness(perms_wire: u32) -> ShareHarness {
     let sink = Arc::new(ChannelEventSink::new(64));
     let datadir = dir.path().to_path_buf();
     let factory = LocalStorageFactory::new(datadir.clone());
-    let trash = Arc::new(Trash::new(Arc::new(pool), datadir.clone()));
+    let pool_arc = Arc::new(pool);
+    let versions = Arc::new(Versions::new(pool_arc.clone(), datadir.clone()));
+    let trash = Arc::new(Trash::new(pool_arc, datadir.clone(), versions.clone()));
 
     let bob_uid = UserId::new("bob").unwrap();
     let alice_uid = UserId::new("alice").unwrap();
@@ -173,6 +179,7 @@ async fn share_harness(perms_wire: u32) -> ShareHarness {
         filecache,
         sink,
         trash.clone(),
+        VersionsHooks::permissive(versions),
     );
 
     ShareHarness {

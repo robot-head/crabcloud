@@ -30,7 +30,7 @@ pub use resolver::{
 };
 pub use storage::SharedSubrootStorage;
 pub use uploads::{UploadHandle, Uploads};
-pub use view::{ListedEntry, View};
+pub use view::{ListedEntry, View, VersionsHooks};
 
 // Anchor crates whose real call sites are intentionally test-only or
 // reserved for follow-up. `tracing` will be picked up by future warn!/info!

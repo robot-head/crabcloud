@@ -16,6 +16,47 @@ use std::pin::Pin;
 use std::sync::Arc;
 use tokio::io::AsyncRead;
 
+/// Versions hook bundle plumbed into `View::new`. Holds the versions
+/// service + the two operator-tunable knobs from `FileConfig`
+/// (`versions_min_interval_secs`, `versions_max_bytes`). Kept as one
+/// struct so adding it doesn't push `View::new` past a manageable
+/// positional argument count.
+#[derive(Clone)]
+pub struct VersionsHooks {
+    pub versions: Arc<crabcloud_versions::Versions>,
+    pub min_interval_secs: i64,
+    pub max_bytes: u64,
+}
+
+impl VersionsHooks {
+    /// Convenience for tests / call sites that just want a no-throttle
+    /// hook with a high size cap.
+    pub fn permissive(versions: Arc<crabcloud_versions::Versions>) -> Self {
+        Self {
+            versions,
+            min_interval_secs: 0,
+            max_bytes: u64::MAX,
+        }
+    }
+}
+
+/// Map a `VersionsError` into an `FsError`. Versioning failure during a
+/// write is a hard error per spec §6 ("Disk full during snapshot — Pick:
+/// fail the write"), so we surface storage-flavored Io errors so the
+/// HTTP layer maps them to 5xx.
+fn map_versions_err(e: crabcloud_versions::VersionsError) -> FsError {
+    use crabcloud_versions::VersionsError::*;
+    match e {
+        Io(e) => FsError::Storage(crabcloud_storage::StorageError::Io(e)),
+        SourceMissing => FsError::NotFound,
+        WrongUser => FsError::Forbidden,
+        NotFound => FsError::NotFound,
+        Db(e) => FsError::Storage(crabcloud_storage::StorageError::Other(format!(
+            "versions db: {e}"
+        ))),
+    }
+}
+
 /// Map a `TrashError` from the trash service into an `FsError`. The
 /// trash error variants are MVP-tight, so most map to dedicated
 /// `FsError` variants; anything else flattens into `FsError::Trash`.
@@ -77,6 +118,10 @@ pub struct View {
     /// Trash bin service. SP12: `View::delete` routes through here
     /// (soft-delete); `View::hard_delete` bypasses it.
     pub(crate) trash: Arc<crabcloud_trash::Trash>,
+    /// SP13 versions hooks. Snapshot-before-write fires in
+    /// `put_file` + `rename` (overwrite path) before the storage
+    /// backend mutates bytes.
+    pub(crate) versions_hooks: VersionsHooks,
 }
 
 impl View {
@@ -86,6 +131,7 @@ impl View {
         filecache: Arc<FileCache>,
         storage_sink: Arc<ChannelEventSink>,
         trash: Arc<crabcloud_trash::Trash>,
+        versions_hooks: VersionsHooks,
     ) -> Self {
         Self {
             uid,
@@ -93,6 +139,7 @@ impl View {
             filecache,
             storage_sink,
             trash,
+            versions_hooks,
         }
     }
 
@@ -286,17 +333,140 @@ impl View {
     /// event on `storage_sink`; the scanner asynchronously updates the
     /// filecache. The caller gets the storage's fresh `FileMetadata`
     /// directly — no need to wait for the scanner to catch up.
+    ///
+    /// SP13: if this write OVERWRITES an existing non-empty file, the
+    /// prior bytes are snapshotted to the owner's `files_versions/`
+    /// tree before the storage backend runs. The snapshot is throttled
+    /// + size-capped via the operator config (`versions_min_interval_secs`
+    /// / `versions_max_bytes`). Per spec §6 "Disk full during snapshot",
+    /// snapshot failure is a hard error — the storage write does NOT
+    /// proceed.
     pub async fn put_file(
         &self,
         user_path: &UserPath,
         body: Pin<Box<dyn AsyncRead + Send>>,
     ) -> FsResult<FileMetadata> {
         let (mount, storage_path) = self.resolve(user_path)?;
+        self.snapshot_before_overwrite(mount, &storage_path).await?;
         let meta = mount
             .storage
             .put_file(&storage_path, body, &*self.storage_sink)
             .await?;
         Ok(meta)
+    }
+
+    /// SP13 snapshot trigger. Looks up the current filecache row for the
+    /// destination; if it exists, points to a non-empty file, and is
+    /// reachable as a local on-disk path, fires
+    /// `Versions::snapshot_if_needed` with the resolved owner uid +
+    /// owner-relative path + owner numeric storage_id.
+    ///
+    /// Skips silently in the cases that shouldn't trigger versioning:
+    /// - No prior row in filecache (this is a fresh create, not an
+    ///   overwrite).
+    /// - Prior row is a directory (we never version directories).
+    /// - Prior row has size 0 (`snapshot_if_needed` would skip it
+    ///   anyway, but we save a round-trip).
+    /// - The mount metadata is incomplete enough that we can't resolve
+    ///   an owner uid (shouldn't happen with the home + share mount
+    ///   resolvers in tree today, but defend against it).
+    ///
+    /// Returns Err on real snapshot failures (disk full, etc.) so the
+    /// caller can abort the overwrite per spec §6.
+    pub(crate) async fn snapshot_before_overwrite(
+        &self,
+        mount: &Mount,
+        storage_path: &StoragePath,
+    ) -> FsResult<()> {
+        let (cache_storage, cache_path) = cache_key_for(&mount.storage, storage_path)?;
+        let row = match self
+            .filecache
+            .lookup(cache_storage.id(), &cache_path)
+            .await
+        {
+            Ok(Some(r)) => r,
+            // No prior row → fresh create, no version to take.
+            Ok(None) => return Ok(()),
+            // Filecache lookup failure is non-blocking: versioning is
+            // best-effort when we can't even prove there's a current
+            // row. Log and continue with the write.
+            Err(e) => {
+                tracing::debug!(
+                    error = %e,
+                    storage_id = cache_storage.id(),
+                    path = %cache_path.as_str(),
+                    "snapshot_before_overwrite: filecache lookup failed; skipping snapshot"
+                );
+                return Ok(());
+            }
+        };
+        if matches!(row.kind, crabcloud_storage::FileKind::Directory) || row.size == 0 {
+            return Ok(());
+        }
+
+        // Resolve the owner uid. Home mounts: self.uid. Share mounts:
+        // metadata.owner_uid (defended against missing).
+        let owner_uid = match mount.metadata.as_ref().and_then(|m| m.owner_uid.clone()) {
+            Some(u) => u,
+            None => self.uid.as_str().to_string(),
+        };
+
+        // Resolve owner numeric storage_id. The filecache row already
+        // tells us the owner-side storage string (cache_storage.id());
+        // intern it to its numeric id.
+        let storage_id_numeric = match self.filecache.intern_storage(cache_storage.id()).await {
+            Ok(n) => n,
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    storage_id = cache_storage.id(),
+                    "snapshot_before_overwrite: storage intern failed; skipping snapshot"
+                );
+                return Ok(());
+            }
+        };
+
+        // Owner-relative path is the cache_path itself; format with a
+        // leading slash for the versions row column.
+        let owner_relative = format!("/{}", cache_path.as_str());
+        let now = chrono::Utc::now().timestamp();
+        let hooks = &self.versions_hooks;
+        match hooks
+            .versions
+            .snapshot_if_needed(
+                &owner_uid,
+                storage_id_numeric,
+                row.fileid,
+                &owner_relative,
+                row.size as i64,
+                now,
+                hooks.min_interval_secs,
+                hooks.max_bytes,
+            )
+            .await
+        {
+            Ok(_) => Ok(()),
+            // `SourceMissing` here means the filecache row pointed at a
+            // file whose bytes weren't on disk (e.g. scanner lag after a
+            // prior delete, or a non-local storage backend that doesn't
+            // mirror to disk). Versioning is best-effort in that case;
+            // log + continue with the write. The spec's hard-error case
+            // (§6 "Disk full during snapshot") arrives as
+            // `VersionsError::Io`, which `map_versions_err` surfaces as
+            // a storage Io error so the HTTP layer maps it to 5xx.
+            Err(crabcloud_versions::VersionsError::SourceMissing) => {
+                tracing::debug!(
+                    uid = %owner_uid,
+                    fileid = row.fileid,
+                    path = %owner_relative,
+                    "snapshot_before_overwrite: source bytes missing on disk; skipping snapshot"
+                );
+                Ok(())
+            }
+            // Spec §6: real snapshot failures (disk full, etc.) abort
+            // the write.
+            Err(e) => Err(map_versions_err(e)),
+        }
     }
 
     pub async fn mkdir(&self, user_path: &UserPath) -> FsResult<FileMetadata> {
@@ -700,12 +870,19 @@ impl View {
     /// Within-mount rename. Errors `FsError::CrossMount` if `from` and
     /// `to` resolve to different mounts (4c only ships one mount per
     /// user; this can't fire in practice but the wire shape is set).
+    ///
+    /// SP13: if `to` already exists and points to a non-empty file,
+    /// snapshot the destination's prior bytes BEFORE the rename
+    /// (overwrite path). The source side is NOT versioned — the bytes
+    /// at the source fileid aren't changing, just moving. See spec §6
+    /// "MOVE overwrite".
     pub async fn rename(&self, from: &UserPath, to: &UserPath) -> FsResult<()> {
         let (from_mount, from_path) = self.resolve(from)?;
         let (to_mount, to_path) = self.resolve(to)?;
         if from_mount.path_prefix != to_mount.path_prefix {
             return Err(FsError::CrossMount);
         }
+        self.snapshot_before_overwrite(to_mount, &to_path).await?;
         from_mount
             .storage
             .rename(&from_path, &to_path, &*self.storage_sink)
@@ -766,7 +943,16 @@ mod tests {
             (pool, datadir)
         });
         let _ = MemoryCache::new(); // anchor crabcloud_cache
-        let trash = Arc::new(crabcloud_trash::Trash::new(Arc::new(pool.clone()), datadir));
+        let pool_arc = Arc::new(pool.clone());
+        let versions = Arc::new(crabcloud_versions::Versions::new(
+            pool_arc.clone(),
+            datadir.clone(),
+        ));
+        let trash = Arc::new(crabcloud_trash::Trash::new(
+            pool_arc,
+            datadir,
+            versions.clone(),
+        ));
 
         View::new(
             UserId::new("alice").unwrap(),
@@ -774,6 +960,7 @@ mod tests {
             Arc::new(FileCache::new(pool)),
             Arc::new(ChannelEventSink::new(8)),
             trash,
+            VersionsHooks::permissive(versions),
         )
     }
 
