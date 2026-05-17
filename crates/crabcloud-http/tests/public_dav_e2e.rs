@@ -251,6 +251,47 @@ async fn delete_read_link_returns_403() {
     assert_eq!(resp.status(), StatusCode::FORBIDDEN);
 }
 
+#[tokio::test]
+async fn delete_writable_link_hard_deletes_no_trash_row() {
+    // Anonymous public-link DELETE bypasses the trash service. With a
+    // permission mask that includes the delete bit (15 = read+update+
+    // create+delete), the storage wrapper allows the delete; the
+    // handler routes it through `View::hard_delete`, so the file is
+    // gone and no `oc_files_trash` row is written under the owner.
+    let dir = tempdir().unwrap();
+    let data = tempdir().unwrap();
+    let state = make_state(dir.path().join("dw.db"), data.path().to_path_buf()).await;
+    seed_user(&state, "alice").await;
+    seed_folder(&state, "alice", "Box").await;
+    seed_file(&state, "alice", "Box/loose.txt", b"bye").await;
+    let token = create_link(&state, "alice", "/Box", 15, None, None).await;
+    let app = crabcloud_http::build_router(state.clone(), axum::Router::new());
+
+    let req = Request::builder()
+        .method("DELETE")
+        .uri(format!("/public.php/dav/files/{token}/loose.txt"))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::NO_CONTENT);
+
+    // File is gone from owner storage.
+    let storage = state
+        .storage_factory
+        .home_storage(&UserId::new("alice").unwrap())
+        .await
+        .unwrap();
+    let sp = StoragePath::new("Box/loose.txt").unwrap();
+    assert!(!storage.exists(&sp).await.unwrap(), "bytes hard-deleted");
+    // And — the critical regression assertion — no trash row was
+    // created under the owner. Anonymous visitors don't have bins.
+    let trash_rows = state.trash.list("alice").await.unwrap();
+    assert!(
+        trash_rows.is_empty(),
+        "public-link DELETE must not create owner trash row, got {trash_rows:?}"
+    );
+}
+
 // --- expiration / unknown token --------------------------------------------
 
 #[tokio::test]

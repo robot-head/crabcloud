@@ -286,3 +286,18 @@ pub async fn delete_with_view(
     view.delete(user_path).await?;
     Ok((StatusCode::NO_CONTENT, "").into_response())
 }
+
+/// Surface-neutral hard DELETE. Skips the trash service entirely.
+/// Used by the anonymous public-link DAV surface: the visitor has no
+/// trash bin of their own, so the spec (§6) calls for hard delete on
+/// public-link DELETE. The storage backend still enforces the link's
+/// permission mask (a read-only link returns `PermissionDenied`),
+/// which surfaces as a 403 via `DavError::Storage` — same observable
+/// behavior as before the SP12 trash reroute landed.
+pub async fn hard_delete_with_view(
+    view: &crabcloud_fs::View,
+    user_path: &crabcloud_fs::UserPath,
+) -> DavResult<Response> {
+    view.hard_delete(user_path).await?;
+    Ok((StatusCode::NO_CONTENT, "").into_response())
+}
