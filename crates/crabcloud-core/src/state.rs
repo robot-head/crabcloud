@@ -372,6 +372,7 @@ impl AppStateBuilder {
                 mail: Arc::new(mail_queue.clone()),
                 prefs: notification_prefs.clone(),
                 instance_url,
+                activity: activity.clone(),
             },
         ));
         let mount_resolver: Arc<dyn MountResolver> = Arc::new(ShareMountResolver::new(

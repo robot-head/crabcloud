@@ -972,3 +972,87 @@ async fn share_created_succeeds_when_enqueuer_fails_works_on_postgres() {
     share_created_succeeds_when_enqueuer_fails(&fx).await;
 }
 per_dialect!(share_counts_for_empty_input_is_empty);
+
+// ---------------- activity emit hooks (SP14) ----------------
+
+async fn create_user_share_emits_share_created_to_actor_and_recipient(fx: &Fixture) {
+    seed_user(fx, "alice").await;
+    seed_user(fx, "bob").await;
+    let _ = seed_file(fx, "alice", "/Report", true).await;
+    let sid = fx.home_storage_id("alice");
+    fx.shares
+        .create(share_request("alice", &sid, "/Report", ShareType::User, "bob", 3))
+        .await
+        .unwrap();
+
+    let alice_rows = fx.activity.list("alice", None, 100).await.unwrap();
+    let bob_rows = fx.activity.list("bob", None, 100).await.unwrap();
+    assert_eq!(alice_rows.len(), 1, "actor row emitted");
+    assert_eq!(bob_rows.len(), 1, "recipient row emitted");
+    assert_eq!(alice_rows[0].event_type, "share_created");
+    assert_eq!(alice_rows[0].subject_id, "share_created_you");
+    assert_eq!(bob_rows[0].subject_id, "share_created_by");
+}
+
+async fn create_group_share_emits_to_actor_and_each_group_member(fx: &Fixture) {
+    seed_user(fx, "alice").await;
+    seed_user(fx, "bob").await;
+    seed_user(fx, "carol").await;
+    seed_group(fx, "team").await;
+    add_user_to_group(fx, "bob", "team").await;
+    add_user_to_group(fx, "carol", "team").await;
+    let _ = seed_file(fx, "alice", "/Plans", true).await;
+    let sid = fx.home_storage_id("alice");
+    fx.shares
+        .create(share_request("alice", &sid, "/Plans", ShareType::Group, "team", 3))
+        .await
+        .unwrap();
+
+    assert_eq!(fx.activity.list("alice", None, 100).await.unwrap().len(), 1);
+    assert_eq!(fx.activity.list("bob", None, 100).await.unwrap().len(), 1);
+    assert_eq!(fx.activity.list("carol", None, 100).await.unwrap().len(), 1);
+}
+
+async fn delete_user_share_by_owner_emits_share_deleted(fx: &Fixture) {
+    seed_user(fx, "alice").await;
+    seed_user(fx, "bob").await;
+    let _ = seed_file(fx, "alice", "/Spec", true).await;
+    let sid = fx.home_storage_id("alice");
+    let row = fx
+        .shares
+        .create(share_request("alice", &sid, "/Spec", ShareType::User, "bob", 3))
+        .await
+        .unwrap();
+
+    let alice_uid = UserId::new("alice").unwrap();
+    fx.shares.delete(row.id, &alice_uid).await.unwrap();
+
+    let alice_rows = fx.activity.list("alice", None, 100).await.unwrap();
+    let bob_rows = fx.activity.list("bob", None, 100).await.unwrap();
+    // Each side has both create + delete events.
+    assert_eq!(alice_rows.len(), 2);
+    assert_eq!(bob_rows.len(), 2);
+    let alice_delete = alice_rows
+        .iter()
+        .find(|r| r.event_type == "share_deleted")
+        .expect("delete row");
+    assert_eq!(alice_delete.subject_id, "share_deleted_you");
+}
+
+#[tokio::test]
+async fn create_user_share_emits_share_created_works_on_sqlite() {
+    let fx = Fixture::new(FixtureKind::Sqlite).await;
+    create_user_share_emits_share_created_to_actor_and_recipient(&fx).await;
+}
+
+#[tokio::test]
+async fn create_group_share_emits_to_each_member_works_on_sqlite() {
+    let fx = Fixture::new(FixtureKind::Sqlite).await;
+    create_group_share_emits_to_actor_and_each_group_member(&fx).await;
+}
+
+#[tokio::test]
+async fn delete_user_share_by_owner_emits_works_on_sqlite() {
+    let fx = Fixture::new(FixtureKind::Sqlite).await;
+    delete_user_share_by_owner_emits_share_deleted(&fx).await;
+}

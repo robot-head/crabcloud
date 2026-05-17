@@ -1150,6 +1150,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
+ "crabcloud-activity",
  "crabcloud-config",
  "crabcloud-core",
  "crabcloud-db",

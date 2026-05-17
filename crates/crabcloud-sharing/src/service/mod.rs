@@ -38,6 +38,10 @@ pub struct Shares {
     /// (e.g. `https://crabcloud.example`). Falls back to `/s/<token>`
     /// relative when not set.
     pub(crate) instance_url: String,
+    /// Activity emitter. Best-effort; failures are logged + swallowed
+    /// because the user-visible share create/delete must not be rolled
+    /// back by a down activity log (SP14 spec §6 emit-failure row).
+    pub(crate) activity: Arc<dyn crabcloud_activity::ActivityEmitter>,
 }
 
 /// Construction parameters for `Shares::new`.
@@ -56,6 +60,10 @@ pub struct SharesConfig {
     /// see `https://host/s/<token>`). Empty string is tolerated — the
     /// templates degrade to relative `/s/<token>` URLs.
     pub instance_url: String,
+    /// Activity emitter for `share_created` / `share_deleted` events.
+    /// Tests can pass `Arc::new(crabcloud_activity::NoopEmitter)` to
+    /// skip activity logging.
+    pub activity: Arc<dyn crabcloud_activity::ActivityEmitter>,
 }
 
 impl Shares {
@@ -68,6 +76,7 @@ impl Shares {
             mail: cfg.mail,
             prefs: cfg.prefs,
             instance_url: cfg.instance_url,
+            activity: cfg.activity,
         }
     }
 
@@ -223,6 +232,19 @@ impl Shares {
             )
             .await;
         }
+
+        // Best-effort activity emit (SP14). Failures are logged.
+        self.emit_share_activity(
+            crabcloud_activity::EventType::ShareCreated,
+            "share_created_you",
+            "share_created_by",
+            id,
+            req.requester.as_str(),
+            req.share_type,
+            Some(req.share_with.as_str()),
+            req.path.as_str(),
+        )
+        .await;
 
         Ok(ShareRow {
             id,
@@ -564,6 +586,19 @@ impl Shares {
                         .await?;
                 }
             }
+            // Best-effort activity emit (SP14). Use the actor as the
+            // requester (the owner driving the delete).
+            self.emit_share_activity(
+                crabcloud_activity::EventType::ShareDeleted,
+                "share_deleted_you",
+                "share_deleted_by",
+                id,
+                requester.as_str(),
+                row.share_type,
+                row.share_with.as_deref(),
+                row.file_target.as_str(),
+            )
+            .await;
             Ok(())
         } else if is_direct || is_group_recipient {
             if !row.accepted {
@@ -589,6 +624,19 @@ impl Shares {
                         .await?;
                 }
             }
+            // Best-effort activity emit on unaccept (SP14). Actor here
+            // is the recipient choosing to drop the share.
+            self.emit_share_activity(
+                crabcloud_activity::EventType::ShareDeleted,
+                "share_deleted_you",
+                "share_deleted_by",
+                id,
+                requester.as_str(),
+                row.share_type,
+                row.share_with.as_deref(),
+                row.file_target.as_str(),
+            )
+            .await;
             Ok(())
         } else {
             Err(ShareError::Forbidden)
@@ -695,6 +743,20 @@ impl Shares {
             )
             .await;
         }
+
+        // Best-effort activity emit (SP14). Link / email shares fan out
+        // to just the actor (the external recipient isn't a Crabcloud user).
+        self.emit_share_activity(
+            crabcloud_activity::EventType::ShareCreated,
+            "share_created_you",
+            "share_created_by",
+            id,
+            req.requester.as_str(),
+            req.share_type,
+            None,
+            req.path.as_str(),
+        )
+        .await;
 
         Ok(ShareRow {
             id,
@@ -807,6 +869,97 @@ impl Shares {
                     .await?;
                 Ok(row.try_get::<i64, _>("id")?)
             }
+        }
+    }
+
+    /// Resolve the recipient list for an activity event tied to a share.
+    /// User shares fan out to `[actor, share_with]`; group shares fan out
+    /// to `[actor, ...group_members]`; link / email shares fan out to
+    /// just `[actor]`. Unparseable group ids degrade to just the actor
+    /// (log + continue per SP14 §6).
+    async fn share_activity_recipients(
+        &self,
+        actor: &str,
+        share_type: ShareType,
+        share_with: Option<&str>,
+    ) -> Vec<UserId> {
+        let mut raw: Vec<String> = vec![actor.to_string()];
+        match share_type {
+            ShareType::User => {
+                if let Some(s) = share_with {
+                    raw.push(s.to_string());
+                }
+            }
+            ShareType::Group => {
+                if let Some(gname) = share_with {
+                    match GroupId::new(gname) {
+                        Ok(gid) => match self.users.group_store().members_of(&gid).await {
+                            Ok(members) => raw.extend(members.into_iter().map(|u| u.into_inner())),
+                            Err(e) => {
+                                tracing::warn!(
+                                    error = %e,
+                                    group = gname,
+                                    "sharing: activity group fan-out failed, emitting actor-only"
+                                );
+                            }
+                        },
+                        Err(e) => {
+                            tracing::warn!(
+                                error = %e,
+                                group = gname,
+                                "sharing: activity skipping invalid group id"
+                            );
+                        }
+                    }
+                }
+            }
+            ShareType::Link | ShareType::Email => {}
+        }
+        let mut seen = std::collections::HashSet::new();
+        raw.into_iter()
+            .filter_map(|s| UserId::new(s).ok())
+            .filter(|u| seen.insert(u.as_str().to_string()))
+            .collect()
+    }
+
+    /// Best-effort emit a `share_created` / `share_deleted` event.
+    /// Failure is logged + swallowed per SP14 spec §6.
+    async fn emit_share_activity(
+        &self,
+        event_type: crabcloud_activity::EventType,
+        subject_id_actor: &str,
+        subject_id_recipient: &str,
+        share_id: i64,
+        actor: &str,
+        share_type: ShareType,
+        share_with: Option<&str>,
+        path: &str,
+    ) {
+        let recipients = self
+            .share_activity_recipients(actor, share_type, share_with)
+            .await;
+        let event = crabcloud_activity::ActivityEvent {
+            actor: actor.to_string(),
+            event_type,
+            subject_id_actor: subject_id_actor.to_string(),
+            subject_id_recipient: subject_id_recipient.to_string(),
+            subject_params: serde_json::json!({
+                "actor": actor,
+                "file": path,
+                "recipient": share_with.unwrap_or(""),
+            }),
+            object_type: crabcloud_activity::ObjectType::Share,
+            object_id: Some(share_id),
+            recipients,
+            occurred_at: chrono::Utc::now().timestamp(),
+        };
+        if let Err(e) = self.activity.emit(event).await {
+            tracing::warn!(
+                error = %e,
+                share_id,
+                ?event_type,
+                "sharing: activity emit failed"
+            );
         }
     }
 }

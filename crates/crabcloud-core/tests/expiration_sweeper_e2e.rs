@@ -61,6 +61,7 @@ async fn fixture() -> Fx {
         mail: Arc::new(queue.clone()),
         prefs: prefs.clone(),
         instance_url: "https://test.example".to_string(),
+        activity: Arc::new(crabcloud_activity::NoopEmitter),
     }));
     Fx {
         pool: pool_arc,
