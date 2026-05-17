@@ -28,6 +28,12 @@ pub struct FileRowProps {
     pub on_rename_cancel: EventHandler<()>,
     pub on_delete: EventHandler<String>,
     pub on_share: EventHandler<String>,
+    /// Open the per-file Versions panel for this entry. Emits the
+    /// row's `fileid` (filecache row id), which the panel uses to
+    /// `list_versions` server-fn against. Non-file rows (directories,
+    /// share-mount entries with no owner-side fileid) silently no-op
+    /// on the menu click because they don't have a fileid to pass.
+    pub on_show_versions: EventHandler<(i64, String)>,
 }
 
 #[component]
@@ -44,6 +50,7 @@ pub fn FileRow(props: FileRowProps) -> Element {
         on_rename_cancel,
         on_delete,
         on_share,
+        on_show_versions,
     } = props;
 
     let icon = if entry.is_dir { "📁" } else { "📄" };
@@ -60,6 +67,15 @@ pub fn FileRow(props: FileRowProps) -> Element {
     let path_for_share = entry.path.clone();
     let path_for_commit_enter = entry.path.clone();
     let path_for_commit_blur = entry.path.clone();
+    // `Versions` is file-only (directories don't have versions) and
+    // requires a fileid (share-mount entries against another user's
+    // home don't have an owner-side fileid in this view). Captured
+    // here so the rsx! menu branch can decide whether to render the
+    // item at all — keeping the dead "Versions" item out of the menu
+    // for rows where the click would be a no-op is friendlier than
+    // showing a disabled-looking item.
+    let versions_fileid: Option<i64> = if entry.is_dir { None } else { entry.fileid };
+    let name_for_versions = entry.name.clone();
     let shared_by = entry.shared_by.clone();
     let share_count = entry.share_count;
     let entry_name_for_enter = entry.name.clone();
@@ -200,6 +216,16 @@ pub fn FileRow(props: FileRowProps) -> Element {
                             },
                             "🔗  Share"
                         }
+                        if let Some(fid) = versions_fileid {
+                            button {
+                                class: "files-overflow-item",
+                                onclick: move |_| {
+                                    menu_open.set(false);
+                                    on_show_versions.call((fid, name_for_versions.clone()));
+                                },
+                                "Versions"
+                            }
+                        }
                     }
                 }
             }
@@ -314,6 +340,7 @@ mod tests {
                     on_rename_cancel: move |_: ()| {},
                     on_delete: move |_: String| {},
                     on_share: move |_: String| {},
+                    on_show_versions: move |_: (i64, String)| {},
                 }
             }
         }
@@ -364,6 +391,7 @@ mod tests {
                     on_rename_cancel: move |_: ()| {},
                     on_delete: move |_: String| {},
                     on_share: move |_: String| {},
+                    on_show_versions: move |_: (i64, String)| {},
                 }
             }
         }
@@ -411,6 +439,7 @@ mod tests {
                     on_rename_cancel: move |_: ()| {},
                     on_delete: move |_: String| {},
                     on_share: move |_: String| {},
+                    on_show_versions: move |_: (i64, String)| {},
                 }
             }
         }
