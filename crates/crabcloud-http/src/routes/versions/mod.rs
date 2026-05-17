@@ -56,7 +56,13 @@ const ALLOW_HEADER: &str = "OPTIONS, PROPFIND, GET, COPY";
 pub(super) fn versions_err(e: crabcloud_versions::VersionsError) -> DavError {
     use crabcloud_versions::VersionsError::*;
     match e {
-        NotFound | SourceMissing => DavError::NotFound,
+        NotFound => DavError::NotFound,
+        SourceMissing => {
+            tracing::warn!(
+                "versions DAV: SourceMissing — DB row references on-disk file that's gone (operator should investigate)"
+            );
+            DavError::NotFound
+        }
         WrongUser => DavError::Forbidden,
         DuplicateSnapshot => DavError::Conflict,
         Io(err) => DavError::Internal(format!("versions io: {err}")),

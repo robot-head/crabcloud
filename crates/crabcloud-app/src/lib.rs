@@ -76,6 +76,9 @@ pub use server_fns::public_link::PublicLinkMeta;
 pub use server_fns::trash::{
     empty_trash, list_trash, purge_trash, restore_trash, RestoredDto, TrashEntryDto,
 };
+// re-exported for integration tests (tests/server_fns_versions.rs) and the
+// Dioxus UI (Batch D).
+pub use server_fns::versions::{delete_version, list_versions, restore_version, VersionDto};
 pub use server_fns::{
     count_incoming_shares, delete, list_dir, login, mkdir, move_paths, rename,
     share_recipient_search, status, upload_begin, FileEntry, RecipientCandidate, StatusInfo,
