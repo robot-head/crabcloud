@@ -8,6 +8,7 @@ rust-version.workspace = true
 anyhow.workspace = true
 async-trait.workspace = true
 chrono.workspace = true
+crabcloud-activity.workspace = true
 crabcloud-cache.workspace = true
 crabcloud-config.workspace = true
 crabcloud-db.workspace = true
