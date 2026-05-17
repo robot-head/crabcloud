@@ -33,7 +33,15 @@ pub async fn list_versions(fileid: i64) -> Result<Vec<VersionDto>, ServerFnError
         .versions
         .list_for(uid.as_str(), fileid)
         .await
-        .map_err(map_versions_err)?;
+        .map_err(|e| {
+            map_versions_err(
+                e,
+                ErrCtx {
+                    fileid: Some(fileid),
+                    ..Default::default()
+                },
+            )
+        })?;
     Ok(rows
         .into_iter()
         .map(|e| VersionDto {
@@ -53,14 +61,22 @@ pub async fn restore_version(version_id: i64) -> Result<(), ServerFnError> {
     // Resolve owner + current size before the restore call, same shape
     // as the OCS POST and DAV COPY paths. Reject other-user rows here
     // so the error surface stays distinguishable from a NotFound.
-    let entry = state
-        .versions
-        .get_by_id(version_id)
-        .await
-        .map_err(map_versions_err)?;
+    let entry = state.versions.get_by_id(version_id).await.map_err(|e| {
+        map_versions_err(
+            e,
+            ErrCtx {
+                version_id: Some(version_id),
+                ..Default::default()
+            },
+        )
+    })?;
     if entry.user != uid.as_str() {
         return Err(map_versions_err(
             crabcloud_versions::VersionsError::WrongUser,
+            ErrCtx {
+                version_id: Some(version_id),
+                ..Default::default()
+            },
         ));
     }
     let current_size = current_filecache_size(&state, uid.as_str(), &entry.path).await;
@@ -77,7 +93,15 @@ pub async fn restore_version(version_id: i64) -> Result<(), ServerFnError> {
             cfg.versions_max_bytes,
         )
         .await
-        .map_err(map_versions_err)
+        .map_err(|e| {
+            map_versions_err(
+                e,
+                ErrCtx {
+                    version_id: Some(version_id),
+                    ..Default::default()
+                },
+            )
+        })
 }
 
 /// `POST /api/files/versions/delete` — hard-delete the version row +
@@ -89,7 +113,15 @@ pub async fn delete_version(version_id: i64) -> Result<(), ServerFnError> {
         .versions
         .delete(uid.as_str(), version_id)
         .await
-        .map_err(map_versions_err)
+        .map_err(|e| {
+            map_versions_err(
+                e,
+                ErrCtx {
+                    version_id: Some(version_id),
+                    ..Default::default()
+                },
+            )
+        })
 }
 
 /// Look up the current size of the owner-relative `path` under `uid`'s
@@ -120,20 +152,46 @@ async fn current_filecache_size(state: &crabcloud_core::AppState, uid: &str, pat
     }
 }
 
+/// Optional context fields plumbed from each server fn into the error
+/// mapper so log lines carry the version_id / fileid that triggered
+/// the failure.
+#[cfg(feature = "server")]
+#[derive(Default)]
+struct ErrCtx {
+    version_id: Option<i64>,
+    fileid: Option<i64>,
+}
+
 /// Map the versions service's typed errors to the string-bodied
 /// `ServerFnError` the dx client surface understands. Distinct strings
 /// so the UI / tests can pattern-match without parsing `Display`
 /// output of an opaque variant. Mirrors the trash module's policy:
 /// NotFound→404, WrongUser→forbidden, fail-fast on other variants
-/// with `tracing::error!`.
+/// with `tracing::error!`. `SourceMissing` additionally emits a
+/// `tracing::warn!` breadcrumb before mapping to `not_found`: it
+/// indicates DB+disk drift (row exists but on-disk version bytes are
+/// gone), not a client-caused not-found.
 #[cfg(feature = "server")]
-fn map_versions_err(err: crabcloud_versions::VersionsError) -> ServerFnError {
+fn map_versions_err(err: crabcloud_versions::VersionsError, ctx: ErrCtx) -> ServerFnError {
     use crabcloud_versions::VersionsError;
     match err {
-        VersionsError::NotFound | VersionsError::SourceMissing => ServerFnError::new("not_found"),
+        VersionsError::NotFound => ServerFnError::new("not_found"),
+        VersionsError::SourceMissing => {
+            tracing::warn!(
+                version_id = ?ctx.version_id,
+                fileid = ?ctx.fileid,
+                "versions server fn: SourceMissing — DB row references on-disk file that's gone (operator should investigate)"
+            );
+            ServerFnError::new("not_found")
+        }
         VersionsError::WrongUser => ServerFnError::new("forbidden"),
         other => {
-            tracing::error!(error = %other, "versions server fn: unhandled VersionsError");
+            tracing::error!(
+                error = %other,
+                version_id = ?ctx.version_id,
+                fileid = ?ctx.fileid,
+                "versions server fn: unhandled VersionsError"
+            );
             ServerFnError::new(format!("versions: {other}"))
         }
     }

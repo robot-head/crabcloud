@@ -36,15 +36,41 @@ pub fn router() -> axum::Router<AppState> {
 
 // --- error mapping ---------------------------------------------------------
 
+/// Optional context fields plumbed from the handler into the error
+/// mapper so log lines carry the version_id / fileid that triggered
+/// the failure. Both default to `None` for surfaces that don't have
+/// either in scope.
+#[derive(Default)]
+struct ErrCtx {
+    version_id: Option<i64>,
+    fileid: Option<i64>,
+}
+
 /// Map `VersionsError` → OCS envelope (HTTP code, message). Mirrors the
 /// trash module's policy: NotFound→404, WrongUser→403, others log
-/// fail-fast at `tracing::error!` and surface 500.
-fn from_versions_error(err: VersionsError, fmt: Format) -> Response {
+/// fail-fast at `tracing::error!` and surface 500. `SourceMissing`
+/// additionally emits a `tracing::warn!` breadcrumb before mapping to
+/// 404: it indicates DB+disk drift (row exists but on-disk version
+/// bytes are gone), not a client-caused not-found.
+fn from_versions_error(err: VersionsError, fmt: Format, ctx: ErrCtx) -> Response {
     let (code, msg) = match err {
-        VersionsError::NotFound | VersionsError::SourceMissing => (404, "not found".to_string()),
+        VersionsError::NotFound => (404, "not found".to_string()),
+        VersionsError::SourceMissing => {
+            tracing::warn!(
+                version_id = ?ctx.version_id,
+                fileid = ?ctx.fileid,
+                "versions OCS: SourceMissing — DB row references on-disk file that's gone (operator should investigate)"
+            );
+            (404, "not found".to_string())
+        }
         VersionsError::WrongUser => (403, "forbidden".to_string()),
         other => {
-            tracing::error!(error = %other, "versions OCS handler: unhandled VersionsError");
+            tracing::error!(
+                error = %other,
+                version_id = ?ctx.version_id,
+                fileid = ?ctx.fileid,
+                "versions OCS handler: unhandled VersionsError"
+            );
             (500, other.to_string())
         }
     };
@@ -92,7 +118,14 @@ async fn list_handler(
                 .collect();
             ocs_envelope(200, "OK", Value::Array(dtos), fmt.0)
         }
-        Err(e) => from_versions_error(e, fmt.0),
+        Err(e) => from_versions_error(
+            e,
+            fmt.0,
+            ErrCtx {
+                fileid: Some(fileid),
+                ..Default::default()
+            },
+        ),
     }
 }
 
@@ -108,10 +141,26 @@ async fn restore_handler(
     // mirroring `routes::versions::copy::restore`.
     let entry = match state.versions.get_by_id(version_id).await {
         Ok(e) => e,
-        Err(e) => return from_versions_error(e, fmt.0),
+        Err(e) => {
+            return from_versions_error(
+                e,
+                fmt.0,
+                ErrCtx {
+                    version_id: Some(version_id),
+                    ..Default::default()
+                },
+            )
+        }
     };
     if entry.user != ctx.user_id.as_str() {
-        return from_versions_error(VersionsError::WrongUser, fmt.0);
+        return from_versions_error(
+            VersionsError::WrongUser,
+            fmt.0,
+            ErrCtx {
+                version_id: Some(version_id),
+                ..Default::default()
+            },
+        );
     }
     let current_size = current_filecache_size(&state, ctx.user_id.as_str(), &entry.path).await;
     let now = chrono::Utc::now().timestamp();
@@ -129,7 +178,14 @@ async fn restore_handler(
         .await
     {
         Ok(()) => ocs_envelope(200, "OK", Value::Null, fmt.0),
-        Err(e) => from_versions_error(e, fmt.0),
+        Err(e) => from_versions_error(
+            e,
+            fmt.0,
+            ErrCtx {
+                version_id: Some(version_id),
+                ..Default::default()
+            },
+        ),
     }
 }
 
@@ -145,7 +201,14 @@ async fn purge_handler(
         .await
     {
         Ok(()) => ocs_envelope(200, "OK", Value::Null, fmt.0),
-        Err(e) => from_versions_error(e, fmt.0),
+        Err(e) => from_versions_error(
+            e,
+            fmt.0,
+            ErrCtx {
+                version_id: Some(version_id),
+                ..Default::default()
+            },
+        ),
     }
 }
 
