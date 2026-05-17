@@ -29,7 +29,7 @@ pub async fn restore(
     let entry = match state.trash.get_by_name(uid, &basename, &suffix).await {
         Ok(e) => e,
         Err(crabcloud_trash::TrashError::NotFound) => return Err(DavError::NotFound),
-        Err(other) => return Err(trash_err(other)),
+        Err(other) => return Err(super::trash_err(other)),
     };
 
     let dest_override = match headers.get("destination").and_then(|v| v.to_str().ok()) {
@@ -43,7 +43,7 @@ pub async fn restore(
         .await
     {
         Ok(_restored) => Ok((StatusCode::CREATED, "").into_response()),
-        Err(e) => Err(trash_err(e)),
+        Err(e) => Err(super::trash_err(e)),
     }
 }
 
@@ -64,6 +64,11 @@ fn parse_destination(dest: &str, uid: &str) -> DavResult<String> {
         }
         None => dest.to_string(),
     };
+    // Strip ?query and #fragment before prefix-matching so a defensive
+    // client that appends e.g. `?_=1716` to bust caches doesn't poison
+    // the restore path.
+    let path = path.split('?').next().unwrap_or("");
+    let path = path.split('#').next().unwrap_or("").to_string();
     // URL-decode in case the client percent-encoded path segments.
     let decoded = urlencoding::decode(&path)
         .map_err(|e| DavError::BadRequest(format!("invalid url encoding: {e}")))?;
@@ -80,16 +85,6 @@ fn parse_destination(dest: &str, uid: &str) -> DavResult<String> {
     Err(DavError::BadRequest(format!(
         "Destination not under /dav/files/{uid}/: {dest}"
     )))
-}
-
-fn trash_err(e: crabcloud_trash::TrashError) -> DavError {
-    use crabcloud_trash::TrashError::*;
-    match e {
-        NotFound | SourceMissing => DavError::NotFound,
-        WrongUser => DavError::Forbidden,
-        RestoreCollision => DavError::Conflict,
-        other => DavError::Internal(format!("trash: {other}")),
-    }
 }
 
 #[cfg(test)]
@@ -130,5 +125,17 @@ mod tests {
     fn parse_destination_rejects_outside_files() {
         let r = parse_destination("/dav/trashbin/alice/x.txt.d1", "alice");
         assert!(matches!(r, Err(DavError::BadRequest(_))));
+    }
+
+    #[test]
+    fn parse_destination_strips_query_and_fragment() {
+        assert_eq!(
+            parse_destination("/dav/files/alice/foo.txt?x=1", "alice").unwrap(),
+            "/foo.txt"
+        );
+        assert_eq!(
+            parse_destination("/dav/files/alice/foo.txt#section", "alice").unwrap(),
+            "/foo.txt"
+        );
     }
 }

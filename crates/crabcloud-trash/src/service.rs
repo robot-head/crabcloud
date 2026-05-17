@@ -212,6 +212,15 @@ impl Trash {
     /// deleter's view path's parent (e.g. `/Shared/Vacation`), NOT the
     /// owner-relative storage path — restoring back to that location
     /// keeps the deleter's mental model intact.
+    ///
+    /// Partial-copy failures roll back the destination file before
+    /// returning Err (so a half-written file at `dst` isn't orphaned —
+    /// no trash row references it, and the sweeper can't reclaim it).
+    /// INSERT failures after a successful copy log a `tracing::warn!`
+    /// with the orphan path (caller can grep).
+    ///
+    /// Same suffix-collision TOCTOU caveat as [`Self::soft_delete`] —
+    /// see that fn's `resolve_unique_suffix` note.
     pub async fn soft_delete_from_reader(
         &self,
         deleter_uid: &str,
@@ -243,14 +252,24 @@ impl Trash {
         let dst = trash_dir.join(format!("{basename}.{suffix}"));
         // Copy reader → dst. Use create_new to avoid clobbering on the
         // off-chance a stale file with the same suffix already lives
-        // there.
+        // there. On any error after create_new succeeds, unlink the
+        // partial file so we don't leak bytes nobody references — .ok()
+        // because the cleanup error must not mask the original error.
         let mut file = tokio::fs::OpenOptions::new()
             .write(true)
             .create_new(true)
             .open(&dst)
             .await?;
-        tokio::io::copy(&mut reader, &mut file).await?;
-        file.sync_all().await?;
+        if let Err(e) = tokio::io::copy(&mut reader, &mut file).await {
+            drop(file);
+            tokio::fs::remove_file(&dst).await.ok();
+            return Err(e.into());
+        }
+        if let Err(e) = file.sync_all().await {
+            drop(file);
+            tokio::fs::remove_file(&dst).await.ok();
+            return Err(e.into());
+        }
         drop(file);
 
         let id = match self

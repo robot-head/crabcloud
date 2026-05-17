@@ -21,20 +21,10 @@ pub async fn purge(state: &AppState, uid: &str, name: &str) -> DavResult<Respons
     let entry = match state.trash.get_by_name(uid, &basename, &suffix).await {
         Ok(e) => e,
         Err(crabcloud_trash::TrashError::NotFound) => return Err(DavError::NotFound),
-        Err(other) => return Err(trash_err(other)),
+        Err(other) => return Err(super::trash_err(other)),
     };
     match state.trash.purge(uid, entry.id).await {
         Ok(()) => Ok((StatusCode::NO_CONTENT, "").into_response()),
-        Err(e) => Err(trash_err(e)),
-    }
-}
-
-fn trash_err(e: crabcloud_trash::TrashError) -> DavError {
-    use crabcloud_trash::TrashError::*;
-    match e {
-        NotFound | SourceMissing => DavError::NotFound,
-        WrongUser => DavError::Forbidden,
-        RestoreCollision => DavError::Conflict,
-        other => DavError::Internal(format!("trash: {other}")),
+        Err(e) => Err(super::trash_err(e)),
     }
 }

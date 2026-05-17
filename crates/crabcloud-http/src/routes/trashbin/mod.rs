@@ -43,6 +43,21 @@ pub(super) use propfind::{entry as propfind_entry, root as propfind_root};
 /// don't accept writes (PUT/MKCOL) or copies — those return 405 below.
 const ALLOW_HEADER: &str = "OPTIONS, PROPFIND, DELETE, MOVE";
 
+/// Shared `TrashError` → `DavError` mapping used by every handler in
+/// this module. `RestoreCollision` → `Conflict` is only reachable from
+/// `restore` (unreachable from `purge` and `propfind`), but keeping it
+/// in the shared mapping is harmless and avoids handler-by-handler
+/// duplication.
+pub(super) fn trash_err(e: crabcloud_trash::TrashError) -> DavError {
+    use crabcloud_trash::TrashError::*;
+    match e {
+        NotFound | SourceMissing => DavError::NotFound,
+        WrongUser => DavError::Forbidden,
+        RestoreCollision => DavError::Conflict,
+        other => DavError::Internal(format!("trash: {other}")),
+    }
+}
+
 /// Build the trashbin router. All routes are auth-gated by the outer
 /// `AuthLayer` (mounted alongside `dav_router` in `build_router`).
 pub fn trashbin_router() -> Router<AppState> {

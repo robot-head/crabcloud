@@ -41,7 +41,7 @@ const HREF_PREFIX: &str = "/remote.php/dav/trashbin";
 pub async fn root(state: &AppState, uid: &str, headers: &HeaderMap) -> DavResult<Response> {
     let depth = parse_depth(headers, Depth::Infinity)?;
     let entries = if matches!(depth, Depth::One | Depth::Infinity) {
-        state.trash.list(uid).await.map_err(trash_err)?
+        state.trash.list(uid).await.map_err(super::trash_err)?
     } else {
         Vec::new()
     };
@@ -93,7 +93,7 @@ pub async fn entry(
     let entry = match state.trash.get_by_name(uid, &basename, &suffix).await {
         Ok(e) => e,
         Err(crabcloud_trash::TrashError::NotFound) => return Err(DavError::NotFound),
-        Err(other) => return Err(trash_err(other)),
+        Err(other) => return Err(super::trash_err(other)),
     };
     let size = file_size_for_entry(state, &entry).await;
 
@@ -195,16 +195,6 @@ fn encode_segment(s: &str) -> String {
         }
     }
     out
-}
-
-fn trash_err(e: crabcloud_trash::TrashError) -> DavError {
-    use crabcloud_trash::TrashError::*;
-    match e {
-        NotFound | SourceMissing => DavError::NotFound,
-        WrongUser => DavError::Forbidden,
-        RestoreCollision => DavError::Conflict,
-        other => DavError::Internal(format!("trash: {other}")),
-    }
 }
 
 #[cfg(test)]
