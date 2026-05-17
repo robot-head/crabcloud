@@ -97,11 +97,7 @@ pub async fn delete_version(version_id: i64) -> Result<(), ServerFnError> {
 /// — `Versions::restore` interprets 0 as "skip the pre-snapshot",
 /// matching the OCS POST and DAV COPY policy.
 #[cfg(feature = "server")]
-async fn current_filecache_size(
-    state: &crabcloud_core::AppState,
-    uid: &str,
-    path: &str,
-) -> i64 {
+async fn current_filecache_size(state: &crabcloud_core::AppState, uid: &str, path: &str) -> i64 {
     use crabcloud_storage::StoragePath;
     use crabcloud_users::UserId;
     let uid_obj = match UserId::new(uid) {

@@ -854,6 +854,7 @@ dependencies = [
  "crabcloud-storage",
  "crabcloud-trash",
  "crabcloud-users",
+ "crabcloud-versions",
  "dioxus",
  "dioxus-cli-config",
  "gloo-net 0.7.0",

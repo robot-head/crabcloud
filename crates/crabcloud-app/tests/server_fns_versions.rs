@@ -138,13 +138,7 @@ async fn storage_id_num(state: &AppState, uid: &str) -> i64 {
 
 /// Snapshot `path` directly via the versions service. Returns the new
 /// row's id. `now_secs` is the version_mtime suffix on disk.
-async fn snapshot(
-    state: &AppState,
-    uid: &str,
-    path: &str,
-    size: i64,
-    now_secs: i64,
-) -> i64 {
+async fn snapshot(state: &AppState, uid: &str, path: &str, size: i64, now_secs: i64) -> i64 {
     let fileid = fileid_of(state, uid, path).await;
     let sid = storage_id_num(state, uid).await;
     state

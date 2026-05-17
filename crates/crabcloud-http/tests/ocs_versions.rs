@@ -56,13 +56,7 @@ async fn storage_id_num(state: &AppState, uid: &str) -> i64 {
 
 /// Snapshot `path` directly via the Versions service. Returns the new
 /// row's id. `now_secs` is the version_mtime suffix on disk.
-async fn snapshot(
-    state: &AppState,
-    uid: &str,
-    path: &str,
-    size: i64,
-    now_secs: i64,
-) -> i64 {
+async fn snapshot(state: &AppState, uid: &str, path: &str, size: i64, now_secs: i64) -> i64 {
     let fileid = fileid_of(state, uid, path).await;
     let sid = storage_id_num(state, uid).await;
     state
@@ -148,7 +142,10 @@ async fn list_unknown_fileid_returns_empty_envelope() {
     let app = crabcloud_http::build_router(state, axum::Router::new());
 
     let resp = app
-        .oneshot(ocs_get(&format!("{BASE}/versions/9999?format=json"), &token))
+        .oneshot(ocs_get(
+            &format!("{BASE}/versions/9999?format=json"),
+            &token,
+        ))
         .await
         .unwrap();
     let (status, v) = decode(resp).await;
@@ -263,7 +260,10 @@ async fn delete_one_removes_row_and_on_disk_file() {
         .join("alice")
         .join("files_versions")
         .join("a.txt.v1716000000");
-    assert!(!on_disk.exists(), "version file still on disk at {on_disk:?}");
+    assert!(
+        !on_disk.exists(),
+        "version file still on disk at {on_disk:?}"
+    );
 }
 
 #[tokio::test]
