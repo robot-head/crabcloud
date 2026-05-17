@@ -79,6 +79,7 @@ crabcloud-i18n = { workspace = true }
 crabcloud-publiclinks = { workspace = true }
 crabcloud-sharing = { workspace = true }
 crabcloud-storage = { workspace = true }
+crabcloud-trash = { workspace = true }
 crabcloud-users = { workspace = true }
 # `dx serve` sets `IP` + `PORT` env vars on the spawned server. We read them
 # via `fullstack_address_or_localhost()` so the dev-server `Cmd::Serve` binds
@@ -101,6 +102,7 @@ crabcloud-http = { workspace = true }
 crabcloud-publiclinks = { workspace = true }
 crabcloud-sharing = { workspace = true }
 crabcloud-storage = { workspace = true }
+crabcloud-trash = { workspace = true }
 crabcloud-users = { workspace = true }
 dioxus = { workspace = true, features = ["server"] }
 serde_json.workspace = true
@@ -127,6 +129,10 @@ required-features = ["server"]
 
 [[test]]
 name = "server_fns_public_link"
+required-features = ["server"]
+
+[[test]]
+name = "server_fns_trash"
 required-features = ["server"]
 
 [lints]
