@@ -164,31 +164,90 @@ form button { margin-top: 1rem; padding: 0.5rem 1rem; font: inherit; cursor: poi
 .sidebar-link { cursor: pointer; }
 .sidebar-link:hover { background: #f0f0f0; }
 
-/* ---- Trash bin page (SP12 Batch D) ----
- * Mirrors the files-page visual rhythm: row name on the left, muted
- * location + when in the middle, action buttons on the right. The empty/
- * error/loading placeholders are centered muted text. The empty-trash
- * confirm modal reuses .files-modal-* (declared above) so we don't ship
- * duplicate backdrop/card chrome. */
-.trash-page { font-size: 13px; }
-.trash-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
-.trash-header h2 { margin: 0; font-size: 16px; font-weight: 600; }
-.trash-empty-btn { padding: 6px 14px; border-radius: 4px; border: 1px solid #d33; background: white; color: #d33; font: inherit; cursor: pointer; }
+/* ---- Trash bin page (SP12 Batch D + polish/sp12-ui) ----
+ * Visual rhythm mirrors the files page: a header strip with a heading +
+ * destructive action button, a hover-highlighted row list, muted
+ * location + when columns, and centered placeholders for empty / error
+ * / loading states. The empty-trash + per-row purge confirms reuse
+ * .files-modal-* chrome (declared above) so we don't ship duplicate
+ * backdrop/card styling. The error banner at the top of the page is
+ * the only piece that doesn't have a files-page analogue.
+ *
+ * Colors mirror the literal hex values used elsewhere in this file
+ * (#0082c9 accent, #d33 danger, #666/#888/#aaa muted greys) rather than
+ * routing through :root vars — the existing files-page styles all
+ * hardcode the same values, and a future theme refactor should sweep
+ * the whole file in one pass, not the trash section in isolation. */
+.trash-page { font-size: 13px; padding: 20px 24px; }
+
+/* Error banner (F3): full-width across the page top, dismissable. */
+.trash-banner {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px; border-radius: 4px;
+  margin-bottom: 14px;
+  font-size: 13px;
+}
+.trash-banner-error { background: #fdecec; border: 1px solid #f5c6c6; color: #a02020; }
+.trash-banner-icon { font-size: 16px; line-height: 1; }
+.trash-banner-text { flex: 1; }
+.trash-banner-close {
+  background: none; border: 0; padding: 2px 6px;
+  font: inherit; font-size: 14px;
+  color: inherit; cursor: pointer; opacity: 0.7;
+}
+.trash-banner-close:hover { opacity: 1; }
+
+/* Header: bottom border + heading typography matching the files page. */
+.trash-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding-bottom: 10px; margin-bottom: 14px;
+  border-bottom: 1px solid #eee;
+}
+.trash-header h2 { margin: 0; font-size: 18px; font-weight: 600; color: #333; }
+.trash-empty-btn {
+  padding: 6px 14px; border-radius: 4px;
+  border: 1px solid #d33; background: white; color: #d33;
+  font: inherit; cursor: pointer;
+}
 .trash-empty-btn:hover:not([disabled]) { background: #fff5f5; }
 .trash-empty-btn[disabled] { opacity: 0.5; cursor: not-allowed; }
+
+/* Row list: hover-highlighted rows with grid alignment. Five columns:
+ * icon | name (flex) | location (flex, muted) | when (fixed, muted) |
+ * actions (right-aligned button group). */
 .trash-list { list-style: none; padding: 0; margin: 0; }
-.trash-row { display: grid; grid-template-columns: 32px 1fr 1fr 140px auto; gap: 10px; align-items: center; padding: 10px 4px; border-bottom: 1px solid #f5f5f5; }
+.trash-row {
+  display: grid;
+  grid-template-columns: 32px 1fr 1fr 140px auto;
+  gap: 12px; align-items: center;
+  padding: 10px 4px;
+  border-bottom: 1px solid #f5f5f5;
+}
 .trash-row:hover { background: #f5fafd; }
-.trash-row-icon { text-align: center; }
+.trash-row-icon { text-align: center; font-size: 1.25em; opacity: 0.85; }
 .trash-row-name { font-weight: 600; color: #333; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.trash-row-location { color: #888; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.trash-row-when { color: #888; text-align: right; }
-.trash-row-actions { display: flex; gap: 6px; }
-.trash-restore-btn, .trash-purge-btn { padding: 4px 10px; border-radius: 4px; border: 1px solid #d0d0d0; background: white; font: inherit; font-size: 12px; cursor: pointer; }
-.trash-restore-btn:hover:not([disabled]) { border-color: #0082c9; color: #0082c9; }
+.trash-row-location { color: #888; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trash-row-when { color: #888; font-size: 12px; text-align: right; }
+.trash-row-actions { display: flex; gap: 6px; justify-content: flex-end; }
+
+/* Row buttons: Restore = primary tone (accent border-on-hover);
+ * Delete permanently = destructive tone (red text + red-tinted border). */
+.trash-restore-btn, .trash-purge-btn {
+  padding: 4px 12px; border-radius: 4px;
+  border: 1px solid #d0d0d0; background: white;
+  font: inherit; font-size: 12px; cursor: pointer;
+  transition: border-color 0.12s, color 0.12s, background 0.12s;
+}
+.trash-restore-btn:hover:not([disabled]) { border-color: #0082c9; color: #0082c9; background: #f5fafd; }
 .trash-purge-btn { border-color: #e5b7b7; color: #d33; }
-.trash-purge-btn:hover:not([disabled]) { background: #fff5f5; }
+.trash-purge-btn:hover:not([disabled]) { background: #fff5f5; border-color: #d33; }
 .trash-restore-btn[disabled], .trash-purge-btn[disabled] { opacity: 0.5; cursor: not-allowed; }
-.trash-empty, .trash-error, .trash-loading { text-align: center; color: #888; padding: 48px 16px; font-style: italic; }
+
+/* Placeholder states: centered muted text with generous vertical
+ * padding so they don't look cramped on a tall viewport. */
+.trash-empty, .trash-error, .trash-loading {
+  text-align: center; color: #888;
+  padding: 64px 16px; font-style: italic;
+}
 .trash-error { color: #d33; font-style: normal; }
 .sidebar-link-disabled { color: #aaa; cursor: default; }
