@@ -10,8 +10,6 @@ pub enum TrashError {
     RestoreCollision,
     #[error("source not found in user storage")]
     SourceMissing,
-    #[error("cross-storage trash not supported in MVP")]
-    CrossStorage,
     #[error("io: {0}")]
     Io(#[from] std::io::Error),
     #[error("db: {0}")]

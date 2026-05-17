@@ -219,5 +219,8 @@ async fn sub_second_collision_suffix_increments() {
         .collect();
     names.sort();
     assert_eq!(names.len(), 2);
-    let _ = (id1, id2);
+    assert_ne!(
+        id1, id2,
+        "concurrent same-second deletes must produce distinct ids"
+    );
 }

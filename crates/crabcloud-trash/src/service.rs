@@ -44,10 +44,11 @@ impl Trash {
         &self,
         uid: &str,
         src_path: &str,
-        r#type: TrashType,
+        kind: TrashType,
         fileid_legacy: Option<i64>,
     ) -> Result<i64, TrashError> {
         let src_path = src_path.trim_start_matches('/').to_string();
+        validate_relative_path(&src_path)?;
         let basename = Path::new(&src_path)
             .file_name()
             .and_then(|s| s.to_str())
@@ -69,20 +70,35 @@ impl Trash {
         }
         tokio::fs::rename(&src, &dst).await?;
 
-        let id = self
-            .insert_row(
-                uid,
-                &basename,
-                &suffix,
-                &location,
-                now,
-                r#type,
-                fileid_legacy,
-            )
-            .await?;
+        let id = match self
+            .insert_row(uid, &basename, &suffix, &location, now, kind, fileid_legacy)
+            .await
+        {
+            Ok(id) => id,
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    orphan_path = %dst.display(),
+                    uid,
+                    "trash soft_delete: INSERT failed after rename; bytes stranded at orphan_path"
+                );
+                return Err(e);
+            }
+        };
         Ok(id)
     }
 
+    /// Compute a unique on-disk suffix for `basename` at `now_secs`. The
+    /// returned suffix is `d<secs>` for the common case, or `d<secs>_N`
+    /// if a prior delete in the same second already used the bare suffix.
+    ///
+    /// **TOCTOU note:** two concurrent soft-deletes of the same basename
+    /// within the same second can both observe `n == 0` and race to insert
+    /// the same `(user, basename, suffix)` — the second client surfaces
+    /// a `Db(sqlx::Error)` from the `idx_trash_user_name` unique-index
+    /// violation. Single-writer deployments don't hit this; multi-writer
+    /// ones rarely do. Revisit with a real transaction-bounded probe if
+    /// it ever becomes common.
     async fn resolve_unique_suffix(
         &self,
         uid: &str,
@@ -129,10 +145,10 @@ impl Trash {
         suffix: &str,
         location: &str,
         deleted_at: i64,
-        r#type: TrashType,
+        kind: TrashType,
         fileid_legacy: Option<i64>,
     ) -> Result<i64, TrashError> {
-        let ty = r#type.as_str();
+        let ty = kind.as_str();
         match self.pool.as_ref() {
             DbPool::Sqlite(p) => {
                 let r = sqlx::query(sql::INSERT_QM)
@@ -289,6 +305,7 @@ impl Trash {
         let (target_dir_rel, target_basename) = match dest_override {
             Some(d) => {
                 let trimmed = d.trim_start_matches('/');
+                validate_relative_path(trimmed)?;
                 let basename = Path::new(trimmed)
                     .file_name()
                     .and_then(|s| s.to_str())
@@ -321,7 +338,15 @@ impl Trash {
         let dst = target_dir_abs.join(&final_name);
         tokio::fs::rename(&src, &dst).await?;
 
-        self.delete_row(id).await?;
+        if let Err(e) = self.delete_row(id).await {
+            tracing::warn!(
+                error = %e,
+                row_id = id,
+                gone_from = %src.display(),
+                "trash restore: delete_row failed after rename; row points at missing trash file"
+            );
+            return Err(e);
+        }
         Ok(RestoredTo { path: final_rel })
     }
 
@@ -503,6 +528,33 @@ fn row_from_postgres(row: sqlx::postgres::PgRow) -> Result<TrashEntry, TrashErro
     })
 }
 
+/// Defense-in-depth check that a user-relative path is free of traversal
+/// tricks before it gets joined with the user's data directory. The
+/// current sole caller (`View::delete`) hands us validated `UserPath`
+/// strings, but a future DAV/OCS handler might pass raw client input.
+///
+/// Rejects:
+/// - any `..` path segment
+/// - any backslash (Windows separator that `Path::join` honors)
+/// - any NUL byte
+/// - any absolute path (a leading `/` that survived `trim_start_matches`)
+///
+/// The empty string is accepted (means "root"). On failure we re-use
+/// `TrashError::SourceMissing` rather than minting a new variant — the
+/// caller can't usefully distinguish "this segment was `..`" from "this
+/// file doesn't exist", and the check is defense-in-depth.
+fn validate_relative_path(p: &str) -> Result<(), TrashError> {
+    if p.contains('\\') || p.contains('\0') || p.starts_with('/') {
+        return Err(TrashError::SourceMissing);
+    }
+    for seg in p.split('/') {
+        if seg == ".." {
+            return Err(TrashError::SourceMissing);
+        }
+    }
+    Ok(())
+}
+
 /// Strip the last path segment. "a/b/c" -> "a/b", "a" -> "", "" -> "".
 fn parent_of(p: &str) -> &str {
     match p.rfind('/') {
@@ -558,5 +610,21 @@ mod tests {
         assert_eq!(parent_of("a/foo.txt"), "a");
         assert_eq!(parent_of("a/b/c/foo.txt"), "a/b/c");
         assert_eq!(parent_of(""), "");
+    }
+
+    #[test]
+    fn validate_relative_path_rejects_traversal() {
+        assert!(validate_relative_path("../etc/passwd").is_err());
+        assert!(validate_relative_path("a/../b").is_err());
+        assert!(validate_relative_path("a/b\\..").is_err());
+        assert!(validate_relative_path("a\0b").is_err());
+    }
+
+    #[test]
+    fn validate_relative_path_accepts_normal() {
+        assert!(validate_relative_path("notes/todo.txt").is_ok());
+        assert!(validate_relative_path("a/b/c").is_ok());
+        assert!(validate_relative_path("file.txt").is_ok());
+        assert!(validate_relative_path("").is_ok()); // root
     }
 }

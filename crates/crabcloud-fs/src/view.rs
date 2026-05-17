@@ -25,7 +25,6 @@ fn map_trash_err(e: crabcloud_trash::TrashError) -> FsError {
         NotFound | SourceMissing => FsError::NotFound,
         WrongUser => FsError::Forbidden,
         RestoreCollision => FsError::Conflict,
-        CrossStorage => FsError::CrossStorage,
         Io(e) => FsError::Storage(crabcloud_storage::StorageError::Io(e)),
         Db(e) => FsError::Trash(format!("db: {e}")),
         FileCache(s) => FsError::Trash(format!("filecache: {s}")),
@@ -345,14 +344,14 @@ impl View {
             .await
             .ok()
             .flatten();
-        let r#type = match row.as_ref().map(|r| r.kind) {
+        let kind = match row.as_ref().map(|r| r.kind) {
             Some(crabcloud_storage::FileKind::Directory) => crabcloud_trash::TrashType::Dir,
             _ => crabcloud_trash::TrashType::File,
         };
         let fileid_legacy = row.as_ref().map(|r| r.fileid);
 
         self.trash
-            .soft_delete(self.uid.as_str(), user_path.as_str(), r#type, fileid_legacy)
+            .soft_delete(self.uid.as_str(), user_path.as_str(), kind, fileid_legacy)
             .await
             .map_err(map_trash_err)?;
 
