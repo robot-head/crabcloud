@@ -50,11 +50,7 @@ async fn storage_id_num(state: &AppState, uid: &str) -> i64 {
         .home_storage(&UserId::new(uid).unwrap())
         .await
         .unwrap();
-    state
-        .filecache
-        .intern_storage(storage.id())
-        .await
-        .unwrap()
+    state.filecache.intern_storage(storage.id()).await.unwrap()
 }
 
 #[tokio::test]
