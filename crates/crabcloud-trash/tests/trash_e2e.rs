@@ -460,8 +460,12 @@ async fn purge_cascades_to_versions_for_fileid() {
     // Cascade: every version for fileid 100 is gone.
     assert!(versions.list_for("alice", 100).await.unwrap().is_empty());
     // On-disk version files are gone too.
-    assert!(!datadir.join("alice/files_versions/report.docx.v1000").exists());
-    assert!(!datadir.join("alice/files_versions/report.docx.v1001").exists());
+    assert!(!datadir
+        .join("alice/files_versions/report.docx.v1000")
+        .exists());
+    assert!(!datadir
+        .join("alice/files_versions/report.docx.v1001")
+        .exists());
 }
 
 #[tokio::test]

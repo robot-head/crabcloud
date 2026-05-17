@@ -337,10 +337,10 @@ impl View {
     /// SP13: if this write OVERWRITES an existing non-empty file, the
     /// prior bytes are snapshotted to the owner's `files_versions/`
     /// tree before the storage backend runs. The snapshot is throttled
-    /// + size-capped via the operator config (`versions_min_interval_secs`
-    /// / `versions_max_bytes`). Per spec §6 "Disk full during snapshot",
-    /// snapshot failure is a hard error — the storage write does NOT
-    /// proceed.
+    /// and size-capped via the operator config
+    /// (`versions_min_interval_secs` and `versions_max_bytes`). Per
+    /// spec §6 "Disk full during snapshot", snapshot failure is a hard
+    /// error — the storage write does NOT proceed.
     pub async fn put_file(
         &self,
         user_path: &UserPath,
@@ -379,11 +379,7 @@ impl View {
         storage_path: &StoragePath,
     ) -> FsResult<()> {
         let (cache_storage, cache_path) = cache_key_for(&mount.storage, storage_path)?;
-        let row = match self
-            .filecache
-            .lookup(cache_storage.id(), &cache_path)
-            .await
-        {
+        let row = match self.filecache.lookup(cache_storage.id(), &cache_path).await {
             Ok(Some(r)) => r,
             // No prior row → fresh create, no version to take.
             Ok(None) => return Ok(()),
@@ -429,7 +425,10 @@ impl View {
         // Owner-relative path is the cache_path itself; format with a
         // leading slash for the versions row column.
         let owner_relative = format!("/{}", cache_path.as_str());
-        let now = chrono::Utc::now().timestamp();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
         let hooks = &self.versions_hooks;
         match hooks
             .versions

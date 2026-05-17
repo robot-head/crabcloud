@@ -27,7 +27,9 @@ async fn write_user_file(datadir: &std::path::Path, uid: &str, rel: &str, conten
         .join(uid)
         .join("files")
         .join(rel.trim_start_matches('/'));
-    tokio::fs::create_dir_all(p.parent().unwrap()).await.unwrap();
+    tokio::fs::create_dir_all(p.parent().unwrap())
+        .await
+        .unwrap();
     tokio::fs::write(&p, contents).await.unwrap();
 }
 
@@ -141,8 +143,7 @@ async fn snapshot_into_nested_directory_creates_parents() {
         .unwrap()
         .expect("snapshot id");
     assert!(id > 0);
-    let v_path =
-        datadir.join("alice/files_versions/projects/q1/report.docx.v1716000000");
+    let v_path = datadir.join("alice/files_versions/projects/q1/report.docx.v1716000000");
     assert!(v_path.exists(), "nested version should exist at {v_path:?}");
 }
 
@@ -301,13 +302,7 @@ async fn sweep_tiered_keeps_at_least_one_per_bucket() {
     for offset in [-1i64, -hour - 1, -2 * day, -10 * day, -45 * day, -200 * day] {
         // The on-disk path matters per snapshot — write the current
         // file (with a fresh content marker), then snapshot.
-        write_user_file(
-            &datadir,
-            "alice",
-            "/y.txt",
-            format!("v{offset}").as_bytes(),
-        )
-        .await;
+        write_user_file(&datadir, "alice", "/y.txt", format!("v{offset}").as_bytes()).await;
         versions
             .snapshot_if_needed("alice", 1, 200, "/y.txt", 4, now + offset, 0, 1024)
             .await
@@ -339,13 +334,7 @@ async fn sweep_tiered_drops_duplicates_in_same_hour_bucket() {
     // Two versions 7 days old, 30 seconds apart → same hour slot, tag
     // 1. The sweeper must drop the older one.
     for offset in [-7 * day, -7 * day - 30] {
-        write_user_file(
-            &datadir,
-            "alice",
-            "/y.txt",
-            format!("v{offset}").as_bytes(),
-        )
-        .await;
+        write_user_file(&datadir, "alice", "/y.txt", format!("v{offset}").as_bytes()).await;
         versions
             .snapshot_if_needed("alice", 1, 200, "/y.txt", 4, now + offset, 0, 1024)
             .await

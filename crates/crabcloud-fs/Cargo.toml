@@ -13,7 +13,6 @@ crabcloud-storage.workspace = true
 crabcloud-trash.workspace = true
 crabcloud-users.workspace = true
 crabcloud-versions.workspace = true
-chrono.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["fs", "io-util", "sync", "macros"] }
 tracing.workspace = true

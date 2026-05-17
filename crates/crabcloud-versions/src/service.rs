@@ -514,7 +514,10 @@ impl Versions {
                 let rows = sqlx::query(sql::LIST_GROUPS_QM).fetch_all(p).await?;
                 rows.into_iter()
                     .map(|r| -> Result<_, VersionsError> {
-                        Ok((r.try_get::<String, _>("user")?, r.try_get::<i64, _>("fileid")?))
+                        Ok((
+                            r.try_get::<String, _>("user")?,
+                            r.try_get::<i64, _>("fileid")?,
+                        ))
                     })
                     .collect::<Result<_, _>>()?
             }
@@ -522,7 +525,10 @@ impl Versions {
                 let rows = sqlx::query(sql::LIST_GROUPS_QM).fetch_all(p).await?;
                 rows.into_iter()
                     .map(|r| -> Result<_, VersionsError> {
-                        Ok((r.try_get::<String, _>("user")?, r.try_get::<i64, _>("fileid")?))
+                        Ok((
+                            r.try_get::<String, _>("user")?,
+                            r.try_get::<i64, _>("fileid")?,
+                        ))
                     })
                     .collect::<Result<_, _>>()?
             }
@@ -530,7 +536,10 @@ impl Versions {
                 let rows = sqlx::query(sql::LIST_GROUPS_PG).fetch_all(p).await?;
                 rows.into_iter()
                     .map(|r| -> Result<_, VersionsError> {
-                        Ok((r.try_get::<String, _>("user")?, r.try_get::<i64, _>("fileid")?))
+                        Ok((
+                            r.try_get::<String, _>("user")?,
+                            r.try_get::<i64, _>("fileid")?,
+                        ))
                     })
                     .collect::<Result<_, _>>()?
             }
@@ -678,10 +687,7 @@ mod tests {
 
     #[test]
     fn bucket_slot_30d_to_180d_uses_day_buckets() {
-        assert_eq!(
-            bucket_slot(30 * 86_400, 1_000_000),
-            (2, 1_000_000 / 86_400)
-        );
+        assert_eq!(bucket_slot(30 * 86_400, 1_000_000), (2, 1_000_000 / 86_400));
         assert_eq!(
             bucket_slot(180 * 86_400 - 1, 1_000_000),
             (2, 1_000_000 / 86_400)
