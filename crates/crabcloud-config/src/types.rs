@@ -146,6 +146,12 @@ pub struct FileConfig {
     #[serde(default = "default_mail_queue_retention_days")]
     pub mail_queue_retention_days: u32,
 
+    /// How many days to keep trash bin entries before the daily
+    /// `TrashSweeper` purges them. `0` disables sweeping (manual purge
+    /// only). Default: 30.
+    #[serde(default = "default_trash_retention_days")]
+    pub trash_retention_days: u32,
+
     /// Optional bootstrap admin (Phase 3 deferred-users stand-in).
     pub bootstrap_admin: Option<BootstrapAdminConfig>,
 }
@@ -293,6 +299,9 @@ fn default_preview_retention_days() -> u32 {
 fn default_mail_queue_retention_days() -> u32 {
     30
 }
+fn default_trash_retention_days() -> u32 {
+    30
+}
 
 /// Errors raised while validating a parsed config.
 #[derive(Debug, thiserror::Error)]
@@ -374,6 +383,7 @@ mod tests {
             preview_retention_days: default_preview_retention_days(),
             mail: MailConfig::default(),
             mail_queue_retention_days: default_mail_queue_retention_days(),
+            trash_retention_days: default_trash_retention_days(),
             bootstrap_admin: None,
         }
     }
