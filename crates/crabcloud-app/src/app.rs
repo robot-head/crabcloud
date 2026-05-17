@@ -8,7 +8,7 @@ use crate::context::RequestContext;
 use crate::pages::{
     home::Home, login::Login, login_v2_flow::LoginV2Flow, not_found::NotFound,
     public_link::PublicLink as PublicLinkPage, settings_notifications::SettingsNotifications,
-    settings_security::SettingsSecurity,
+    settings_security::SettingsSecurity, trash::TrashPage,
 };
 use dioxus::prelude::*;
 
@@ -43,6 +43,11 @@ pub enum Route {
     /// route here and the page renders the folder identified by `segments`.
     #[route("/apps/files/:..segments")]
     FilesRoute { segments: Vec<String> },
+
+    /// Trash bin — flat per-user view of soft-deleted files and folders.
+    /// See SP12 spec (trash bin) §2.
+    #[route("/trash")]
+    TrashRoute {},
 
     /// Anonymous public-link viewer root. `/s/<token>` renders the linked
     /// folder (or the password gate, depending on the auth context the
@@ -100,6 +105,12 @@ pub fn FilesRoute(segments: Vec<String>) -> Element {
     let ctx = use_context::<RequestContext>();
     let path = segments_to_path(&segments);
     rsx! { Files { ctx, path } }
+}
+
+#[component]
+pub fn TrashRoute() -> Element {
+    let ctx = use_context::<RequestContext>();
+    rsx! { TrashPage { ctx } }
 }
 
 #[component]
