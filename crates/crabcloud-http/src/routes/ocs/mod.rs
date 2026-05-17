@@ -4,6 +4,7 @@ pub mod admin_groups;
 pub mod admin_users;
 pub mod app_password;
 pub mod capabilities;
+pub mod envelope;
 pub mod files_sharing;
 pub mod files_trashbin;
 pub mod user;

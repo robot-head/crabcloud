@@ -252,6 +252,43 @@ async fn delete_purges_entry_and_removes_bytes() {
 }
 
 #[tokio::test]
+async fn delete_works_via_remote_php_alias() {
+    let dir = tempdir().unwrap();
+    let data = tempdir().unwrap();
+    let (state, token) = make_alice(dir.path().join("d_alias.db"), data.path().to_path_buf()).await;
+    seed_file(&state, "alice", "/a.txt", b"hi").await;
+    let (basename, suffix) = soft_delete(&state, "alice", "/a.txt").await;
+    let trash_file = data
+        .path()
+        .join("alice")
+        .join("files_trashbin")
+        .join("files")
+        .join(format!("{basename}.{suffix}"));
+    assert!(
+        trash_file.exists(),
+        "fixture: soft_delete should have moved file"
+    );
+
+    let state_for_app = state.clone();
+    let app = crabcloud_http::build_router(state_for_app, axum::Router::new());
+
+    let req = Request::builder()
+        .method("DELETE")
+        .uri(format!(
+            "/remote.php/dav/trashbin/alice/trash/{basename}.{suffix}"
+        ))
+        .header("authorization", format!("Bearer {token}"))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::NO_CONTENT);
+
+    let remaining = state.trash.list("alice").await.unwrap();
+    assert!(remaining.is_empty(), "row should be gone");
+    assert!(!trash_file.exists(), "bytes should be gone");
+}
+
+#[tokio::test]
 async fn delete_unknown_entry_returns_404() {
     let dir = tempdir().unwrap();
     let data = tempdir().unwrap();
@@ -326,6 +363,38 @@ async fn move_with_destination_restores_to_explicit_path() {
         .join("restored")
         .join("a.txt");
     assert!(restored.exists(), "file at explicit destination");
+}
+
+#[tokio::test]
+async fn move_works_via_remote_php_alias() {
+    let dir = tempdir().unwrap();
+    let data = tempdir().unwrap();
+    let (state, token) = make_alice(dir.path().join("m_alias.db"), data.path().to_path_buf()).await;
+    seed_file(&state, "alice", "/a.txt", b"hello").await;
+    let (basename, suffix) = soft_delete(&state, "alice", "/a.txt").await;
+    let state_for_app = state.clone();
+    let app = crabcloud_http::build_router(state_for_app, axum::Router::new());
+
+    let req = Request::builder()
+        .method("MOVE")
+        .uri(format!(
+            "/remote.php/dav/trashbin/alice/trash/{basename}.{suffix}"
+        ))
+        .header("authorization", format!("Bearer {token}"))
+        .header("destination", "/remote.php/dav/files/alice/restored/a.txt")
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::CREATED);
+
+    let restored = data
+        .path()
+        .join("alice")
+        .join("files")
+        .join("restored")
+        .join("a.txt");
+    assert!(restored.exists(), "file at explicit destination");
+    assert!(state.trash.list("alice").await.unwrap().is_empty());
 }
 
 #[tokio::test]
