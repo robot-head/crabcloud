@@ -16,7 +16,10 @@ mod passwords;
 mod ratelimit;
 mod tokens;
 
-pub use auth_layer::{public_link_auth, AuthSurface, PasswordGateRequired, PublicLinkAuthState};
+pub use auth_layer::{
+    public_link_auth, resolve_browser_context, AuthSurface, PasswordGateRequired,
+    PublicLinkAuthState,
+};
 pub use context::PublicLinkAuthContext;
 pub use cookie::UnlockCookie;
 pub use error::PublicLinkError;

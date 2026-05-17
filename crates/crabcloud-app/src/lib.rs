@@ -69,6 +69,8 @@ pub mod server;
 pub use app::install_csrf_fetch_interceptor;
 pub use app::{App, Route};
 pub use context::RequestContext;
+// re-exported for integration tests (tests/server_fns_public_link.rs)
+pub use server_fns::public_link::PublicLinkMeta;
 pub use server_fns::{
     count_incoming_shares, delete, list_dir, login, mkdir, move_paths, rename,
     share_recipient_search, status, upload_begin, FileEntry, RecipientCandidate, StatusInfo,

@@ -94,10 +94,13 @@ tracing-subscriber = { workspace = true }
 
 [dev-dependencies]
 axum = { workspace = true }
+chrono = { workspace = true }
 crabcloud-config = { workspace = true, features = ["test-support"] }
 crabcloud-core = { workspace = true }
 crabcloud-http = { workspace = true }
+crabcloud-publiclinks = { workspace = true }
 crabcloud-sharing = { workspace = true }
+crabcloud-storage = { workspace = true }
 crabcloud-users = { workspace = true }
 dioxus = { workspace = true, features = ["server"] }
 serde_json.workspace = true
@@ -120,6 +123,10 @@ crabcloud-mail = { workspace = true }
 
 [[test]]
 name = "server_fns_files"
+required-features = ["server"]
+
+[[test]]
+name = "server_fns_public_link"
 required-features = ["server"]
 
 [lints]
