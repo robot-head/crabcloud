@@ -2,6 +2,15 @@
 //! If `Overwrite: T` (default) and destination exists, the handler DELETEs
 //! it first before calling `View::rename`/`copy` (which error on existing
 //! destination in 4a's Storage trait).
+//!
+//! MOVE-with-overwrite goes through `View::rename_force_overwrite`, which
+//! snapshots the destination's pre-overwrite bytes BEFORE removing them
+//! and performing the rename. Routing the delete through `View::delete`
+//! first (the SP12 trash reroute) would send the prior bytes to trash
+//! and the snapshot would never fire — the SP13 versions row for the
+//! destination would be lost. The force-overwrite helper does the
+//! snapshot first, then a storage-level (non-trash) delete, then the
+//! rename, all in a single call so the order can't drift.
 
 use crabcloud_core::AppState;
 use crabcloud_fs::UserPath;
@@ -40,9 +49,15 @@ pub async fn move_(
         return Err(DavError::PreconditionFailed);
     }
     if dest_existed {
-        view.delete(&to).await?;
+        // SP13: snapshot-then-delete-then-rename as a unit so the
+        // destination's pre-overwrite bytes land in the versions table
+        // before they're removed. A naive `view.delete(&to)` would
+        // route those bytes through the trash and the snapshot hook
+        // inside `view.rename` would no-op on the (now missing) source.
+        view.rename_force_overwrite(from, &to).await?;
+    } else {
+        view.rename(from, &to).await?;
     }
-    view.rename(from, &to).await?;
     // Keep custom-prop rows synchronized with the file tree. PropertyStore
     // owns its own per-userid key space, so the rewrite is scoped to the
     // moved subtree.
