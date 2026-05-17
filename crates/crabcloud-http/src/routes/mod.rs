@@ -9,3 +9,4 @@ pub mod ocs;
 pub mod public_dav;
 pub mod public_link;
 pub mod trashbin;
+pub mod versions;

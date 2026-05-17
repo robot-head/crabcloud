@@ -1010,6 +1010,7 @@ dependencies = [
  "crabcloud-storage",
  "crabcloud-trash",
  "crabcloud-users",
+ "crabcloud-versions",
  "crabcloud-zip",
  "futures",
  "hex",
