@@ -152,6 +152,24 @@ pub struct FileConfig {
     #[serde(default = "default_trash_retention_days")]
     pub trash_retention_days: u32,
 
+    /// Minimum seconds between two versions of the same file. Writes
+    /// within this window after the most-recent version do not create
+    /// a new version (the actual write still happens). `0` disables
+    /// throttling. Default: 2.
+    #[serde(default = "default_versions_min_interval_secs")]
+    pub versions_min_interval_secs: u32,
+
+    /// Max size of a file (in bytes) that gets versioned. Larger writes
+    /// still succeed but skip the snapshot. Default 1 GiB.
+    #[serde(default = "default_versions_max_bytes")]
+    pub versions_max_bytes: u64,
+
+    /// When true the daily versions sweeper short-circuits — versions
+    /// accumulate forever (compliance retain-forever escape hatch).
+    /// Default false.
+    #[serde(default)]
+    pub versions_retention_disabled: bool,
+
     /// Optional bootstrap admin (Phase 3 deferred-users stand-in).
     pub bootstrap_admin: Option<BootstrapAdminConfig>,
 }
@@ -302,6 +320,12 @@ fn default_mail_queue_retention_days() -> u32 {
 fn default_trash_retention_days() -> u32 {
     30
 }
+fn default_versions_min_interval_secs() -> u32 {
+    2
+}
+fn default_versions_max_bytes() -> u64 {
+    1024 * 1024 * 1024
+}
 
 /// Errors raised while validating a parsed config.
 #[derive(Debug, thiserror::Error)]
@@ -384,6 +408,9 @@ mod tests {
             mail: MailConfig::default(),
             mail_queue_retention_days: default_mail_queue_retention_days(),
             trash_retention_days: default_trash_retention_days(),
+            versions_min_interval_secs: default_versions_min_interval_secs(),
+            versions_max_bytes: default_versions_max_bytes(),
+            versions_retention_disabled: false,
             bootstrap_admin: None,
         }
     }
