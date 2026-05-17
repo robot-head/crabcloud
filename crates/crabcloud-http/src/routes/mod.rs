@@ -8,3 +8,4 @@ pub mod files_zip;
 pub mod ocs;
 pub mod public_dav;
 pub mod public_link;
+pub mod trashbin;
