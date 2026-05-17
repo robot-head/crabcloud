@@ -37,6 +37,14 @@ dioxus = { workspace = true, features = ["fullstack"] }
 serde.workspace = true
 serde_json = { workspace = true }
 
+# Used by the trash bin UI (`pages::trash`) to format deleted-at unix
+# timestamps for display. `default-features = false` + `clock` keeps the
+# wasm bundle slim while still pulling in the `js-sys`-backed `Utc::now`
+# for any future relative-time work. The dev-dependency entry below is
+# kept for the workspace's wasm build, where chrono is also a
+# dev-dependency for other tests.
+chrono = { workspace = true }
+
 # Web-platform deps used by the chunked-upload state machine in
 # `pages::files::upload` and the CSRF fetch interceptor in `app.rs`. They're
 # referenced under `#[cfg(target_arch = "wasm32")]` so the native (server)
@@ -95,7 +103,6 @@ tracing-subscriber = { workspace = true }
 
 [dev-dependencies]
 axum = { workspace = true }
-chrono = { workspace = true }
 crabcloud-config = { workspace = true, features = ["test-support"] }
 crabcloud-core = { workspace = true }
 crabcloud-http = { workspace = true }
