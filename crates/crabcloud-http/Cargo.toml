@@ -27,6 +27,7 @@ crabcloud-sharing.workspace = true
 crabcloud-storage.workspace = true
 crabcloud-trash.workspace = true
 crabcloud-users.workspace = true
+crabcloud-versions.workspace = true
 crabcloud-zip.workspace = true
 chrono.workspace = true
 secrecy.workspace = true
