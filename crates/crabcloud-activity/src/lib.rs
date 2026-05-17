@@ -7,6 +7,11 @@
 //! emitter crates depend on. SQL dispatch mirrors the
 //! `crabcloud-versions` / `crabcloud-trash` pattern.
 
+// dev-only deps that are only consumed from the `tests/` integration
+// target trip `unused_crate_dependencies` on the lib's own test build;
+// silence them under cfg(test).
+#![cfg_attr(test, allow(unused_crate_dependencies))]
+
 mod emitter;
 mod error;
 mod service;

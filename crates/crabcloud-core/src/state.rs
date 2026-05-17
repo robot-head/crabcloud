@@ -346,8 +346,7 @@ impl AppStateBuilder {
         // The sweeper is spawned unconditionally; tests can
         // `notify_one()` on `activity_sweeper_shutdown` in teardown. A
         // `retention_days = 0` short-circuits sweep_once to Ok(0).
-        let activity_settings =
-            crabcloud_activity::ActivitySettings::new(Arc::new(pool.clone()));
+        let activity_settings = crabcloud_activity::ActivitySettings::new(Arc::new(pool.clone()));
         let activity = Arc::new(crabcloud_activity::Activity::new(
             Arc::new(pool.clone()),
             activity_settings.clone(),

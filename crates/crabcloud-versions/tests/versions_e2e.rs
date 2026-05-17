@@ -36,7 +36,11 @@ async fn write_user_file(datadir: &std::path::Path, uid: &str, rel: &str, conten
 #[tokio::test]
 async fn snapshot_writes_row_and_copies_bytes() {
     let (pool, datadir, _d, _dd) = setup().await;
-    let versions = Versions::new(pool.clone(), datadir.clone(), std::sync::Arc::new(crabcloud_activity::NoopEmitter));
+    let versions = Versions::new(
+        pool.clone(),
+        datadir.clone(),
+        std::sync::Arc::new(crabcloud_activity::NoopEmitter),
+    );
     write_user_file(&datadir, "alice", "/report.docx", b"v1").await;
 
     let id = versions
@@ -69,7 +73,11 @@ async fn snapshot_writes_row_and_copies_bytes() {
 #[tokio::test]
 async fn snapshot_skips_when_throttled() {
     let (pool, datadir, _d, _dd) = setup().await;
-    let versions = Versions::new(pool.clone(), datadir.clone(), std::sync::Arc::new(crabcloud_activity::NoopEmitter));
+    let versions = Versions::new(
+        pool.clone(),
+        datadir.clone(),
+        std::sync::Arc::new(crabcloud_activity::NoopEmitter),
+    );
     write_user_file(&datadir, "alice", "/a.txt", b"v1").await;
 
     versions
@@ -97,7 +105,11 @@ async fn snapshot_skips_when_throttled() {
 #[tokio::test]
 async fn snapshot_skips_when_oversize() {
     let (pool, datadir, _d, _dd) = setup().await;
-    let versions = Versions::new(pool.clone(), datadir.clone(), std::sync::Arc::new(crabcloud_activity::NoopEmitter));
+    let versions = Versions::new(
+        pool.clone(),
+        datadir.clone(),
+        std::sync::Arc::new(crabcloud_activity::NoopEmitter),
+    );
     write_user_file(&datadir, "alice", "/big.bin", b"hello").await;
 
     let r = versions
@@ -111,7 +123,11 @@ async fn snapshot_skips_when_oversize() {
 #[tokio::test]
 async fn snapshot_skips_on_zero_byte() {
     let (pool, datadir, _d, _dd) = setup().await;
-    let versions = Versions::new(pool.clone(), datadir.clone(), std::sync::Arc::new(crabcloud_activity::NoopEmitter));
+    let versions = Versions::new(
+        pool.clone(),
+        datadir.clone(),
+        std::sync::Arc::new(crabcloud_activity::NoopEmitter),
+    );
     write_user_file(&datadir, "alice", "/empty.txt", b"").await;
 
     let r = versions
@@ -125,7 +141,11 @@ async fn snapshot_skips_on_zero_byte() {
 #[tokio::test]
 async fn snapshot_into_nested_directory_creates_parents() {
     let (pool, datadir, _d, _dd) = setup().await;
-    let versions = Versions::new(pool.clone(), datadir.clone(), std::sync::Arc::new(crabcloud_activity::NoopEmitter));
+    let versions = Versions::new(
+        pool.clone(),
+        datadir.clone(),
+        std::sync::Arc::new(crabcloud_activity::NoopEmitter),
+    );
     write_user_file(&datadir, "alice", "/projects/q1/report.docx", b"hello").await;
 
     let id = versions
@@ -150,7 +170,11 @@ async fn snapshot_into_nested_directory_creates_parents() {
 #[tokio::test]
 async fn snapshot_source_missing_returns_err() {
     let (pool, datadir, _d, _dd) = setup().await;
-    let versions = Versions::new(pool.clone(), datadir.clone(), std::sync::Arc::new(crabcloud_activity::NoopEmitter));
+    let versions = Versions::new(
+        pool.clone(),
+        datadir.clone(),
+        std::sync::Arc::new(crabcloud_activity::NoopEmitter),
+    );
     // No file at <datadir>/alice/files/missing.txt
     let r = versions
         .snapshot_if_needed("alice", 1, 100, "/missing.txt", 5, 1_000, 2, 1024)
@@ -161,7 +185,11 @@ async fn snapshot_source_missing_returns_err() {
 #[tokio::test]
 async fn restore_snapshots_current_then_replaces() {
     let (pool, datadir, _d, _dd) = setup().await;
-    let versions = Versions::new(pool.clone(), datadir.clone(), std::sync::Arc::new(crabcloud_activity::NoopEmitter));
+    let versions = Versions::new(
+        pool.clone(),
+        datadir.clone(),
+        std::sync::Arc::new(crabcloud_activity::NoopEmitter),
+    );
     write_user_file(&datadir, "alice", "/report.docx", b"v1").await;
     let id = versions
         .snapshot_if_needed("alice", 1, 100, "/report.docx", 2, 1_000, 2, 1024)
@@ -195,7 +223,11 @@ async fn restore_snapshots_current_then_replaces() {
 #[tokio::test]
 async fn restore_wrong_user_errors() {
     let (pool, datadir, _d, _dd) = setup().await;
-    let versions = Versions::new(pool.clone(), datadir.clone(), std::sync::Arc::new(crabcloud_activity::NoopEmitter));
+    let versions = Versions::new(
+        pool.clone(),
+        datadir.clone(),
+        std::sync::Arc::new(crabcloud_activity::NoopEmitter),
+    );
     write_user_file(&datadir, "alice", "/report.docx", b"v1").await;
     let id = versions
         .snapshot_if_needed("alice", 1, 100, "/report.docx", 2, 1_000, 2, 1024)
@@ -210,7 +242,11 @@ async fn restore_wrong_user_errors() {
 #[tokio::test]
 async fn delete_removes_row_and_file() {
     let (pool, datadir, _d, _dd) = setup().await;
-    let versions = Versions::new(pool.clone(), datadir.clone(), std::sync::Arc::new(crabcloud_activity::NoopEmitter));
+    let versions = Versions::new(
+        pool.clone(),
+        datadir.clone(),
+        std::sync::Arc::new(crabcloud_activity::NoopEmitter),
+    );
     write_user_file(&datadir, "alice", "/x.txt", b"v1").await;
     let id = versions
         .snapshot_if_needed("alice", 1, 100, "/x.txt", 2, 1_000, 2, 1024)
@@ -226,7 +262,11 @@ async fn delete_removes_row_and_file() {
 #[tokio::test]
 async fn delete_wrong_user_returns_error() {
     let (pool, datadir, _d, _dd) = setup().await;
-    let versions = Versions::new(pool.clone(), datadir.clone(), std::sync::Arc::new(crabcloud_activity::NoopEmitter));
+    let versions = Versions::new(
+        pool.clone(),
+        datadir.clone(),
+        std::sync::Arc::new(crabcloud_activity::NoopEmitter),
+    );
     write_user_file(&datadir, "alice", "/x.txt", b"v1").await;
     let id = versions
         .snapshot_if_needed("alice", 1, 100, "/x.txt", 2, 1_000, 2, 1024)
@@ -241,7 +281,11 @@ async fn delete_wrong_user_returns_error() {
 #[tokio::test]
 async fn delete_not_found_returns_error() {
     let (pool, _datadir, _d, _dd) = setup().await;
-    let versions = Versions::new(pool.clone(), _datadir.clone(), std::sync::Arc::new(crabcloud_activity::NoopEmitter));
+    let versions = Versions::new(
+        pool.clone(),
+        _datadir.clone(),
+        std::sync::Arc::new(crabcloud_activity::NoopEmitter),
+    );
     let r = versions.delete("alice", 99_999).await;
     assert!(matches!(r, Err(VersionsError::NotFound)));
 }
@@ -249,7 +293,11 @@ async fn delete_not_found_returns_error() {
 #[tokio::test]
 async fn purge_for_fileid_removes_all_versions() {
     let (pool, datadir, _d, _dd) = setup().await;
-    let versions = Versions::new(pool.clone(), datadir.clone(), std::sync::Arc::new(crabcloud_activity::NoopEmitter));
+    let versions = Versions::new(
+        pool.clone(),
+        datadir.clone(),
+        std::sync::Arc::new(crabcloud_activity::NoopEmitter),
+    );
     write_user_file(&datadir, "alice", "/x.txt", b"v1").await;
     versions
         .snapshot_if_needed("alice", 1, 100, "/x.txt", 2, 1_000, 0, 1024)
@@ -272,7 +320,11 @@ async fn purge_for_fileid_removes_all_versions() {
 #[tokio::test]
 async fn purge_for_user_fileid_removes_all_versions() {
     let (pool, datadir, _d, _dd) = setup().await;
-    let versions = Versions::new(pool.clone(), datadir.clone(), std::sync::Arc::new(crabcloud_activity::NoopEmitter));
+    let versions = Versions::new(
+        pool.clone(),
+        datadir.clone(),
+        std::sync::Arc::new(crabcloud_activity::NoopEmitter),
+    );
     write_user_file(&datadir, "alice", "/x.txt", b"v1").await;
     versions
         .snapshot_if_needed("alice", 1, 100, "/x.txt", 2, 1_000, 0, 1024)
@@ -293,7 +345,11 @@ async fn purge_for_user_fileid_removes_all_versions() {
 #[tokio::test]
 async fn sweep_tiered_keeps_at_least_one_per_bucket() {
     let (pool, datadir, _d, _dd) = setup().await;
-    let versions = Versions::new(pool.clone(), datadir.clone(), std::sync::Arc::new(crabcloud_activity::NoopEmitter));
+    let versions = Versions::new(
+        pool.clone(),
+        datadir.clone(),
+        std::sync::Arc::new(crabcloud_activity::NoopEmitter),
+    );
 
     // Seed 6 versions of the same file spanning several buckets.
     let now: i64 = 1_000_000_000;
@@ -327,7 +383,11 @@ async fn sweep_tiered_keeps_at_least_one_per_bucket() {
 #[tokio::test]
 async fn sweep_tiered_drops_duplicates_in_same_hour_bucket() {
     let (pool, datadir, _d, _dd) = setup().await;
-    let versions = Versions::new(pool.clone(), datadir.clone(), std::sync::Arc::new(crabcloud_activity::NoopEmitter));
+    let versions = Versions::new(
+        pool.clone(),
+        datadir.clone(),
+        std::sync::Arc::new(crabcloud_activity::NoopEmitter),
+    );
 
     let now: i64 = 1_000_000_000;
     let day = 86_400i64;
@@ -356,7 +416,11 @@ async fn restore_succeeds_when_current_source_missing() {
     // from disk (the very situation where the user needs to recover an
     // older version).
     let (pool, datadir, _d, _dd) = setup().await;
-    let versions = Versions::new(pool.clone(), datadir.clone(), std::sync::Arc::new(crabcloud_activity::NoopEmitter));
+    let versions = Versions::new(
+        pool.clone(),
+        datadir.clone(),
+        std::sync::Arc::new(crabcloud_activity::NoopEmitter),
+    );
     write_user_file(&datadir, "alice", "/report.docx", b"v1").await;
     let id = versions
         .snapshot_if_needed("alice", 1, 100, "/report.docx", 2, 1_000, 2, 1024)
@@ -395,7 +459,11 @@ async fn snapshot_duplicate_in_same_second_is_soft_skip() {
     // surface that as `Ok(None)` (not Err) so concurrent writers in
     // the same second don't break either caller's write path.
     let (pool, datadir, _d, _dd) = setup().await;
-    let versions = Versions::new(pool.clone(), datadir.clone(), std::sync::Arc::new(crabcloud_activity::NoopEmitter));
+    let versions = Versions::new(
+        pool.clone(),
+        datadir.clone(),
+        std::sync::Arc::new(crabcloud_activity::NoopEmitter),
+    );
     write_user_file(&datadir, "alice", "/race.txt", b"v1").await;
 
     let id = versions
@@ -431,11 +499,8 @@ async fn restore_emits_activity_for_owner() {
     // Build a real Activity (not Noop) so the emit is observable.
     let (pool, datadir, _d, _dd) = setup().await;
     let settings = crabcloud_activity::ActivitySettings::new(pool.clone());
-    let activity = std::sync::Arc::new(crabcloud_activity::Activity::new(
-        pool.clone(),
-        settings,
-        0,
-    ));
+    let activity =
+        std::sync::Arc::new(crabcloud_activity::Activity::new(pool.clone(), settings, 0));
     let versions = Versions::new(
         pool.clone(),
         datadir.clone(),
@@ -448,7 +513,10 @@ async fn restore_emits_activity_for_owner() {
         .unwrap()
         .expect("snapshot");
     write_user_file(&datadir, "alice", "/x.txt", b"v2").await;
-    versions.restore("alice", id, 8, 2_000, 2, 1024).await.unwrap();
+    versions
+        .restore("alice", id, 8, 2_000, 2, 1024)
+        .await
+        .unwrap();
 
     let rows = activity.list("alice", None, 100).await.unwrap();
     assert_eq!(rows.len(), 1);

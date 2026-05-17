@@ -15,6 +15,8 @@ use crabcloud_fs::{
     LocalStorageFactory, Mount, MountKind, MountMetadata, SharedSubrootStorage, StorageFactory,
     UserPath, VersionsHooks, View,
 };
+use chrono as _;
+use serde_json as _;
 use crabcloud_sharing::SharePermissions;
 use crabcloud_storage::{ChannelEventSink, NoopEventSink, Storage, StorageError, StoragePath};
 use crabcloud_trash::Trash;
@@ -53,8 +55,17 @@ async fn local_harness(uid: &str) -> LocalHarness {
     let uid = UserId::new(uid).unwrap();
     let storage = factory.home_storage(&uid).await.unwrap();
     let pool_arc = Arc::new(pool);
-    let versions = Arc::new(Versions::new(pool_arc.clone(), datadir.clone(), std::sync::Arc::new(crabcloud_activity::NoopEmitter)));
-    let trash = Arc::new(Trash::new(pool_arc, datadir.clone(), versions.clone(), std::sync::Arc::new(crabcloud_activity::NoopEmitter)));
+    let versions = Arc::new(Versions::new(
+        pool_arc.clone(),
+        datadir.clone(),
+        std::sync::Arc::new(crabcloud_activity::NoopEmitter),
+    ));
+    let trash = Arc::new(Trash::new(
+        pool_arc,
+        datadir.clone(),
+        versions.clone(),
+        std::sync::Arc::new(crabcloud_activity::NoopEmitter),
+    ));
     let view = View::new(
         uid.clone(),
         vec![Mount {
@@ -142,8 +153,17 @@ async fn share_harness(perms_wire: u32) -> ShareHarness {
     let datadir = dir.path().to_path_buf();
     let factory = LocalStorageFactory::new(datadir.clone());
     let pool_arc = Arc::new(pool);
-    let versions = Arc::new(Versions::new(pool_arc.clone(), datadir.clone(), std::sync::Arc::new(crabcloud_activity::NoopEmitter)));
-    let trash = Arc::new(Trash::new(pool_arc, datadir.clone(), versions.clone(), std::sync::Arc::new(crabcloud_activity::NoopEmitter)));
+    let versions = Arc::new(Versions::new(
+        pool_arc.clone(),
+        datadir.clone(),
+        std::sync::Arc::new(crabcloud_activity::NoopEmitter),
+    ));
+    let trash = Arc::new(Trash::new(
+        pool_arc,
+        datadir.clone(),
+        versions.clone(),
+        std::sync::Arc::new(crabcloud_activity::NoopEmitter),
+    ));
 
     let bob_uid = UserId::new("bob").unwrap();
     let alice_uid = UserId::new("alice").unwrap();

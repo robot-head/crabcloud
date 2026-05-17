@@ -981,7 +981,14 @@ async fn create_user_share_emits_share_created_to_actor_and_recipient(fx: &Fixtu
     let _ = seed_file(fx, "alice", "/Report", true).await;
     let sid = fx.home_storage_id("alice");
     fx.shares
-        .create(share_request("alice", &sid, "/Report", ShareType::User, "bob", 3))
+        .create(share_request(
+            "alice",
+            &sid,
+            "/Report",
+            ShareType::User,
+            "bob",
+            3,
+        ))
         .await
         .unwrap();
 
@@ -1004,7 +1011,14 @@ async fn create_group_share_emits_to_actor_and_each_group_member(fx: &Fixture) {
     let _ = seed_file(fx, "alice", "/Plans", true).await;
     let sid = fx.home_storage_id("alice");
     fx.shares
-        .create(share_request("alice", &sid, "/Plans", ShareType::Group, "team", 3))
+        .create(share_request(
+            "alice",
+            &sid,
+            "/Plans",
+            ShareType::Group,
+            "team",
+            3,
+        ))
         .await
         .unwrap();
 
@@ -1020,7 +1034,14 @@ async fn delete_user_share_by_owner_emits_share_deleted(fx: &Fixture) {
     let sid = fx.home_storage_id("alice");
     let row = fx
         .shares
-        .create(share_request("alice", &sid, "/Spec", ShareType::User, "bob", 3))
+        .create(share_request(
+            "alice",
+            &sid,
+            "/Spec",
+            ShareType::User,
+            "bob",
+            3,
+        ))
         .await
         .unwrap();
 

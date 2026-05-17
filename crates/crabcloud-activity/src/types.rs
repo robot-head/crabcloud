@@ -31,6 +31,10 @@ impl EventType {
         }
     }
 
+    /// Inverse of `as_str`. Not a `FromStr` impl because callers want
+    /// an `Option<Self>` rather than going through a string-error type
+    /// (this enum's wire form has no invalid-input nuance to preserve).
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Option<Self> {
         match s {
             "file_created" => Some(Self::FileCreated),
@@ -63,6 +67,9 @@ impl ObjectType {
         }
     }
 
+    /// Inverse of `as_str`; see [`EventType::from_str`] for the
+    /// rationale.
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Option<Self> {
         match s {
             "file" => Some(Self::File),

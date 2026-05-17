@@ -1,5 +1,7 @@
 //! sqlite e2e for the Activity service + ActivitySettings + coalescing.
 
+#![allow(unused_crate_dependencies)]
+
 use crabcloud_activity::{
     Activity, ActivityEmitter, ActivityEvent, ActivitySettings, EventType, ObjectType,
 };
@@ -184,10 +186,7 @@ async fn sweep_expired_deletes_old_rows() {
 async fn settings_get_all_returns_set_values() {
     let (pool, _d) = setup().await;
     let settings = ActivitySettings::new(pool.clone());
-    settings
-        .set("alice", "file_updated", false)
-        .await
-        .unwrap();
+    settings.set("alice", "file_updated", false).await.unwrap();
     settings.set("alice", "share_created", true).await.unwrap();
     let mut rows = settings.get_all_for_user("alice").await.unwrap();
     rows.sort_by(|a, b| a.event_type.cmp(&b.event_type));
@@ -204,7 +203,10 @@ async fn settings_upsert_updates_existing() {
     let settings = ActivitySettings::new(pool.clone());
     settings.set("alice", "file_updated", true).await.unwrap();
     settings.set("alice", "file_updated", false).await.unwrap();
-    let s = settings.stream_enabled("alice", "file_updated").await.unwrap();
+    let s = settings
+        .stream_enabled("alice", "file_updated")
+        .await
+        .unwrap();
     assert!(!s);
 }
 

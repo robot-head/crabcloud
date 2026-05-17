@@ -9,16 +9,13 @@
 
 mod support;
 
-use crabcloud_fs::{Mount, View, VersionsHooks};
+use crabcloud_fs::{Mount, VersionsHooks, View};
 use crabcloud_storage::StoragePath;
 use crabcloud_users::UserId;
 use std::sync::Arc;
 use support::harness;
 
-fn view_with_activity(
-    h: &support::Harness,
-    activity: Arc<crabcloud_activity::Activity>,
-) -> View {
+fn view_with_activity(h: &support::Harness, activity: Arc<crabcloud_activity::Activity>) -> View {
     View::new(
         UserId::new("alice").unwrap(),
         vec![Mount {
@@ -46,12 +43,9 @@ async fn write_file_emits_file_created_then_file_updated() {
     let view = view_with_activity(&h, activity.clone());
 
     let path = crabcloud_fs::path::UserPath::new("/hello.txt").unwrap();
-    view.put_file(
-        &path,
-        Box::pin(std::io::Cursor::new(b"v1".to_vec())),
-    )
-    .await
-    .unwrap();
+    view.put_file(&path, Box::pin(std::io::Cursor::new(b"v1".to_vec())))
+        .await
+        .unwrap();
     // Drive the scanner so the second write sees the prior row.
     // Without a scanner the filecache may not have the row yet; on the
     // MemoryStorage path the scanner does its job synchronously via the
@@ -62,12 +56,9 @@ async fn write_file_emits_file_created_then_file_updated() {
     // Second write should emit file_updated if the cache row landed, or
     // file_created otherwise — both are acceptable signals that the
     // hook fires.
-    view.put_file(
-        &path,
-        Box::pin(std::io::Cursor::new(b"v2".to_vec())),
-    )
-    .await
-    .unwrap();
+    view.put_file(&path, Box::pin(std::io::Cursor::new(b"v2".to_vec())))
+        .await
+        .unwrap();
 
     let rows = activity.list("alice", None, 100).await.unwrap();
     assert!(!rows.is_empty(), "activity should have at least one row");
@@ -76,7 +67,8 @@ async fn write_file_emits_file_created_then_file_updated() {
     // observed the first put_file by the time the second probe runs in
     // this test harness.
     assert!(
-        rows.iter().any(|r| r.event_type == "file_created" || r.event_type == "file_updated"),
+        rows.iter()
+            .any(|r| r.event_type == "file_created" || r.event_type == "file_updated"),
         "expected at least one file_created or file_updated row, got {:?}",
         rows
     );
@@ -139,12 +131,9 @@ async fn delete_emits_file_deleted() {
     );
 
     let path = crabcloud_fs::path::UserPath::new("/bye.txt").unwrap();
-    view.put_file(
-        &path,
-        Box::pin(std::io::Cursor::new(b"x".to_vec())),
-    )
-    .await
-    .unwrap();
+    view.put_file(&path, Box::pin(std::io::Cursor::new(b"x".to_vec())))
+        .await
+        .unwrap();
     view.delete(&path).await.unwrap();
 
     let rows = activity.list("alice", None, 100).await.unwrap();
@@ -164,12 +153,9 @@ async fn rename_emits_file_renamed_with_old_and_new() {
 
     let src = crabcloud_fs::path::UserPath::new("/old.txt").unwrap();
     let dst = crabcloud_fs::path::UserPath::new("/new.txt").unwrap();
-    view.put_file(
-        &src,
-        Box::pin(std::io::Cursor::new(b"x".to_vec())),
-    )
-    .await
-    .unwrap();
+    view.put_file(&src, Box::pin(std::io::Cursor::new(b"x".to_vec())))
+        .await
+        .unwrap();
     view.rename(&src, &dst).await.unwrap();
 
     let rows = activity.list("alice", None, 100).await.unwrap();
@@ -179,7 +165,10 @@ async fn rename_emits_file_renamed_with_old_and_new() {
         .expect("expected file_renamed row");
     assert_eq!(rename.subject_id, "file_renamed_you");
     let params = &rename.subject_params;
-    assert_eq!(params.get("file").and_then(|v| v.as_str()), Some("/new.txt"));
+    assert_eq!(
+        params.get("file").and_then(|v| v.as_str()),
+        Some("/new.txt")
+    );
     assert_eq!(params.get("old").and_then(|v| v.as_str()), Some("/old.txt"));
 }
 
@@ -195,12 +184,9 @@ async fn hard_delete_emits_file_deleted() {
     let view = view_with_activity(&h, activity.clone());
 
     let path = crabcloud_fs::path::UserPath::new("/perm.txt").unwrap();
-    view.put_file(
-        &path,
-        Box::pin(std::io::Cursor::new(b"x".to_vec())),
-    )
-    .await
-    .unwrap();
+    view.put_file(&path, Box::pin(std::io::Cursor::new(b"x".to_vec())))
+        .await
+        .unwrap();
     view.hard_delete(&path).await.unwrap();
 
     let rows = activity.list("alice", None, 100).await.unwrap();

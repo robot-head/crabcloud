@@ -1216,7 +1216,8 @@ mod tests {
             Arc::new(FileCache::new(pool)),
             Arc::new(ChannelEventSink::new(8)),
             trash,
-            VersionsHooks::permissive(versions), std::sync::Arc::new(crabcloud_activity::NoopEmitter),
+            VersionsHooks::permissive(versions),
+            std::sync::Arc::new(crabcloud_activity::NoopEmitter),
         )
     }
 

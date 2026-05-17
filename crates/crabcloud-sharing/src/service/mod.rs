@@ -924,6 +924,7 @@ impl Shares {
 
     /// Best-effort emit a `share_created` / `share_deleted` event.
     /// Failure is logged + swallowed per SP14 spec §6.
+    #[allow(clippy::too_many_arguments)]
     async fn emit_share_activity(
         &self,
         event_type: crabcloud_activity::EventType,

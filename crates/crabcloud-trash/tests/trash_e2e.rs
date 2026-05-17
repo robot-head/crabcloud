@@ -14,7 +14,9 @@ use tempfile::TempDir;
 // dependencies of `crabcloud-trash` itself; the integration-test target
 // links them too but doesn't use them directly. Keep `unused_crate_dependencies`
 // quiet without losing the manifest entries.
+use crabcloud_users as _;
 use serde as _;
+use serde_json as _;
 use thiserror as _;
 use tracing as _;
 
@@ -37,8 +39,17 @@ async fn setup() -> (Arc<DbPool>, PathBuf, TempDir, TempDir) {
 /// most tests) `Versions` cascade target. Tests that exercise the
 /// cascade itself build their own.
 fn make_trash(pool: Arc<DbPool>, datadir: PathBuf) -> Trash {
-    let versions = Arc::new(Versions::new(pool.clone(), datadir.clone(), std::sync::Arc::new(crabcloud_activity::NoopEmitter)));
-    Trash::new(pool, datadir, versions, std::sync::Arc::new(crabcloud_activity::NoopEmitter))
+    let versions = Arc::new(Versions::new(
+        pool.clone(),
+        datadir.clone(),
+        std::sync::Arc::new(crabcloud_activity::NoopEmitter),
+    ));
+    Trash::new(
+        pool,
+        datadir,
+        versions,
+        std::sync::Arc::new(crabcloud_activity::NoopEmitter),
+    )
 }
 
 /// Seed: write a file inside a user's "files" dir so we can soft-delete it.
@@ -433,8 +444,17 @@ async fn purge_cascades_to_versions_for_fileid() {
     // versions.purge_for_user_fileid so version bytes don't outlive
     // the source file on hard-delete.
     let (pool, datadir, _d, _dd) = setup().await;
-    let versions = Arc::new(Versions::new(pool.clone(), datadir.clone(), std::sync::Arc::new(crabcloud_activity::NoopEmitter)));
-    let trash = Trash::new(pool.clone(), datadir.clone(), versions.clone(), std::sync::Arc::new(crabcloud_activity::NoopEmitter));
+    let versions = Arc::new(Versions::new(
+        pool.clone(),
+        datadir.clone(),
+        std::sync::Arc::new(crabcloud_activity::NoopEmitter),
+    ));
+    let trash = Trash::new(
+        pool.clone(),
+        datadir.clone(),
+        versions.clone(),
+        std::sync::Arc::new(crabcloud_activity::NoopEmitter),
+    );
 
     // Seed: alice has a file at /report.docx with two snapshotted
     // versions tied to fileid 100.
@@ -473,8 +493,17 @@ async fn soft_delete_does_not_cascade_to_versions() {
     // Soft-delete keeps the trash row alive; versions must survive
     // until the row is purged.
     let (pool, datadir, _d, _dd) = setup().await;
-    let versions = Arc::new(Versions::new(pool.clone(), datadir.clone(), std::sync::Arc::new(crabcloud_activity::NoopEmitter)));
-    let trash = Trash::new(pool.clone(), datadir.clone(), versions.clone(), std::sync::Arc::new(crabcloud_activity::NoopEmitter));
+    let versions = Arc::new(Versions::new(
+        pool.clone(),
+        datadir.clone(),
+        std::sync::Arc::new(crabcloud_activity::NoopEmitter),
+    ));
+    let trash = Trash::new(
+        pool.clone(),
+        datadir.clone(),
+        versions.clone(),
+        std::sync::Arc::new(crabcloud_activity::NoopEmitter),
+    );
 
     write_user_file(&datadir, "alice", "/notes.md", b"hello").await;
     versions
@@ -496,11 +525,8 @@ async fn soft_delete_does_not_cascade_to_versions() {
 async fn restore_emits_file_restored() {
     let (pool, datadir, _d, _dd) = setup().await;
     let settings = crabcloud_activity::ActivitySettings::new(pool.clone());
-    let activity = std::sync::Arc::new(crabcloud_activity::Activity::new(
-        pool.clone(),
-        settings,
-        0,
-    ));
+    let activity =
+        std::sync::Arc::new(crabcloud_activity::Activity::new(pool.clone(), settings, 0));
     let versions = std::sync::Arc::new(crabcloud_versions::Versions::new(
         pool.clone(),
         datadir.clone(),

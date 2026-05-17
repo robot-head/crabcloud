@@ -93,7 +93,10 @@ mod tests {
     #[test]
     fn render_known_subject() {
         assert_eq!(
-            render_subject("file_updated_by", &json!({"actor": "alice", "file": "x.txt"})),
+            render_subject(
+                "file_updated_by",
+                &json!({"actor": "alice", "file": "x.txt"})
+            ),
             "alice updated x.txt"
         );
     }
