@@ -31,7 +31,13 @@ async fn make_alice(db: std::path::PathBuf, data: std::path::PathBuf) -> (AppSta
 
 /// Snapshot a fresh version row directly via the versions service.
 /// Returns `(fileid, version_mtime, size)` for the resulting row.
-async fn seed_version(state: &AppState, uid: &str, path: &str, body: &[u8], mtime: i64) -> (i64, i64, i64) {
+async fn seed_version(
+    state: &AppState,
+    uid: &str,
+    path: &str,
+    body: &[u8],
+    mtime: i64,
+) -> (i64, i64, i64) {
     // Seed the current file on disk + filecache so `snapshot_if_needed`
     // has a source to copy from.
     seed_file(state, uid, path, body).await;
@@ -84,7 +90,8 @@ async fn propfind_root_depth_0_returns_collection_only() {
     let dir = tempdir().unwrap();
     let data = tempdir().unwrap();
     let (state, token) = make_alice(dir.path().join("vp0.db"), data.path().to_path_buf()).await;
-    let (fileid, _mtime, _sz) = seed_version(&state, "alice", "/a.txt", b"hello", 1_716_000_000).await;
+    let (fileid, _mtime, _sz) =
+        seed_version(&state, "alice", "/a.txt", b"hello", 1_716_000_000).await;
     let app = crabcloud_http::build_router(state, axum::Router::new());
 
     let req = Request::builder()
@@ -106,7 +113,8 @@ async fn propfind_root_depth_1_lists_versions() {
     let dir = tempdir().unwrap();
     let data = tempdir().unwrap();
     let (state, token) = make_alice(dir.path().join("vp1.db"), data.path().to_path_buf()).await;
-    let (fileid, mtime, sz) = seed_version(&state, "alice", "/a.txt", b"hello", 1_716_000_000).await;
+    let (fileid, mtime, sz) =
+        seed_version(&state, "alice", "/a.txt", b"hello", 1_716_000_000).await;
     let app = crabcloud_http::build_router(state, axum::Router::new());
 
     let req = Request::builder()
@@ -122,9 +130,7 @@ async fn propfind_root_depth_1_lists_versions() {
     // Two responses: root collection + one version.
     assert_eq!(body.matches("<d:response>").count(), 2, "{body}");
     assert!(
-        body.contains(&format!(
-            "/remote.php/dav/versions/alice/{fileid}/{mtime}"
-        )),
+        body.contains(&format!("/remote.php/dav/versions/alice/{fileid}/{mtime}")),
         "missing version href: {body}"
     );
     assert!(

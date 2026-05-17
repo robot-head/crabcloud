@@ -37,7 +37,7 @@ async fn fileid_of(state: &AppState, uid: &str, path: &str) -> i64 {
     let sp = crabcloud_storage::StoragePath::new(path.trim_start_matches('/').to_string()).unwrap();
     state
         .filecache
-        .lookup(&storage.id().to_string(), &sp)
+        .lookup(storage.id(), &sp)
         .await
         .unwrap()
         .unwrap()
@@ -52,7 +52,7 @@ async fn storage_id_num(state: &AppState, uid: &str) -> i64 {
         .unwrap();
     state
         .filecache
-        .intern_storage(&storage.id().to_string())
+        .intern_storage(storage.id())
         .await
         .unwrap()
 }
@@ -111,7 +111,11 @@ async fn copy_restores_to_chosen_version_and_snapshots_current() {
     // for this fileid should now be 2: original v1 + the pre-restore
     // snapshot of v2.
     let rows = state.versions.list_for("alice", fileid).await.unwrap();
-    assert_eq!(rows.len(), 2, "expected snapshot-before-restore row: {rows:?}");
+    assert_eq!(
+        rows.len(),
+        2,
+        "expected snapshot-before-restore row: {rows:?}"
+    );
     // The newer row should have the v2 size.
     let newest = &rows[0]; // list_for returns newest-first
     assert_eq!(newest.size, "v2-content".len() as i64);
@@ -212,7 +216,8 @@ async fn copy_unknown_version_returns_404() {
 async fn copy_works_via_remote_php_alias() {
     let dir = tempdir().unwrap();
     let data = tempdir().unwrap();
-    let (state, token) = make_alice(dir.path().join("vc_alias.db"), data.path().to_path_buf()).await;
+    let (state, token) =
+        make_alice(dir.path().join("vc_alias.db"), data.path().to_path_buf()).await;
     seed_file(&state, "alice", "/a.txt", b"v1-bytes").await;
     let fileid = fileid_of(&state, "alice", "/a.txt").await;
     let sid = storage_id_num(&state, "alice").await;

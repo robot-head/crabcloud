@@ -77,8 +77,7 @@ async fn get_streams_version_bytes_with_content_length() {
     let data = tempdir().unwrap();
     let (state, token) = make_alice(dir.path().join("vg0.db"), data.path().to_path_buf()).await;
     let payload = b"version-one-bytes";
-    let (fileid, mtime, sz) =
-        seed_version(&state, "alice", "/a.txt", payload, 1_716_000_000).await;
+    let (fileid, mtime, sz) = seed_version(&state, "alice", "/a.txt", payload, 1_716_000_000).await;
     let app = crabcloud_http::build_router(state, axum::Router::new());
 
     let req = Request::builder()
@@ -90,10 +89,16 @@ async fn get_streams_version_bytes_with_content_length() {
     let resp = app.oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
     assert_eq!(
-        resp.headers().get("content-length").unwrap().to_str().unwrap(),
+        resp.headers()
+            .get("content-length")
+            .unwrap()
+            .to_str()
+            .unwrap(),
         &sz.to_string()
     );
-    let body = axum::body::to_bytes(resp.into_body(), 64 * 1024).await.unwrap();
+    let body = axum::body::to_bytes(resp.into_body(), 64 * 1024)
+        .await
+        .unwrap();
     assert_eq!(&body[..], payload);
 }
 
@@ -101,7 +106,8 @@ async fn get_streams_version_bytes_with_content_length() {
 async fn get_works_via_remote_php_alias() {
     let dir = tempdir().unwrap();
     let data = tempdir().unwrap();
-    let (state, token) = make_alice(dir.path().join("vg_alias.db"), data.path().to_path_buf()).await;
+    let (state, token) =
+        make_alice(dir.path().join("vg_alias.db"), data.path().to_path_buf()).await;
     let payload = b"hello";
     let (fileid, mtime, _sz) =
         seed_version(&state, "alice", "/a.txt", payload, 1_716_000_000).await;
@@ -115,7 +121,9 @@ async fn get_works_via_remote_php_alias() {
         .unwrap();
     let resp = app.oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(resp.into_body(), 64 * 1024).await.unwrap();
+    let body = axum::body::to_bytes(resp.into_body(), 64 * 1024)
+        .await
+        .unwrap();
     assert_eq!(&body[..], payload);
 }
 
@@ -124,8 +132,7 @@ async fn get_unknown_version_returns_404() {
     let dir = tempdir().unwrap();
     let data = tempdir().unwrap();
     let (state, token) = make_alice(dir.path().join("vg404.db"), data.path().to_path_buf()).await;
-    let (fileid, _mtime, _sz) =
-        seed_version(&state, "alice", "/a.txt", b"hi", 1_716_000_000).await;
+    let (fileid, _mtime, _sz) = seed_version(&state, "alice", "/a.txt", b"hi", 1_716_000_000).await;
     let app = crabcloud_http::build_router(state, axum::Router::new());
 
     let req = Request::builder()
