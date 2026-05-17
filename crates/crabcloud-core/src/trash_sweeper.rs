@@ -84,7 +84,9 @@ mod tests {
             .join(uid)
             .join("files")
             .join(rel.trim_start_matches('/'));
-        tokio::fs::create_dir_all(p.parent().unwrap()).await.unwrap();
+        tokio::fs::create_dir_all(p.parent().unwrap())
+            .await
+            .unwrap();
         tokio::fs::write(&p, contents).await.unwrap();
     }
 

@@ -100,10 +100,7 @@ async fn view_delete_creates_trash_row_and_keeps_bytes_in_trashbin() {
         .exists());
 
     // Bytes now live under `<datadir>/<uid>/files_trashbin/files/x.txt.dN`.
-    let trashbin = h
-        .datadir
-        .join(h.uid.as_str())
-        .join("files_trashbin/files");
+    let trashbin = h.datadir.join(h.uid.as_str()).join("files_trashbin/files");
     let entries: Vec<_> = std::fs::read_dir(&trashbin)
         .unwrap()
         .filter_map(|r| r.ok())
@@ -117,10 +114,7 @@ async fn view_delete_creates_trash_row_and_keeps_bytes_in_trashbin() {
 async fn view_hard_delete_does_not_create_trash_row_or_trashbin_dir() {
     let h = local_harness("bob").await;
     h.view
-        .put_file(
-            &UserPath::new("/single.txt").unwrap(),
-            body(b"z".to_vec()),
-        )
+        .put_file(&UserPath::new("/single.txt").unwrap(), body(b"z".to_vec()))
         .await
         .unwrap();
 

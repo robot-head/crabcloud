@@ -7,7 +7,9 @@ use crate::error::{FsError, FsResult};
 use crate::mount::{Mount, MountMetadata};
 use crate::path::UserPath;
 use crabcloud_filecache::FileCache;
-use crabcloud_storage::{ChannelEventSink, DirEntry, EventSink, FileMetadata, Storage, StoragePath};
+use crabcloud_storage::{
+    ChannelEventSink, DirEntry, EventSink, FileMetadata, Storage, StoragePath,
+};
 use crabcloud_users::UserId;
 use std::ops::Range;
 use std::pin::Pin;
@@ -337,7 +339,12 @@ impl View {
         // filecache before the bytes move. Errors here are
         // non-blocking — the soft_delete itself can still succeed.
         let (cache_storage, cache_path) = cache_key_for(&mount.storage, &storage_path)?;
-        let row = self.filecache.lookup(cache_storage.id(), &cache_path).await.ok().flatten();
+        let row = self
+            .filecache
+            .lookup(cache_storage.id(), &cache_path)
+            .await
+            .ok()
+            .flatten();
         let r#type = match row.as_ref().map(|r| r.kind) {
             Some(crabcloud_storage::FileKind::Directory) => crabcloud_trash::TrashType::Dir,
             _ => crabcloud_trash::TrashType::File,
@@ -345,12 +352,7 @@ impl View {
         let fileid_legacy = row.as_ref().map(|r| r.fileid);
 
         self.trash
-            .soft_delete(
-                self.uid.as_str(),
-                user_path.as_str(),
-                r#type,
-                fileid_legacy,
-            )
+            .soft_delete(self.uid.as_str(), user_path.as_str(), r#type, fileid_legacy)
             .await
             .map_err(map_trash_err)?;
 

@@ -70,7 +70,15 @@ impl Trash {
         tokio::fs::rename(&src, &dst).await?;
 
         let id = self
-            .insert_row(uid, &basename, &suffix, &location, now, r#type, fileid_legacy)
+            .insert_row(
+                uid,
+                &basename,
+                &suffix,
+                &location,
+                now,
+                r#type,
+                fileid_legacy,
+            )
             .await?;
         Ok(id)
     }
@@ -294,11 +302,7 @@ impl Trash {
             ),
         };
 
-        let target_dir_abs = self
-            .datadir
-            .join(uid)
-            .join("files")
-            .join(&target_dir_rel);
+        let target_dir_abs = self.datadir.join(uid).join("files").join(&target_dir_rel);
         tokio::fs::create_dir_all(&target_dir_abs).await?;
 
         // Collision-resolved final filename inside target_dir_abs.

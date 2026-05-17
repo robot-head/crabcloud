@@ -38,7 +38,9 @@ async fn write_user_file(datadir: &Path, uid: &str, rel: &str, contents: &[u8]) 
         .join(uid)
         .join("files")
         .join(rel.trim_start_matches('/'));
-    tokio::fs::create_dir_all(p.parent().unwrap()).await.unwrap();
+    tokio::fs::create_dir_all(p.parent().unwrap())
+        .await
+        .unwrap();
     tokio::fs::write(&p, contents).await.unwrap();
 }
 
@@ -56,7 +58,10 @@ async fn soft_delete_writes_row_and_moves_file() {
 
     // Original gone.
     let original = datadir.join("alice/files/notes/todo.txt");
-    assert!(!original.exists(), "original should be removed after soft-delete");
+    assert!(
+        !original.exists(),
+        "original should be removed after soft-delete"
+    );
 
     // Trashbin entry present on disk under the suffix-encoded name.
     let entries: Vec<_> = std::fs::read_dir(datadir.join("alice/files_trashbin/files"))
