@@ -224,3 +224,196 @@ async fn sub_second_collision_suffix_increments() {
         "concurrent same-second deletes must produce distinct ids"
     );
 }
+
+/// Seed a directory tree under a dummy "owner home" outside the deleter's
+/// own files directory, so the new directory soft-delete actually has to
+/// cross-storage copy rather than rename.
+async fn seed_owner_tree(datadir: &Path, owner: &str, rel: &str) {
+    let base = datadir
+        .join(owner)
+        .join("files")
+        .join(rel.trim_start_matches('/'));
+    tokio::fs::create_dir_all(&base).await.unwrap();
+    tokio::fs::write(base.join("a.txt"), b"alpha")
+        .await
+        .unwrap();
+    tokio::fs::write(base.join("b.txt"), b"beta").await.unwrap();
+    let sub = base.join("sub");
+    tokio::fs::create_dir(&sub).await.unwrap();
+    tokio::fs::write(sub.join("c.txt"), b"gamma").await.unwrap();
+}
+
+#[tokio::test]
+async fn soft_delete_directory_from_path_copies_tree_and_writes_dir_row() {
+    let (pool, datadir, _d, _dd) = setup().await;
+    // Owner "alice" has /Photos/D with the seeded subtree. Deleter "bob"
+    // owns the trash row.
+    seed_owner_tree(&datadir, "alice", "/Photos/D").await;
+    let trash = Trash::new(pool.clone(), datadir.clone());
+
+    let src = datadir.join("alice/files/Photos/D");
+    let id = trash
+        .soft_delete_directory_from_path("bob", "/Shared/Photos", "D", &src, None)
+        .await
+        .unwrap();
+    assert!(id > 0);
+
+    // Single Dir row under bob with location reflecting the deleter view.
+    let rows = trash.list("bob").await.unwrap();
+    assert_eq!(rows.len(), 1);
+    let row = &rows[0];
+    assert_eq!(row.user, "bob");
+    assert_eq!(row.basename, "D");
+    assert_eq!(row.location, "/Shared/Photos");
+    assert_eq!(row.r#type, TrashType::Dir);
+
+    // Full subtree present under bob's trashbin.
+    let bob_bin = datadir.join("bob/files_trashbin/files");
+    let entries: Vec<_> = std::fs::read_dir(&bob_bin)
+        .unwrap()
+        .filter_map(|r| r.ok())
+        .collect();
+    assert_eq!(entries.len(), 1);
+    let dir_name = entries[0].file_name().into_string().unwrap();
+    assert!(dir_name.starts_with("D.d"), "got {dir_name}");
+    let dir = bob_bin.join(&dir_name);
+    assert_eq!(tokio::fs::read(dir.join("a.txt")).await.unwrap(), b"alpha");
+    assert_eq!(tokio::fs::read(dir.join("b.txt")).await.unwrap(), b"beta");
+    assert_eq!(
+        tokio::fs::read(dir.join("sub/c.txt")).await.unwrap(),
+        b"gamma"
+    );
+
+    // No row under alice (the deleter is bob).
+    assert!(trash.list("alice").await.unwrap().is_empty());
+
+    // The source tree was NOT touched by the trash service — removal of
+    // the source is the caller's responsibility per the doc comment.
+    assert!(src.join("a.txt").exists());
+}
+
+#[tokio::test]
+async fn soft_delete_directory_from_path_rejects_bad_basename() {
+    let (pool, datadir, _d, _dd) = setup().await;
+    seed_owner_tree(&datadir, "alice", "/Photos/D").await;
+    let trash = Trash::new(pool.clone(), datadir.clone());
+    let src = datadir.join("alice/files/Photos/D");
+    for bad in ["", ".", "..", "a/b", "a\\b", "a\0b"] {
+        let r = trash
+            .soft_delete_directory_from_path("bob", "/", bad, &src, None)
+            .await;
+        assert!(r.is_err(), "expected error for basename {bad:?}");
+    }
+}
+
+#[tokio::test]
+async fn soft_delete_directory_from_path_missing_source_returns_source_missing() {
+    let (pool, datadir, _d, _dd) = setup().await;
+    let trash = Trash::new(pool.clone(), datadir.clone());
+    let r = trash
+        .soft_delete_directory_from_path(
+            "bob",
+            "/Shared/Photos",
+            "Ghost",
+            &datadir.join("alice/files/Photos/Ghost"),
+            None,
+        )
+        .await;
+    assert!(matches!(r, Err(crabcloud_trash::TrashError::SourceMissing)));
+    assert!(trash.list("bob").await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn restore_directory_round_trips_full_subtree() {
+    let (pool, datadir, _d, _dd) = setup().await;
+    seed_owner_tree(&datadir, "alice", "/Photos/D").await;
+    let trash = Trash::new(pool.clone(), datadir.clone());
+    let src = datadir.join("alice/files/Photos/D");
+    let id = trash
+        .soft_delete_directory_from_path("bob", "/Shared/Photos", "D", &src, None)
+        .await
+        .unwrap();
+
+    // Restore back to the row's recorded location under bob's HOME
+    // (bob's own files dir — the trash service is uid-scoped).
+    let restored = trash.restore("bob", id, None).await.unwrap();
+    assert_eq!(restored.path, "/Shared/Photos/D");
+    let restored_root = datadir.join("bob/files/Shared/Photos/D");
+    assert!(restored_root.exists());
+    assert_eq!(
+        tokio::fs::read(restored_root.join("a.txt")).await.unwrap(),
+        b"alpha"
+    );
+    assert_eq!(
+        tokio::fs::read(restored_root.join("b.txt")).await.unwrap(),
+        b"beta"
+    );
+    assert_eq!(
+        tokio::fs::read(restored_root.join("sub/c.txt"))
+            .await
+            .unwrap(),
+        b"gamma"
+    );
+    // Row gone.
+    assert!(trash.list("bob").await.unwrap().is_empty());
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn soft_delete_directory_from_path_rolls_back_partial_destination_on_failure() {
+    // Construct a source tree that contains an unsupported file type
+    // (a symlink) so the recursive walker errors mid-traversal. The
+    // failure must trigger a full rollback: bob's bin ends up empty,
+    // no row was written, and (since the trash service doesn't touch
+    // the source) the source remains intact.
+    let (pool, datadir, _d, _dd) = setup().await;
+    let owner_files = datadir.join("alice/files/Photos/D");
+    tokio::fs::create_dir_all(&owner_files).await.unwrap();
+    tokio::fs::write(owner_files.join("good.txt"), b"ok")
+        .await
+        .unwrap();
+    // Symlink (unsupported file type) — the walker hits the else branch
+    // and returns InvalidData partway through.
+    std::os::unix::fs::symlink("/dev/null", owner_files.join("weird_link")).unwrap();
+    tokio::fs::write(owner_files.join("also_good.txt"), b"ok2")
+        .await
+        .unwrap();
+
+    let trash = Trash::new(pool.clone(), datadir.clone());
+    let r = trash
+        .soft_delete_directory_from_path("bob", "/Shared/Photos", "D", &owner_files, None)
+        .await;
+    assert!(r.is_err(), "expected error from symlink in source");
+
+    // No trash row for bob.
+    assert!(trash.list("bob").await.unwrap().is_empty());
+    // Bob's bin contains no leftover bytes from the rolled-back tree.
+    let bob_bin = datadir.join("bob/files_trashbin/files");
+    let entries: Vec<_> = std::fs::read_dir(&bob_bin)
+        .map(|d| d.filter_map(|r| r.ok()).collect())
+        .unwrap_or_default();
+    assert!(entries.is_empty(), "bin should be empty after rollback");
+    // Source intact — the trash service never touches it; the caller
+    // owns source removal.
+    assert!(owner_files.join("good.txt").exists());
+    assert!(owner_files.join("also_good.txt").exists());
+}
+
+#[tokio::test]
+async fn purge_directory_removes_subtree_and_row() {
+    let (pool, datadir, _d, _dd) = setup().await;
+    seed_owner_tree(&datadir, "alice", "/Photos/D").await;
+    let trash = Trash::new(pool.clone(), datadir.clone());
+    let src = datadir.join("alice/files/Photos/D");
+    let id = trash
+        .soft_delete_directory_from_path("bob", "/Shared/Photos", "D", &src, None)
+        .await
+        .unwrap();
+    trash.purge("bob", id).await.unwrap();
+    assert!(trash.list("bob").await.unwrap().is_empty());
+    let bob_bin = datadir.join("bob/files_trashbin/files");
+    let entries: Vec<_> = std::fs::read_dir(&bob_bin)
+        .map(|d| d.filter_map(|r| r.ok()).collect())
+        .unwrap_or_default();
+    assert!(entries.is_empty(), "bin should be empty after purge");
+}

@@ -284,6 +284,206 @@ async fn view_delete_on_readonly_share_mount_returns_403_no_trash_row() {
 }
 
 #[tokio::test]
+async fn view_delete_on_share_mount_directory_recursive_lands_in_deleters_trashbin() {
+    // Alice shares /Photos with bob (with delete). Inside it lives a
+    // directory D with two files + a subdir + a nested file. Bob
+    // deletes /Shared/Photos/D from his view. The full subtree must
+    // land in bob's trashbin under a single Dir row, and alice's
+    // source tree must be gone.
+    let h = share_harness(1 | 2 | 4 | 8).await;
+    h.alice_home
+        .mkdir(&StoragePath::new("Photos").unwrap(), &NoopEventSink)
+        .await
+        .unwrap();
+    h.alice_home
+        .mkdir(&StoragePath::new("Photos/D").unwrap(), &NoopEventSink)
+        .await
+        .unwrap();
+    h.alice_home
+        .put_file(
+            &StoragePath::new("Photos/D/a.txt").unwrap(),
+            Box::pin(std::io::Cursor::new(b"alpha".to_vec())),
+            &NoopEventSink,
+        )
+        .await
+        .unwrap();
+    h.alice_home
+        .put_file(
+            &StoragePath::new("Photos/D/b.txt").unwrap(),
+            Box::pin(std::io::Cursor::new(b"beta".to_vec())),
+            &NoopEventSink,
+        )
+        .await
+        .unwrap();
+    h.alice_home
+        .mkdir(&StoragePath::new("Photos/D/sub").unwrap(), &NoopEventSink)
+        .await
+        .unwrap();
+    h.alice_home
+        .put_file(
+            &StoragePath::new("Photos/D/sub/c.txt").unwrap(),
+            Box::pin(std::io::Cursor::new(b"gamma".to_vec())),
+            &NoopEventSink,
+        )
+        .await
+        .unwrap();
+
+    h.bob_view
+        .delete(&UserPath::new("/Shared/Photos/D").unwrap())
+        .await
+        .expect("bob's recursive dir delete should soft-delete into his bin");
+
+    // Alice's source tree is gone.
+    assert!(!h.datadir.join("alice/files/Photos/D").exists());
+
+    // Bob has one Dir trash row.
+    let rows = h.trash.list("bob").await.unwrap();
+    assert_eq!(rows.len(), 1, "exactly one trash row under bob");
+    let row = &rows[0];
+    assert_eq!(row.user, "bob");
+    assert_eq!(row.basename, "D");
+    assert_eq!(row.location, "/Shared/Photos");
+    assert_eq!(row.r#type, crabcloud_trash::TrashType::Dir);
+    assert!(h.trash.list("alice").await.unwrap().is_empty());
+
+    // The full subtree lives at bob's bin under D.d<ts>/.
+    let bob_bin = h.datadir.join("bob/files_trashbin/files");
+    let entries: Vec<_> = std::fs::read_dir(&bob_bin)
+        .unwrap()
+        .filter_map(|r| r.ok())
+        .collect();
+    assert_eq!(entries.len(), 1);
+    let dir_name = entries[0].file_name().into_string().unwrap();
+    assert!(dir_name.starts_with("D.d"), "got {dir_name}");
+    let trash_dir = bob_bin.join(&dir_name);
+    assert_eq!(
+        tokio::fs::read(trash_dir.join("a.txt")).await.unwrap(),
+        b"alpha"
+    );
+    assert_eq!(
+        tokio::fs::read(trash_dir.join("b.txt")).await.unwrap(),
+        b"beta"
+    );
+    assert_eq!(
+        tokio::fs::read(trash_dir.join("sub/c.txt")).await.unwrap(),
+        b"gamma"
+    );
+}
+
+#[tokio::test]
+async fn view_delete_on_share_mount_directory_then_restore_reconstructs_subtree_under_bob() {
+    // After bob soft-deletes a shared dir into his bin, restoring it
+    // through the Trash service places the full subtree under bob's
+    // OWN home at the recorded location. The trash service is
+    // uid-scoped; bob "owns" the trash row and restores into his own
+    // files dir even though the original lived inside alice's storage
+    // via a share mount.
+    let h = share_harness(1 | 2 | 4 | 8).await;
+    h.alice_home
+        .mkdir(&StoragePath::new("Photos").unwrap(), &NoopEventSink)
+        .await
+        .unwrap();
+    h.alice_home
+        .mkdir(&StoragePath::new("Photos/D").unwrap(), &NoopEventSink)
+        .await
+        .unwrap();
+    h.alice_home
+        .put_file(
+            &StoragePath::new("Photos/D/a.txt").unwrap(),
+            Box::pin(std::io::Cursor::new(b"alpha".to_vec())),
+            &NoopEventSink,
+        )
+        .await
+        .unwrap();
+    h.alice_home
+        .mkdir(&StoragePath::new("Photos/D/sub").unwrap(), &NoopEventSink)
+        .await
+        .unwrap();
+    h.alice_home
+        .put_file(
+            &StoragePath::new("Photos/D/sub/c.txt").unwrap(),
+            Box::pin(std::io::Cursor::new(b"gamma".to_vec())),
+            &NoopEventSink,
+        )
+        .await
+        .unwrap();
+
+    h.bob_view
+        .delete(&UserPath::new("/Shared/Photos/D").unwrap())
+        .await
+        .unwrap();
+
+    let id = h.trash.list("bob").await.unwrap()[0].id;
+    let restored = h.trash.restore("bob", id, None).await.unwrap();
+    assert_eq!(restored.path, "/Shared/Photos/D");
+
+    // Bob's HOME now has the reconstructed tree at /Shared/Photos/D.
+    let root = h.datadir.join("bob/files/Shared/Photos/D");
+    assert!(root.exists());
+    assert_eq!(tokio::fs::read(root.join("a.txt")).await.unwrap(), b"alpha");
+    assert_eq!(
+        tokio::fs::read(root.join("sub/c.txt")).await.unwrap(),
+        b"gamma"
+    );
+
+    // Row gone.
+    assert!(h.trash.list("bob").await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn view_delete_on_readonly_share_mount_directory_returns_403_and_rolls_back_trash() {
+    // Read-only share — alice's source dir is intact, bob ends up with
+    // no trash row, and bob's bin has no leftover bytes from a half-
+    // staged copy.
+    let h = share_harness(1).await; // read only
+    h.alice_home
+        .mkdir(&StoragePath::new("Photos").unwrap(), &NoopEventSink)
+        .await
+        .unwrap();
+    h.alice_home
+        .mkdir(&StoragePath::new("Photos/L").unwrap(), &NoopEventSink)
+        .await
+        .unwrap();
+    h.alice_home
+        .put_file(
+            &StoragePath::new("Photos/L/secret.txt").unwrap(),
+            Box::pin(std::io::Cursor::new(b"sssh".to_vec())),
+            &NoopEventSink,
+        )
+        .await
+        .unwrap();
+
+    let r = h
+        .bob_view
+        .delete(&UserPath::new("/Shared/Photos/L").unwrap())
+        .await;
+    assert!(
+        matches!(
+            r,
+            Err(crabcloud_fs::FsError::Storage(
+                StorageError::PermissionDenied
+            ))
+        ),
+        "expected PermissionDenied, got {r:?}"
+    );
+
+    // Source still present.
+    assert!(h.datadir.join("alice/files/Photos/L/secret.txt").exists());
+    // No trash row under either user.
+    assert!(h.trash.list("bob").await.unwrap().is_empty());
+    assert!(h.trash.list("alice").await.unwrap().is_empty());
+    // Bob's bin contains no leftover bytes from the rolled-back copy.
+    let bob_bin = h.datadir.join("bob/files_trashbin/files");
+    let entries: Vec<_> = std::fs::read_dir(&bob_bin)
+        .map(|d| d.filter_map(|r| r.ok()).collect())
+        .unwrap_or_default();
+    assert!(
+        entries.is_empty(),
+        "bob's bin should have no leftovers after rollback"
+    );
+}
+
+#[tokio::test]
 async fn view_hard_delete_does_not_create_trash_row_or_trashbin_dir() {
     let h = local_harness("bob").await;
     h.view

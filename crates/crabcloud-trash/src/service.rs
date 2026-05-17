@@ -298,6 +298,126 @@ impl Trash {
         Ok(id)
     }
 
+    /// Recursively soft-delete a directory whose bytes live OUTSIDE
+    /// `<datadir>/<deleter_uid>/files/...` (i.e. a share-mount subtree
+    /// in another user's storage) by copying the entire tree into the
+    /// deleter's trashbin under a single trash row of type `Dir`. The
+    /// on-disk shape mirrors home-storage dir soft-delete: one row,
+    /// one `<basename>.<suffix>/` directory at the top of the bin, full
+    /// subtree preserved underneath.
+    ///
+    /// Source removal is the caller's responsibility — like
+    /// [`Self::soft_delete_from_reader`], the caller already holds the
+    /// share-mount storage handle and is the right place to honor that
+    /// backend's `delete` semantics (and emit the storage event the
+    /// filecache scanner expects).
+    ///
+    /// `src_abs` is the absolute path to the source directory on local
+    /// disk. For SP12 MVP the spec is local-first so a `&Path` argument
+    /// is sufficient; cross-storage trash for non-local backends is
+    /// explicitly out of scope and stays a future concern.
+    ///
+    /// Partial-copy failures roll back the destination tree (best-effort
+    /// `remove_dir_all`) before returning Err so we don't end up with
+    /// half-trash + half-source. INSERT failures after a successful copy
+    /// emit a `tracing::warn!` with the orphan path, same as the file
+    /// variant.
+    ///
+    /// Same suffix-collision TOCTOU caveat as [`Self::soft_delete`] —
+    /// see that fn's `resolve_unique_suffix` note.
+    pub async fn soft_delete_directory_from_path(
+        &self,
+        deleter_uid: &str,
+        location_for_row: &str,
+        basename: &str,
+        src_abs: &Path,
+        fileid_legacy: Option<i64>,
+    ) -> Result<i64, TrashError> {
+        if basename.is_empty()
+            || basename.contains('/')
+            || basename.contains('\\')
+            || basename.contains('\0')
+            || basename == ".."
+            || basename == "."
+        {
+            return Err(TrashError::SourceMissing);
+        }
+        // Surface a clean SourceMissing if the source doesn't exist or
+        // isn't a directory — same shape `soft_delete` uses for missing
+        // file sources. Anything more exotic (broken symlink, permission
+        // denied stat) will surface as Io below.
+        let md = match tokio::fs::metadata(src_abs).await {
+            Ok(md) => md,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                return Err(TrashError::SourceMissing)
+            }
+            Err(e) => return Err(e.into()),
+        };
+        if !md.is_dir() {
+            return Err(TrashError::SourceMissing);
+        }
+
+        let now = chrono::Utc::now().timestamp();
+        let suffix = self
+            .resolve_unique_suffix(deleter_uid, basename, now)
+            .await?;
+        let trash_dir = self
+            .datadir
+            .join(deleter_uid)
+            .join("files_trashbin")
+            .join("files");
+        tokio::fs::create_dir_all(&trash_dir).await?;
+        let dst_root = trash_dir.join(format!("{basename}.{suffix}"));
+        // `create_dir` (not `create_dir_all`) fails if dst_root already
+        // exists — defense in depth against an unexpected stale entry
+        // colliding with our freshly resolved suffix.
+        if let Err(e) = tokio::fs::create_dir(&dst_root).await {
+            return Err(e.into());
+        }
+
+        if let Err(e) = copy_dir_recursive(src_abs, &dst_root).await {
+            // Best-effort rollback of the partial destination tree so
+            // we never leave bytes nobody references. `.ok()` so the
+            // cleanup error can't mask the original error — but log a
+            // warn so an operator has a breadcrumb to the staged
+            // orphan path (mirrors the INSERT-failure branch below).
+            if let Err(cleanup_err) = tokio::fs::remove_dir_all(&dst_root).await {
+                tracing::warn!(
+                    error = %cleanup_err,
+                    orphan_path = %dst_root.display(),
+                    deleter_uid,
+                    "soft_delete_directory_from_path: rollback of partial trash copy failed; orphan staged"
+                );
+            }
+            return Err(e);
+        }
+
+        let id = match self
+            .insert_row(
+                deleter_uid,
+                basename,
+                &suffix,
+                location_for_row,
+                now,
+                crate::types::TrashType::Dir,
+                fileid_legacy,
+            )
+            .await
+        {
+            Ok(id) => id,
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    orphan_path = %dst_root.display(),
+                    deleter_uid,
+                    "trash soft_delete_directory_from_path: INSERT failed after copy; bytes stranded"
+                );
+                return Err(e);
+            }
+        };
+        Ok(id)
+    }
+
     // -------- list --------
 
     pub async fn list(&self, uid: &str) -> Result<Vec<TrashEntry>, TrashError> {
@@ -697,6 +817,74 @@ async fn pick_non_colliding_name(
         }
     }
     Err(TrashError::RestoreCollision)
+}
+
+/// Recursively copy the contents of `src` into `dst` (which must already
+/// exist as an empty directory). Files are streamed via `tokio::io::copy`
+/// and `sync_all`-ed before the next entry; subdirectories are
+/// `create_dir`-ed and recursed into. Symlinks are intentionally NOT
+/// followed — the spec is local-first and crabcloud's storage layer
+/// doesn't expose symlinks as first-class entries. Any symlink (or
+/// other non-regular entry: socket, fifo, …) hits the `else` branch
+/// below and is rejected with `io::ErrorKind::InvalidData`, surfacing
+/// as a `TrashError::Io` to the caller so we never silently lose data
+/// by skipping the entry. Tested behavior is the no-symlinks case
+/// (the common one).
+///
+/// Recursion uses an explicit stack to avoid the boxed-future dance
+/// that direct async recursion needs. Each frame holds one open
+/// `ReadDir` iterator; we drain entries depth-first.
+async fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), TrashError> {
+    // Frame: (src_dir, dst_dir, open ReadDir at src_dir).
+    let mut stack: Vec<(PathBuf, PathBuf, tokio::fs::ReadDir)> = Vec::new();
+    let initial = tokio::fs::read_dir(src).await?;
+    stack.push((src.to_path_buf(), dst.to_path_buf(), initial));
+
+    while let Some((src_dir, dst_dir, mut iter)) = stack.pop() {
+        // Drain one entry at a time. On a subdirectory we push the
+        // current frame back (with its updated iterator) before
+        // descending so the depth-first traversal resumes correctly
+        // after the child frame finishes.
+        loop {
+            let Some(entry) = iter.next_entry().await? else {
+                break;
+            };
+            let file_type = entry.file_type().await?;
+            let src_path = entry.path();
+            let name = entry.file_name();
+            let dst_path = dst_dir.join(&name);
+            if file_type.is_dir() {
+                tokio::fs::create_dir(&dst_path).await?;
+                // Suspend the current frame, descend.
+                stack.push((src_dir.clone(), dst_dir.clone(), iter));
+                let child_iter = tokio::fs::read_dir(&src_path).await?;
+                stack.push((src_path, dst_path, child_iter));
+                break;
+            } else if file_type.is_file() {
+                let mut reader = tokio::fs::File::open(&src_path).await?;
+                let mut writer = tokio::fs::OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .open(&dst_path)
+                    .await?;
+                tokio::io::copy(&mut reader, &mut writer).await?;
+                writer.sync_all().await?;
+            } else {
+                // Symlinks / sockets / fifos: out of scope. The spec
+                // assumes regular files + directories. Treat anything
+                // else as a hard error so we don't silently lose data
+                // by skipping it.
+                return Err(TrashError::Io(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!(
+                        "unsupported file type at {} (not a regular file or directory)",
+                        src_path.display()
+                    ),
+                )));
+            }
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
