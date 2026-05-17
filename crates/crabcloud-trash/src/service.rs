@@ -378,8 +378,17 @@ impl Trash {
         if let Err(e) = copy_dir_recursive(src_abs, &dst_root).await {
             // Best-effort rollback of the partial destination tree so
             // we never leave bytes nobody references. `.ok()` so the
-            // cleanup error can't mask the original error.
-            tokio::fs::remove_dir_all(&dst_root).await.ok();
+            // cleanup error can't mask the original error — but log a
+            // warn so an operator has a breadcrumb to the staged
+            // orphan path (mirrors the INSERT-failure branch below).
+            if let Err(cleanup_err) = tokio::fs::remove_dir_all(&dst_root).await {
+                tracing::warn!(
+                    error = %cleanup_err,
+                    orphan_path = %dst_root.display(),
+                    deleter_uid,
+                    "soft_delete_directory_from_path: rollback of partial trash copy failed; orphan staged"
+                );
+            }
             return Err(e);
         }
 
@@ -815,10 +824,12 @@ async fn pick_non_colliding_name(
 /// and `sync_all`-ed before the next entry; subdirectories are
 /// `create_dir`-ed and recursed into. Symlinks are intentionally NOT
 /// followed — the spec is local-first and crabcloud's storage layer
-/// doesn't expose symlinks as first-class entries, so any symlink we
-/// encounter while walking is preserved as a regular file copy of its
-/// target if the underlying fs follows it, or surfaces as an Io error
-/// otherwise. Tested behavior is the no-symlinks case (the common one).
+/// doesn't expose symlinks as first-class entries. Any symlink (or
+/// other non-regular entry: socket, fifo, …) hits the `else` branch
+/// below and is rejected with `io::ErrorKind::InvalidData`, surfacing
+/// as a `TrashError::Io` to the caller so we never silently lose data
+/// by skipping the entry. Tested behavior is the no-symlinks case
+/// (the common one).
 ///
 /// Recursion uses an explicit stack to avoid the boxed-future dance
 /// that direct async recursion needs. Each frame holds one open

@@ -418,7 +418,14 @@ impl View {
                 // If stat fails (e.g. read-only file-drop), assume File
                 // and let the downstream read/delete surface the right
                 // error — same behavior as the file-only path used to.
-                Err(_) => crabcloud_trash::TrashType::File,
+                Err(stat_err) => {
+                    tracing::debug!(
+                        error = %stat_err,
+                        path = %storage_path.as_str(),
+                        "share-mount kind detection: stat fell back to File default"
+                    );
+                    crabcloud_trash::TrashType::File
+                }
             },
         };
         let fileid_legacy = row.as_ref().map(|r| r.fileid);
@@ -468,6 +475,15 @@ impl View {
         // Now delete the source. If this fails — typically `PermissionDenied`
         // for a read-only share — roll back the trash entry so we don't
         // leak a copy of bytes the user couldn't legitimately remove.
+        //
+        // Single-file delete is atomic at the underlying filesystem level
+        // (unlike the directory case, which is a multi-step `remove_dir_all`
+        // that can fail partway). On failure here the source is still
+        // fully present, so purging the trash copy is the correct
+        // rollback — no data loss. Contrast `delete_directory_via_share_mount`,
+        // which PRESERVES the trash row after a partial `remove_dir_all`
+        // because the source tree is already half-gone and the trash
+        // copy is the only surviving complete copy.
         if let Err(e) = mount
             .storage
             .delete(&storage_path, &*self.storage_sink)
@@ -546,7 +562,15 @@ impl View {
         // an unwrapped share-owner home reused verbatim — not the path
         // any current resolver takes, but the trait permits it) we
         // assume the recipient path == owner path.
-        let owner_relative = match mount.storage.inner_storage() {
+        //
+        // Hoisted once: we reuse the same inner-storage view both here
+        // (path translation) and at the end of the function (event
+        // emission's `storage_id`). The return type is
+        // `Option<(&Arc<dyn Storage>, &StoragePath)>`, so the binding
+        // holds borrows of fields on `mount.storage` — fine because
+        // `mount` outlives this function body.
+        let inner_storage = mount.storage.inner_storage();
+        let owner_relative = match inner_storage {
             Some((_, prefix)) => {
                 if storage_path.is_root() {
                     prefix.clone()
@@ -580,13 +604,16 @@ impl View {
         // dir only (returns `NotEmpty` for a populated tree), so a
         // read-write share with a non-empty subtree would error
         // `NotEmpty` for the wrong reason. Consult the recipient's
-        // permission mask directly.
-        if let Some(perms) = metadata.permissions {
-            if !perms.allows_delete() {
-                return Err(FsError::Storage(
-                    crabcloud_storage::StorageError::PermissionDenied,
-                ));
-            }
+        // permission mask directly. Reject when permissions are absent
+        // — a share mount missing permission metadata must NOT silently
+        // bypass the delete-bit check.
+        let perms = metadata
+            .permissions
+            .ok_or_else(|| FsError::Storage(crabcloud_storage::StorageError::PermissionDenied))?;
+        if !perms.allows_delete() {
+            return Err(FsError::Storage(
+                crabcloud_storage::StorageError::PermissionDenied,
+            ));
         }
 
         let src_abs = self
@@ -615,19 +642,28 @@ impl View {
         // so for the populated subtree we go straight to the local FS
         // — the spec is local-first for share-mount trash and the
         // source path was derived from `<datadir>/<owner_uid>/files/...`
-        // a few lines above. If removal fails partway, roll back the
-        // staged trash entry so we don't leak a copy of bytes that are
-        // still partly present at the source.
+        // a few lines above.
+        //
+        // CORRECTNESS: if `remove_dir_all` fails partway it has
+        // typically removed SOME children already, leaving the source
+        // tree in a damaged half-state. The trash copy is now the only
+        // surviving complete copy of the data, so we must KEEP it and
+        // surface the failure rather than purge the trash and leave
+        // the user with neither a complete source nor a recoverable
+        // trash entry. The Deleted event is intentionally NOT emitted
+        // in the error branch — the owner-side scanner row should not
+        // be removed for a tree that's still partly present on disk.
         if let Err(e) = tokio::fs::remove_dir_all(&src_abs).await {
-            if let Err(purge_err) = self.trash.purge(self.uid.as_str(), trash_id).await {
-                tracing::warn!(
-                    error = %purge_err,
-                    trash_id,
-                    deleter = %self.uid.as_str(),
-                    "share-mount dir delete rolled back, but trash purge of staged copy failed"
-                );
-            }
-            return Err(FsError::Storage(crabcloud_storage::StorageError::Io(e)));
+            tracing::error!(
+                error = %e,
+                trash_id,
+                deleter = %self.uid.as_str(),
+                source = %src_abs.display(),
+                "share-mount dir trash: source remove_dir_all failed after trash copy staged; trash row PRESERVED for restore"
+            );
+            return Err(FsError::Storage(crabcloud_storage::StorageError::Other(
+                format!("partial source removal after trash stage: {e}"),
+            )));
         }
 
         // Emit a Deleted event on the deleter's behalf so the
@@ -635,7 +671,7 @@ impl View {
         // owner-relative path under the owner's home storage; the
         // event's `storage_id` is the inner (owner) storage's id, NOT
         // the wrapper's recipient-rooted id.
-        let event_storage_id = match mount.storage.inner_storage() {
+        let event_storage_id = match inner_storage {
             Some((inner, _)) => inner.id().to_string(),
             None => mount.storage.id().to_string(),
         };
