@@ -22,6 +22,7 @@ crabcloud-sharing.workspace = true
 crabcloud-storage.workspace = true
 crabcloud-trash.workspace = true
 crabcloud-users.workspace = true
+crabcloud-versions.workspace = true
 dashmap.workspace = true
 serde_json.workspace = true
 secrecy.workspace = true
