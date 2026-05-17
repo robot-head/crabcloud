@@ -14,11 +14,11 @@
 //! permission sets never grant them; wiring `routes::dav::moves` would
 //! pull in cross-mount machinery that has no use case here).
 //!
-//! Auth is layered on top by `router::public_dav_gate` —
-//! `AuthSurface::Dav` (HTTP Basic, password challenge, rate limit).
-//! By the time a handler runs the context's `password_gate_required`
-//! field is always `false` (the auth layer 401s otherwise); we
-//! defensively recheck anyway.
+//! Auth is layered on top by `build_router` via `route_layer` on the
+//! nested DAV router — `AuthSurface::Dav` (HTTP Basic, password
+//! challenge, rate limit). By the time a handler runs the context's
+//! `password_gate_required` field is always `false` (the auth layer 401s
+//! otherwise); we defensively recheck anyway.
 #![allow(clippy::result_large_err)]
 
 use axum::body::Body;
@@ -47,14 +47,15 @@ const ALLOW_HEADER: &str = "OPTIONS, GET, HEAD, PUT, MKCOL, DELETE, PROPFIND";
 /// HREF prefix used in PROPFIND responses for this surface.
 const HREF_PREFIX: &str = "/public.php/dav/files";
 
-/// Build the public-link DAV router. Layered with
-/// `public_link_auth(AuthSurface::Dav)` by `router::public_dav_gate`
-/// before reaching any handler in here.
+/// Build the public-link DAV router. Mounted via
+/// `Router::nest("/public.php/dav/files", …)` by `build_router`, with a
+/// `public_link_auth(AuthSurface::Dav)` `route_layer` applied on top
+/// before reaching any handler in here. Routes are nest-relative.
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/public.php/dav/files/{token}", any(dispatch_root))
-        .route("/public.php/dav/files/{token}/", any(dispatch_root))
-        .route("/public.php/dav/files/{token}/{*path}", any(dispatch_path))
+        .route("/{token}", any(dispatch_root))
+        .route("/{token}/", any(dispatch_root))
+        .route("/{token}/{*path}", any(dispatch_path))
 }
 
 async fn dispatch_root(

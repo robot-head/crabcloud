@@ -85,8 +85,8 @@ where
         // `try_basic` arm would 401 every request before the public-link
         // auth layer downstream gets to verify against the link's bcrypt
         // hash. Bypass the authed arms entirely for that prefix so the
-        // downstream `public_dav_gate` is the sole arbiter. The `/s/` (the
-        // browser viewer) traffic does NOT need this carve-out: those
+        // nested public-link DAV auth layer is the sole arbiter. The `/s/`
+        // (browser viewer) traffic does NOT need this carve-out: those
         // requests don't carry an Authorization header, so `try_basic`
         // returns `NoInput` and `try_cookie` either succeeds (a logged-in
         // user *can* preview their own link in-browser) or quietly falls
