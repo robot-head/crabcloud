@@ -131,10 +131,20 @@ pub struct FileConfig {
     /// Default: 64 megapixels (~8000x8000).
     #[serde(default = "default_preview_max_pixels")]
     pub preview_max_pixels: u32,
+    /// Retention window for cached preview JPEGs. The background
+    /// `PreviewCacheCleanup` task deletes files in `preview_root` whose
+    /// `mtime` is older than this many days. Default: 60.
+    #[serde(default = "default_preview_retention_days")]
+    pub preview_retention_days: u32,
 
     /// Mail transport configuration (SMTP/log/disabled).
     #[serde(default)]
     pub mail: MailConfig,
+    /// Retention window for terminal (`Sent`/`Failed`) rows in
+    /// `oc_mail_queue`. The background `MailQueueCleanup` task deletes
+    /// rows whose `created_at` is older than this many days. Default: 30.
+    #[serde(default = "default_mail_queue_retention_days")]
+    pub mail_queue_retention_days: u32,
 
     /// Optional bootstrap admin (Phase 3 deferred-users stand-in).
     pub bootstrap_admin: Option<BootstrapAdminConfig>,
@@ -277,6 +287,12 @@ fn default_folder_zip_max_bytes() -> u64 {
 fn default_preview_max_pixels() -> u32 {
     64 * 1024 * 1024
 }
+fn default_preview_retention_days() -> u32 {
+    60
+}
+fn default_mail_queue_retention_days() -> u32 {
+    30
+}
 
 /// Errors raised while validating a parsed config.
 #[derive(Debug, thiserror::Error)]
@@ -355,7 +371,9 @@ mod tests {
             folder_zip_max_bytes: default_folder_zip_max_bytes(),
             preview_root: None,
             preview_max_pixels: default_preview_max_pixels(),
+            preview_retention_days: default_preview_retention_days(),
             mail: MailConfig::default(),
+            mail_queue_retention_days: default_mail_queue_retention_days(),
             bootstrap_admin: None,
         }
     }

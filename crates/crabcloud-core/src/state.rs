@@ -4,7 +4,9 @@ use crate::appconfig::AppConfigService;
 use crate::bootstrap::BootstrapRegistry;
 use crate::error::{CoreResult, Error};
 use crate::mail_queue::MailQueue;
+use crate::mail_queue_cleanup::MailQueueCleanup;
 use crate::mail_worker::MailWorker;
+use crate::preview_cache_cleanup::PreviewCacheCleanup;
 use crate::publiclinks::SharesTokenLookup;
 use crabcloud_cache::{Cache, MemoryCache};
 use crabcloud_config::FileConfig;
@@ -99,6 +101,15 @@ pub struct AppState {
     /// `mail_worker_shutdown` — present unconditionally; the task is
     /// only spawned when mail transport is not Disabled.
     pub expiration_sweeper_shutdown: Arc<tokio::sync::Notify>,
+    /// Mail-queue cleanup shutdown handle. Always present; only
+    /// meaningful when the task was spawned (i.e. mail transport is not
+    /// Disabled — same gate as `mail_worker_shutdown`).
+    pub mail_queue_cleanup_shutdown: Arc<tokio::sync::Notify>,
+    /// Preview-cache cleanup shutdown handle. Always present and the
+    /// task is spawned unconditionally — preview files accumulate
+    /// regardless of mail transport, and tests can `notify_one()` here
+    /// in teardown if needed.
+    pub preview_cache_cleanup_shutdown: Arc<tokio::sync::Notify>,
 }
 
 impl std::fmt::Debug for AppState {
@@ -353,8 +364,16 @@ impl AppStateBuilder {
             .unwrap_or_else(|| self.config.datadirectory.join("appdata").join("preview"));
         tokio::fs::create_dir_all(&preview_root).await.ok();
         let preview = Arc::new(PreviewCache::new(
-            preview_root,
+            preview_root.clone(),
             self.config.preview_max_pixels,
+        ));
+
+        // Preview cache cleanup: spawned unconditionally — the cache
+        // accumulates files regardless of mail-transport status.
+        let (preview_cache_cleanup, preview_cache_cleanup_shutdown) =
+            PreviewCacheCleanup::new(preview_root, self.config.preview_retention_days);
+        std::mem::drop(tokio::spawn(
+            async move { preview_cache_cleanup.run().await },
         ));
 
         // Mail wiring: build transport, queue, prefs, and (when not
@@ -395,6 +414,10 @@ impl AppStateBuilder {
                 notification_prefs.clone(),
                 self.config.overwrite_cli_url.clone().unwrap_or_default(),
             );
+        let (mail_queue_cleanup, mail_queue_cleanup_shutdown) = MailQueueCleanup::new(
+            Arc::new(pool.clone()),
+            self.config.mail_queue_retention_days,
+        );
         if !matches!(
             mail_transport_cfg.kind,
             crabcloud_mail::TransportKind::Disabled
@@ -407,6 +430,9 @@ impl AppStateBuilder {
             // Disabled transport so unit tests with the default config
             // don't spin a background task they have to drain.
             std::mem::drop(tokio::spawn(async move { expiration_sweeper.run().await }));
+            // Same gate as the rest of mail bg tasks — tests with the
+            // default (disabled) transport don't have to drain it.
+            std::mem::drop(tokio::spawn(async move { mail_queue_cleanup.run().await }));
         }
 
         let state = AppState {
@@ -431,6 +457,8 @@ impl AppStateBuilder {
             notification_prefs,
             mail_worker_shutdown,
             expiration_sweeper_shutdown,
+            mail_queue_cleanup_shutdown,
+            preview_cache_cleanup_shutdown,
         };
 
         self.registry.run(&state).await?;
