@@ -80,6 +80,21 @@ pub fn build_router(state: AppState, app_router: Router) -> Router {
             crate::routes::dav::dav_router().with_state(state.clone()),
         );
 
+    // DAV trashbin surface (`/dav/trashbin/{uid}/...`). Lives alongside
+    // the files DAV router; shares the same outer `AuthLayer` so the
+    // dispatcher can extract `AuthenticatedUser`. Mounted at both the
+    // modern (`/dav`) and legacy (`/remote.php/dav`) prefixes so desktop
+    // clients work without surface translation.
+    let trashbin_router = Router::new()
+        .nest(
+            "/remote.php/dav/trashbin",
+            crate::routes::trashbin::trashbin_router().with_state(state.clone()),
+        )
+        .nest(
+            "/dav/trashbin",
+            crate::routes::trashbin::trashbin_router().with_state(state.clone()),
+        );
+
     // Public-link DAV surface (`/public.php/dav/files/{token}/...`). Lives
     // alongside the authed DAV surface — same per-method response shape via
     // the surface-neutral helpers in `routes::dav` — but auth comes from
@@ -167,6 +182,7 @@ pub fn build_router(state: AppState, app_router: Router) -> Router {
 
     Router::new()
         .merge(dav_router)
+        .merge(trashbin_router)
         .merge(public_dav_router)
         .merge(public_link_router)
         .merge(ocs_app_layered)

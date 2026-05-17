@@ -25,6 +25,7 @@ crabcloud-preview.workspace = true
 crabcloud-publiclinks.workspace = true
 crabcloud-sharing.workspace = true
 crabcloud-storage.workspace = true
+crabcloud-trash.workspace = true
 crabcloud-users.workspace = true
 crabcloud-zip.workspace = true
 chrono.workspace = true

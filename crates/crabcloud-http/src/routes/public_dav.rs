@@ -35,7 +35,7 @@ use std::sync::Arc;
 
 use crate::routes::dav::error::DavError;
 use crate::routes::dav::methods::{
-    delete_with_view, get_or_head_with_view, mkcol_with_view, put_with_view,
+    get_or_head_with_view, hard_delete_with_view, mkcol_with_view, put_with_view,
 };
 use crate::routes::dav::propfind::{handle_with_view as propfind_with_view, PropfindContext};
 
@@ -128,7 +128,10 @@ async fn dispatch(
             get_or_head_with_view(&view, &user_path, &headers, method == Method::HEAD).await
         }
         Method::PUT => put_with_view(&view, &user_path, &headers, body).await,
-        Method::DELETE => delete_with_view(&view, &user_path).await,
+        // Anonymous DELETE bypasses the trash service — the visitor has
+        // no trashbin of their own. Storage-level permission checks still
+        // apply (read-only links 403 via `PermissionDenied`).
+        Method::DELETE => hard_delete_with_view(&view, &user_path).await,
         m if m.as_str() == "MKCOL" => mkcol_with_view(&view, &user_path).await,
         m if m.as_str() == "PROPFIND" => {
             // Allow PROPFIND on the link root for create-only links — the
