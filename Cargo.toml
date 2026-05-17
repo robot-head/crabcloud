@@ -17,6 +17,7 @@ members = [
     "crates/crabcloud-storage",
     "crates/crabcloud-trash",
     "crates/crabcloud-users",
+    "crates/crabcloud-versions",
     "crates/crabcloud-zip",
     "xtask",
 ]
@@ -117,6 +118,7 @@ crabcloud-sharing = { path = "crates/crabcloud-sharing" }
 crabcloud-storage = { path = "crates/crabcloud-storage" }
 crabcloud-trash = { path = "crates/crabcloud-trash" }
 crabcloud-users = { path = "crates/crabcloud-users" }
+crabcloud-versions = { path = "crates/crabcloud-versions" }
 crabcloud-zip = { path = "crates/crabcloud-zip" }
 email_address = "0.2"
 rpassword = "7"

@@ -1211,6 +1211,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "crabcloud-versions"
+version = "0.1.0"
+dependencies = [
+ "crabcloud-config",
+ "crabcloud-db",
+ "serde",
+ "sqlx",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "crabcloud-zip"
 version = "0.1.0"
 dependencies = [
