@@ -236,6 +236,7 @@ pub(crate) mod tests {
             sink,
             trash,
             crabcloud_fs::VersionsHooks::permissive(versions),
+            std::sync::Arc::new(crabcloud_activity::NoopEmitter),
         );
         (view, dir)
     }

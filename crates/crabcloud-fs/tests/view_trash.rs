@@ -66,6 +66,7 @@ async fn local_harness(uid: &str) -> LocalHarness {
         sink,
         trash.clone(),
         VersionsHooks::permissive(versions),
+        std::sync::Arc::new(crabcloud_activity::NoopEmitter),
     );
     LocalHarness {
         view,
@@ -180,6 +181,7 @@ async fn share_harness(perms_wire: u32) -> ShareHarness {
         sink,
         trash.clone(),
         VersionsHooks::permissive(versions),
+        std::sync::Arc::new(crabcloud_activity::NoopEmitter),
     );
 
     ShareHarness {

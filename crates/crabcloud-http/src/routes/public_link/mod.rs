@@ -108,6 +108,7 @@ pub(super) async fn build_view(
             min_interval_secs: state.config.versions_min_interval_secs as i64,
             max_bytes: state.config.versions_max_bytes,
         },
+        std::sync::Arc::new(crabcloud_activity::NoopEmitter),
     ))
 }
 

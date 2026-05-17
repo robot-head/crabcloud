@@ -71,6 +71,7 @@ pub fn view_home(h: &Harness) -> View {
         h.sink.clone(),
         h.trash.clone(),
         h.versions_hooks(),
+        std::sync::Arc::new(crabcloud_activity::NoopEmitter),
     )
 }
 
@@ -89,6 +90,7 @@ pub fn view_home_for(h: &Harness, storage: Arc<dyn Storage>) -> View {
         h.sink.clone(),
         h.trash.clone(),
         h.versions_hooks(),
+        std::sync::Arc::new(crabcloud_activity::NoopEmitter),
     )
 }
 
@@ -114,6 +116,7 @@ pub fn view_with_two_mounts(h: &Harness) -> View {
         h.sink.clone(),
         h.trash.clone(),
         h.versions_hooks(),
+        std::sync::Arc::new(crabcloud_activity::NoopEmitter),
     )
 }
 
@@ -154,5 +157,6 @@ pub fn view_with_share_mount(
         h.sink.clone(),
         h.trash.clone(),
         h.versions_hooks(),
+        std::sync::Arc::new(crabcloud_activity::NoopEmitter),
     )
 }

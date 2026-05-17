@@ -81,6 +81,7 @@ async fn vharness_with(min_interval_secs: i64, max_bytes: u64) -> VHarness {
             min_interval_secs,
             max_bytes,
         },
+        std::sync::Arc::new(crabcloud_activity::NoopEmitter),
     );
     VHarness {
         view,
@@ -443,6 +444,7 @@ async fn share_harness(perms_wire: u32) -> ShareHarness {
         sink,
         trash.clone(),
         VersionsHooks::permissive(versions.clone()),
+        std::sync::Arc::new(crabcloud_activity::NoopEmitter),
     );
 
     ShareHarness {

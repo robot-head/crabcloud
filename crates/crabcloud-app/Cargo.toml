@@ -76,6 +76,7 @@ web-sys = { workspace = true, features = [
 anyhow = { workspace = true }
 axum = { workspace = true }
 clap = { workspace = true }
+crabcloud-activity = { workspace = true }
 crabcloud-cache = { workspace = true }
 crabcloud-config = { workspace = true }
 crabcloud-core = { workspace = true }
