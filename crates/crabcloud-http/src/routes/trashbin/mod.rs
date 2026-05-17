@@ -4,11 +4,14 @@
 //! `Router::nest("/remote.php/dav/trashbin", ...)` from `router::build_router`.
 //!
 //! Inside this namespace:
-//!   PROPFIND /{uid}/                                 — list root
-//!   PROPFIND /{uid}/trash/{basename_dot_suffix}      — single entry
-//!   DELETE   /{uid}/trash/{basename_dot_suffix}      — purge
-//!   MOVE     /{uid}/trash/{basename_dot_suffix}      — restore
-//!   *        anything else                            — 405
+//!
+//! ```text
+//! PROPFIND /{uid}/                                 - list root
+//! PROPFIND /{uid}/trash/{basename_dot_suffix}      - single entry
+//! DELETE   /{uid}/trash/{basename_dot_suffix}      - purge
+//! MOVE     /{uid}/trash/{basename_dot_suffix}      - restore
+//! *        anything else                           - 405
+//! ```
 //!
 //! The `{basename_dot_suffix}` segment is `<basename>.<suffix>` where
 //! `suffix` looks like `d<unix_seconds>` (or `d<unix_seconds>_<n>` on a
@@ -179,7 +182,7 @@ pub(super) fn split_basename_and_suffix(name: &str) -> Option<(String, String)> 
         return None;
     }
     let suffix = &dot_suffix[1..]; // strip the leading '.'
-    // Validate: `d<digits>` or `d<digits>_<digits>`.
+                                   // Validate: `d<digits>` or `d<digits>_<digits>`.
     if !suffix.starts_with('d') {
         return None;
     }

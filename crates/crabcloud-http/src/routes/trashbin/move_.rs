@@ -12,10 +12,10 @@
 //! ` (restored 2)`, etc. (capped at 99) so users don't silently
 //! overwrite work they did since the delete.
 
+use axum::http::HeaderMap;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use crabcloud_core::AppState;
-use axum::http::HeaderMap;
 
 use crate::routes::dav::error::{DavError, DavResult};
 
@@ -110,15 +110,13 @@ mod tests {
 
     #[test]
     fn parse_destination_strips_absolute_url() {
-        let p =
-            parse_destination("https://example.com/dav/files/alice/x.txt", "alice").unwrap();
+        let p = parse_destination("https://example.com/dav/files/alice/x.txt", "alice").unwrap();
         assert_eq!(p, "/x.txt");
     }
 
     #[test]
     fn parse_destination_decodes_percent_escapes() {
-        let p =
-            parse_destination("/dav/files/alice/hello%20world.txt", "alice").unwrap();
+        let p = parse_destination("/dav/files/alice/hello%20world.txt", "alice").unwrap();
         assert_eq!(p, "/hello world.txt");
     }
 

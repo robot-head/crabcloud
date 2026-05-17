@@ -231,7 +231,9 @@ impl Trash {
             return Err(TrashError::SourceMissing);
         }
         let now = chrono::Utc::now().timestamp();
-        let suffix = self.resolve_unique_suffix(deleter_uid, basename, now).await?;
+        let suffix = self
+            .resolve_unique_suffix(deleter_uid, basename, now)
+            .await?;
         let trash_dir = self
             .datadir
             .join(deleter_uid)

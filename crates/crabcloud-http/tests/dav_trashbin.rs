@@ -80,7 +80,10 @@ async fn propfind_root_depth_0_returns_collection_only() {
     let body = body_string(resp).await;
     // Exactly one response — the collection itself, no entries on depth 0.
     assert_eq!(body.matches("<d:response>").count(), 1, "{body}");
-    assert!(body.contains("<d:displayname>trash</d:displayname>"), "{body}");
+    assert!(
+        body.contains("<d:displayname>trash</d:displayname>"),
+        "{body}"
+    );
 }
 
 #[tokio::test]
@@ -108,11 +111,15 @@ async fn propfind_root_depth_1_lists_entries_with_original_location() {
     assert_eq!(basename, "x.txt");
     assert!(suffix.starts_with("d"), "{suffix}");
     assert!(
-        body.contains(&format!("/remote.php/dav/trashbin/alice/trash/x.txt.{suffix}")),
+        body.contains(&format!(
+            "/remote.php/dav/trashbin/alice/trash/x.txt.{suffix}"
+        )),
         "missing entry href: {body}"
     );
     assert!(
-        body.contains("<nc:trashbin-original-location>/notes/x.txt</nc:trashbin-original-location>"),
+        body.contains(
+            "<nc:trashbin-original-location>/notes/x.txt</nc:trashbin-original-location>"
+        ),
         "missing original-location: {body}"
     );
     assert!(
@@ -222,7 +229,10 @@ async fn delete_purges_entry_and_removes_bytes() {
         .join("files_trashbin")
         .join("files")
         .join(format!("{basename}.{suffix}"));
-    assert!(trash_file.exists(), "fixture: soft_delete should have moved file");
+    assert!(
+        trash_file.exists(),
+        "fixture: soft_delete should have moved file"
+    );
 
     let state_for_app = state.clone();
     let app = crabcloud_http::build_router(state_for_app, axum::Router::new());
@@ -279,7 +289,12 @@ async fn move_without_destination_restores_to_original_location() {
     let resp = app.oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::CREATED);
 
-    let restored = data.path().join("alice").join("files").join("notes").join("x.txt");
+    let restored = data
+        .path()
+        .join("alice")
+        .join("files")
+        .join("notes")
+        .join("x.txt");
     assert!(restored.exists(), "file restored to original location");
     assert!(state.trash.list("alice").await.unwrap().is_empty());
 }
@@ -304,7 +319,12 @@ async fn move_with_destination_restores_to_explicit_path() {
     let resp = app.oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::CREATED);
 
-    let restored = data.path().join("alice").join("files").join("restored").join("a.txt");
+    let restored = data
+        .path()
+        .join("alice")
+        .join("files")
+        .join("restored")
+        .join("a.txt");
     assert!(restored.exists(), "file at explicit destination");
 }
 

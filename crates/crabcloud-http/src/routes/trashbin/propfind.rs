@@ -24,7 +24,9 @@ use std::time::{Duration, UNIX_EPOCH};
 
 use crate::routes::dav::error::{DavError, DavResult};
 use crate::routes::dav::headers::{parse_depth, Depth};
-use crate::routes::dav::xml::{multistatus, write_empty, write_leaf, write_propstat, write_response};
+use crate::routes::dav::xml::{
+    multistatus, write_empty, write_leaf, write_propstat, write_response,
+};
 
 /// HREF prefix used in trashbin responses. The handler emits this prefix
 /// verbatim regardless of which surface alias (`/dav/trashbin/...` vs
@@ -101,9 +103,7 @@ pub async fn entry(
             encode_segment(&format!("{}.{}", entry.basename, entry.suffix))
         );
         write_response(w, &href, |w| {
-            write_propstat(w, "HTTP/1.1 200 OK", |w| {
-                write_entry_props(w, &entry, size)
-            })
+            write_propstat(w, "HTTP/1.1 200 OK", |w| write_entry_props(w, &entry, size))
         })?;
         Ok(())
     });
@@ -213,7 +213,10 @@ mod tests {
 
     #[test]
     fn encode_segment_preserves_safe_chars() {
-        assert_eq!(encode_segment("report.pdf.d1716000000"), "report.pdf.d1716000000");
+        assert_eq!(
+            encode_segment("report.pdf.d1716000000"),
+            "report.pdf.d1716000000"
+        );
         assert_eq!(encode_segment("a-b_c~d"), "a-b_c~d");
     }
 
