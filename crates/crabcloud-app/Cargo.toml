@@ -38,11 +38,9 @@ serde.workspace = true
 serde_json = { workspace = true }
 
 # Used by the trash bin UI (`pages::trash`) to format deleted-at unix
-# timestamps for display. `default-features = false` + `clock` keeps the
-# wasm bundle slim while still pulling in the `js-sys`-backed `Utc::now`
-# for any future relative-time work. The dev-dependency entry below is
-# kept for the workspace's wasm build, where chrono is also a
-# dev-dependency for other tests.
+# timestamps for display. The workspace dep pins `default-features = false`
+# + `clock`, which keeps the wasm bundle slim while still pulling in the
+# `js-sys`-backed `Utc::now` for any future relative-time work.
 chrono = { workspace = true }
 
 # Web-platform deps used by the chunked-upload state machine in

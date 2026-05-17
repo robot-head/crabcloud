@@ -2,9 +2,18 @@
 //!
 //! Reads trash entries via [`crate::server_fns::trash::list_trash`]. Each
 //! row exposes Restore + Delete permanently buttons. The page header has
-//! an Empty-trash button. On any successful mutation the resource is
-//! refetched (via a monotonic refresh counter) so the affected rows
-//! disappear.
+//! an Empty-trash button, which routes through an in-page confirm modal
+//! (matches the sibling files-page delete-confirm pattern at
+//! `pages::files::delete_modal`) so a single misclick doesn't wipe the
+//! whole bin. On any successful mutation the resource is refetched (via
+//! a monotonic refresh counter) so the affected rows disappear.
+//!
+//! Mutation handlers (restore / purge / empty) gate on a page-scoped
+//! `busy` signal so a fast double-click can't dispatch the server fn
+//! twice. Buttons disable while a mutation is in flight. Page-level
+//! locking is intentionally coarser than per-row tracking — restoring
+//! one entry while purging another is undefined-but-not-corrupting, and
+//! the simpler shape keeps the snapshot tests tractable for MVP.
 //!
 //! No upload zone, no inline rename, no breadcrumb: the trash is a flat
 //! per-user namespace by design (see SP12 spec §2).
@@ -19,6 +28,15 @@ use dioxus::prelude::*;
 #[component]
 pub fn TrashPage(ctx: RequestContext) -> Element {
     let mut refresh = use_signal(|| 0u64);
+    // Page-scoped in-flight guard. All three mutation handlers gate on
+    // this so a fast double-click can't fire the same server fn twice
+    // (and so the user gets visual feedback via disabled buttons).
+    let mut busy = use_signal(|| false);
+    // Toggles the empty-trash confirm modal. Mirrors the
+    // `delete_target` pattern in `pages::files::mod` (an `Option`
+    // there because the modal needs the list of paths; a bool here
+    // because Empty has no payload).
+    let mut confirm_empty = use_signal(|| false);
 
     // The list_trash server fn is only invoked from the client (wasm)
     // side. SSR renders the chrome + a pending skeleton; the resource
@@ -35,27 +53,47 @@ pub fn TrashPage(ctx: RequestContext) -> Element {
     // Future work could surface a toast / error banner; for now the
     // refetched list is the only feedback channel.
     let on_restore = move |id: i64| {
+        if busy() {
+            return;
+        }
+        busy.set(true);
         spawn(async move {
             let _ = restore_trash(id).await;
             refresh.set(refresh() + 1);
+            busy.set(false);
         });
     };
 
     let on_purge = move |id: i64| {
+        if busy() {
+            return;
+        }
+        busy.set(true);
         spawn(async move {
             let _ = purge_trash(id).await;
             refresh.set(refresh() + 1);
+            busy.set(false);
         });
     };
 
-    let on_empty = move |_evt: MouseEvent| {
+    let on_empty_request = move |_evt: MouseEvent| confirm_empty.set(true);
+    let on_empty_cancel = move |_evt: MouseEvent| confirm_empty.set(false);
+    let on_empty_confirmed = move |_evt: MouseEvent| {
+        if busy() {
+            return;
+        }
+        busy.set(true);
         spawn(async move {
             let _ = empty_trash().await;
+            confirm_empty.set(false);
             refresh.set(refresh() + 1);
+            busy.set(false);
         });
     };
 
     let entries_view: Option<Result<Vec<TrashEntryDto>, String>> = entries.read().clone();
+    let is_busy = busy();
+    let show_confirm = confirm_empty();
 
     rsx! {
         div { class: "files-page",
@@ -67,14 +105,42 @@ pub fn TrashPage(ctx: RequestContext) -> Element {
                         h2 { "Deleted files" }
                         button {
                             class: "trash-empty-btn",
-                            onclick: on_empty,
+                            disabled: is_busy,
+                            onclick: on_empty_request,
                             "Empty trash"
                         }
                     }
                     TrashList {
                         entries: entries_view,
+                        busy: is_busy,
                         on_restore,
                         on_purge,
+                    }
+                }
+            }
+            if show_confirm {
+                div { class: "files-modal-backdrop", onclick: on_empty_cancel,
+                    div {
+                        class: "files-modal",
+                        onclick: move |e: MouseEvent| e.stop_propagation(),
+                        div { class: "files-modal-title", "Empty trash?" }
+                        div { class: "files-modal-body",
+                            "This permanently deletes every item in the trash. This cannot be undone."
+                        }
+                        div { class: "files-modal-actions",
+                            button {
+                                class: "files-modal-cancel",
+                                disabled: is_busy,
+                                onclick: on_empty_cancel,
+                                "Cancel"
+                            }
+                            button {
+                                class: "files-modal-confirm",
+                                disabled: is_busy,
+                                onclick: on_empty_confirmed,
+                                "Yes, empty trash"
+                            }
+                        }
                     }
                 }
             }
@@ -85,6 +151,7 @@ pub fn TrashPage(ctx: RequestContext) -> Element {
 #[derive(Props, Clone, PartialEq)]
 struct TrashListProps {
     entries: Option<Result<Vec<TrashEntryDto>, String>>,
+    busy: bool,
     on_restore: EventHandler<i64>,
     on_purge: EventHandler<i64>,
 }
@@ -93,6 +160,7 @@ struct TrashListProps {
 fn TrashList(props: TrashListProps) -> Element {
     let TrashListProps {
         entries,
+        busy,
         on_restore,
         on_purge,
     } = props;
@@ -106,13 +174,18 @@ fn TrashList(props: TrashListProps) -> Element {
                     TrashRow {
                         key: "{entry.id}",
                         entry,
+                        busy,
                         on_restore,
                         on_purge,
                     }
                 }
             }
         },
-        Some(Err(e)) => rsx! { p { class: "trash-error", "Error: {e}" } },
+        // Raw `ServerFnError` text isn't useful to a user (it's usually
+        // a transport/serde diagnostic). Show a friendly placeholder.
+        Some(Err(_)) => rsx! {
+            p { class: "trash-error", "Couldn't load trash. Try again." }
+        },
         None => rsx! { p { class: "trash-loading", "Loading…" } },
     }
 }
@@ -120,6 +193,7 @@ fn TrashList(props: TrashListProps) -> Element {
 #[derive(Props, Clone, PartialEq)]
 struct TrashRowProps {
     entry: TrashEntryDto,
+    busy: bool,
     on_restore: EventHandler<i64>,
     on_purge: EventHandler<i64>,
 }
@@ -128,6 +202,7 @@ struct TrashRowProps {
 fn TrashRow(props: TrashRowProps) -> Element {
     let TrashRowProps {
         entry,
+        busy,
         on_restore,
         on_purge,
     } = props;
@@ -150,11 +225,13 @@ fn TrashRow(props: TrashRowProps) -> Element {
             div { class: "trash-row-actions",
                 button {
                     class: "trash-restore-btn",
+                    disabled: busy,
                     onclick: move |_| on_restore.call(id),
                     "Restore"
                 }
                 button {
                     class: "trash-purge-btn",
+                    disabled: busy,
                     onclick: move |_| on_purge.call(id),
                     "Delete permanently"
                 }
@@ -216,6 +293,7 @@ mod tests {
             rsx! {
                 TrashList {
                     entries: Some(Ok(rows)),
+                    busy: false,
                     on_restore: move |_: i64| {},
                     on_purge: move |_: i64| {},
                 }
@@ -254,6 +332,7 @@ mod tests {
             rsx! {
                 TrashList {
                     entries: Some(Ok(Vec::<TrashEntryDto>::new())),
+                    busy: false,
                     on_restore: move |_: i64| {},
                     on_purge: move |_: i64| {},
                 }
@@ -288,6 +367,7 @@ mod tests {
             rsx! {
                 TrashList {
                     entries: Some(Ok(rows)),
+                    busy: false,
                     on_restore: move |_: i64| {},
                     on_purge: move |_: i64| {},
                 }
@@ -301,6 +381,76 @@ mod tests {
         assert!(
             !html.contains("📄"),
             "dir-only row should not render the file emoji, got: {html}"
+        );
+    }
+
+    /// Error state renders the friendly placeholder copy, not the raw
+    /// `ServerFnError` text. The raw error (usually a transport / serde
+    /// string like "fetch failed: ...") isn't useful to the user, so the
+    /// view collapses it to a single retryable line. Diagnostics are the
+    /// server log's job.
+    #[test]
+    fn error_state_renders_friendly_copy() {
+        #[component]
+        fn Wrapper() -> Element {
+            rsx! {
+                TrashList {
+                    entries: Some(Err::<Vec<TrashEntryDto>, String>(
+                        "internal: deadline exceeded".into(),
+                    )),
+                    busy: false,
+                    on_restore: move |_: i64| {},
+                    on_purge: move |_: i64| {},
+                }
+            }
+        }
+        // SSR escapes the apostrophe to &#39; in the rendered HTML, so
+        // match on the unambiguous tail of the copy instead of the full
+        // sentence (and on the class name to anchor the placeholder).
+        let html = dioxus::ssr::render_element(rsx! { Wrapper {} });
+        assert!(
+            html.contains("class=\"trash-error\""),
+            "expected trash-error placeholder in HTML, got: {html}"
+        );
+        assert!(
+            html.contains("load trash. Try again."),
+            "expected friendly error copy tail in HTML, got: {html}"
+        );
+        assert!(
+            !html.contains("deadline exceeded"),
+            "error placeholder must not leak the raw error string, got: {html}"
+        );
+    }
+
+    /// When `busy` is true the per-row Restore / Delete buttons render
+    /// the `disabled` attribute so the user sees the in-flight state
+    /// and a fast double-click can't dispatch the server fn twice.
+    #[test]
+    fn busy_disables_row_action_buttons() {
+        let rows = vec![TrashEntryDto {
+            id: 1,
+            basename: "notes.txt".into(),
+            suffix: ".d1700000000".into(),
+            location: "/".into(),
+            deleted_at: 1_700_000_000,
+            r#type: "file".into(),
+        }];
+
+        #[component]
+        fn Wrapper(rows: Vec<TrashEntryDto>) -> Element {
+            rsx! {
+                TrashList {
+                    entries: Some(Ok(rows)),
+                    busy: true,
+                    on_restore: move |_: i64| {},
+                    on_purge: move |_: i64| {},
+                }
+            }
+        }
+        let html = dioxus::ssr::render_element(rsx! { Wrapper { rows } });
+        assert!(
+            html.contains("disabled"),
+            "expected disabled attribute on row buttons when busy, got: {html}"
         );
     }
 
