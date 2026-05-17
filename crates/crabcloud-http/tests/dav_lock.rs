@@ -15,55 +15,28 @@
 
 #![allow(unused_crate_dependencies)]
 
+mod support;
+
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
-use crabcloud_config::test_support::minimal_sqlite_config;
-use crabcloud_core::{AppState, AppStateBuilder};
+use crabcloud_core::AppState;
 use crabcloud_filecache::LockStore;
-use crabcloud_users::{AuthTokenType, BcryptVerifier, PasswordVerifier, User, UserId};
 use std::time::{SystemTime, UNIX_EPOCH};
+use support::{bearer, make_state, seed_user};
 use tempfile::tempdir;
 use tower::ServiceExt;
 
+/// Build state + seed `alice`. Thin wrapper over the shared `make_state` +
+/// `seed_user` so the existing call sites stay one-liners.
 async fn make_state_with_user(db: std::path::PathBuf, data: std::path::PathBuf) -> AppState {
-    let mut cfg = minimal_sqlite_config(db);
-    cfg.datadirectory = data;
-    // Mirror the Batch C/D/E pattern: disable the async scanner under SQLite
-    // so PUT-then-LOCK / PUT-then-UNLOCK don't race with the populate path.
-    cfg.filecache.enabled = false;
-    let state = AppStateBuilder::new(cfg).build().await.unwrap();
-    let hash = BcryptVerifier::new().hash("hunter2").unwrap();
-    state
-        .users
-        .user_store()
-        .create(
-            &User {
-                uid: UserId::new("alice").unwrap(),
-                display_name: "Alice".into(),
-                email: None,
-                enabled: true,
-                last_seen: 0,
-            },
-            Some(&hash),
-        )
-        .await
-        .unwrap();
+    let state = make_state(db, data).await;
+    seed_user(&state, "alice").await;
     state
 }
 
+/// Mint a Bearer token for `alice` against the live token store.
 async fn alice_bearer(state: &AppState) -> String {
-    let ap = state.users.app_passwords().unwrap().clone();
-    let (_row, raw) = ap
-        .mint(
-            &UserId::new("alice").unwrap(),
-            "alice",
-            "DAV",
-            AuthTokenType::Session,
-            false,
-        )
-        .await
-        .unwrap();
-    raw.expose().to_string()
+    bearer(state, "alice").await
 }
 
 async fn body_string(resp: axum::response::Response) -> String {
