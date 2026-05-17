@@ -48,7 +48,6 @@ fn ocs_status_for_http(code: u16) -> OcsStatus {
         401 => OcsStatus::Unauthorized,
         403 => OcsStatus::Forbidden,
         404 => OcsStatus::NotFound,
-        409 => OcsStatus::UnknownError,
         _ => OcsStatus::UnknownError,
     }
 }
@@ -73,7 +72,10 @@ fn from_trash_error(err: TrashError, fmt: Format) -> Response {
         TrashError::WrongUser => (403, "forbidden".to_string()),
         TrashError::RestoreCollision => (409, "restore collision".to_string()),
         TrashError::SourceMissing => (404, "source missing".to_string()),
-        other => (500, other.to_string()),
+        other => {
+            tracing::error!(error = %other, "trash OCS handler: unhandled TrashError");
+            (500, other.to_string())
+        }
     };
     ocs_envelope(code, &msg, Value::Null, fmt)
 }
@@ -120,7 +122,7 @@ async fn list_handler(
             let dtos: Vec<Value> = rows
                 .into_iter()
                 .map(TrashEntryDto::from)
-                .map(|d| serde_json::to_value(d).unwrap_or(Value::Null))
+                .map(|d| serde_json::to_value(d).expect("TrashEntryDto serialises"))
                 .collect();
             ocs_envelope(200, "OK", Value::Array(dtos), fmt.0)
         }

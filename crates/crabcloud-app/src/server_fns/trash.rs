@@ -43,7 +43,7 @@ pub async fn list_trash() -> Result<Vec<TrashEntryDto>, ServerFnError> {
         .trash
         .list(uid.as_str())
         .await
-        .map_err(|e| ServerFnError::new(format!("trash list: {e}")))?;
+        .map_err(map_trash_err)?;
     Ok(rows
         .into_iter()
         .map(|e| TrashEntryDto {
@@ -92,7 +92,7 @@ pub async fn empty_trash() -> Result<u64, ServerFnError> {
         .trash
         .purge_all(uid.as_str())
         .await
-        .map_err(|e| ServerFnError::new(format!("trash purge_all: {e}")))
+        .map_err(map_trash_err)
 }
 
 /// Map the trash service's typed errors to the string-bodied
@@ -107,6 +107,9 @@ fn map_trash_err(err: crabcloud_trash::TrashError) -> ServerFnError {
         TrashError::WrongUser => ServerFnError::new("forbidden"),
         TrashError::RestoreCollision => ServerFnError::new("restore_collision"),
         TrashError::SourceMissing => ServerFnError::new("source_missing"),
-        other => ServerFnError::new(format!("trash: {other}")),
+        other => {
+            tracing::error!(error = %other, "trash server fn: unhandled TrashError");
+            ServerFnError::new(format!("trash: {other}"))
+        }
     }
 }
