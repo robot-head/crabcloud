@@ -10,6 +10,7 @@ base64.workspace = true
 crabcloud-filecache.workspace = true
 crabcloud-sharing.workspace = true
 crabcloud-storage.workspace = true
+crabcloud-trash.workspace = true
 crabcloud-users.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["fs", "io-util", "sync", "macros"] }

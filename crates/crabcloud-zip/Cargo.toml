@@ -18,9 +18,10 @@ urlencoding = { workspace = true }
 zip = { workspace = true }
 
 [dev-dependencies]
-crabcloud-config = { workspace = true }
+crabcloud-config = { workspace = true, features = ["test-support"] }
 crabcloud-db = { workspace = true }
 crabcloud-filecache = { workspace = true }
+crabcloud-trash = { workspace = true }
 crabcloud-users = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "test-util"] }

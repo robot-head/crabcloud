@@ -143,6 +143,7 @@ impl AppState {
             mounts,
             self.filecache.clone(),
             self.storage_sink.clone(),
+            self.trash.clone(),
         ))
     }
 

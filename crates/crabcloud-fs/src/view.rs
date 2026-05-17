@@ -7,12 +7,28 @@ use crate::error::{FsError, FsResult};
 use crate::mount::{Mount, MountMetadata};
 use crate::path::UserPath;
 use crabcloud_filecache::FileCache;
-use crabcloud_storage::{ChannelEventSink, DirEntry, FileMetadata, Storage, StoragePath};
+use crabcloud_storage::{ChannelEventSink, DirEntry, EventSink, FileMetadata, Storage, StoragePath};
 use crabcloud_users::UserId;
 use std::ops::Range;
 use std::pin::Pin;
 use std::sync::Arc;
 use tokio::io::AsyncRead;
+
+/// Map a `TrashError` from the trash service into an `FsError`. The
+/// trash error variants are MVP-tight, so most map to dedicated
+/// `FsError` variants; anything else flattens into `FsError::Trash`.
+fn map_trash_err(e: crabcloud_trash::TrashError) -> FsError {
+    use crabcloud_trash::TrashError::*;
+    match e {
+        NotFound | SourceMissing => FsError::NotFound,
+        WrongUser => FsError::Forbidden,
+        RestoreCollision => FsError::Conflict,
+        CrossStorage => FsError::CrossStorage,
+        Io(e) => FsError::Storage(crabcloud_storage::StorageError::Io(e)),
+        Db(e) => FsError::Trash(format!("db: {e}")),
+        FileCache(s) => FsError::Trash(format!("filecache: {s}")),
+    }
+}
 
 /// Translate a `(storage, path)` pair before filecache lookup, so that
 /// `Storage` wrappers (e.g. `SharedSubrootStorage`) route cache rows
@@ -57,6 +73,9 @@ pub struct View {
     pub(crate) mounts: Vec<Mount>,
     pub(crate) filecache: Arc<FileCache>,
     pub(crate) storage_sink: Arc<ChannelEventSink>,
+    /// Trash bin service. SP12: `View::delete` routes through here
+    /// (soft-delete); `View::hard_delete` bypasses it.
+    pub(crate) trash: Arc<crabcloud_trash::Trash>,
 }
 
 impl View {
@@ -65,12 +84,14 @@ impl View {
         mounts: Vec<Mount>,
         filecache: Arc<FileCache>,
         storage_sink: Arc<ChannelEventSink>,
+        trash: Arc<crabcloud_trash::Trash>,
     ) -> Self {
         Self {
             uid,
             mounts,
             filecache,
             storage_sink,
+            trash,
         }
     }
 
@@ -286,7 +307,72 @@ impl View {
         Ok(meta)
     }
 
+    /// Soft-delete: routes through the trash service. Authed UI / DAV /
+    /// OCS surfaces all reach this entry point. The trash service owns
+    /// the on-disk rename; we still emit a `StorageEvent::Deleted` so
+    /// the filecache scanner sees the file disappear from
+    /// `<datadir>/<uid>/files/...` and removes its row.
+    ///
+    /// Non-home mounts (share mounts, public-link mounts) fall through
+    /// to `hard_delete`: the trash service moves bytes within
+    /// `<datadir>/<uid>/files/...` which doesn't apply to bytes that
+    /// live under another user's home storage. The storage backend on
+    /// the share / link mount enforces the relevant permission check
+    /// (e.g. `SharedSubrootStorage` returns `PermissionDenied` on a
+    /// read-only link), so the original 403 behavior is preserved.
+    /// Cross-storage trash is out of scope for the MVP — see spec §6.
     pub async fn delete(&self, user_path: &UserPath) -> FsResult<()> {
+        let (mount, storage_path) = self.resolve(user_path)?;
+        if mount.metadata.is_some() {
+            // Share / public-link mount: defer to the storage backend's
+            // permission check + hard-delete semantics. Trash is only
+            // meaningful for files in the user's own home.
+            mount
+                .storage
+                .delete(&storage_path, &*self.storage_sink)
+                .await?;
+            return Ok(());
+        }
+        // Look up the type and best-effort fileid_legacy from
+        // filecache before the bytes move. Errors here are
+        // non-blocking — the soft_delete itself can still succeed.
+        let (cache_storage, cache_path) = cache_key_for(&mount.storage, &storage_path)?;
+        let row = self.filecache.lookup(cache_storage.id(), &cache_path).await.ok().flatten();
+        let r#type = match row.as_ref().map(|r| r.kind) {
+            Some(crabcloud_storage::FileKind::Directory) => crabcloud_trash::TrashType::Dir,
+            _ => crabcloud_trash::TrashType::File,
+        };
+        let fileid_legacy = row.as_ref().map(|r| r.fileid);
+
+        self.trash
+            .soft_delete(
+                self.uid.as_str(),
+                user_path.as_str(),
+                r#type,
+                fileid_legacy,
+            )
+            .await
+            .map_err(map_trash_err)?;
+
+        // Tell the scanner the bytes are gone from the user's home
+        // storage so the filecache row is removed. The trash bin
+        // storage is intentionally not in the filecache for SP12 MVP
+        // (per spec §2 decision #4 the storage row is lazily created
+        // for future use, but no scanner wires it up in Batch A).
+        self.storage_sink
+            .emit(crabcloud_storage::StorageEvent::Deleted {
+                storage_id: mount.storage.id().to_string(),
+                path: storage_path,
+            })
+            .await;
+        Ok(())
+    }
+
+    /// Hard-delete: removes the file without creating a trash entry.
+    /// Use only when the caller has explicit authority to skip trash —
+    /// anonymous public-link DELETE (Batch B switches public-link
+    /// handlers here), the trash sweeper itself, etc.
+    pub async fn hard_delete(&self, user_path: &UserPath) -> FsResult<()> {
         let (mount, storage_path) = self.resolve(user_path)?;
         mount
             .storage
@@ -351,24 +437,27 @@ mod tests {
             .enable_all()
             .build()
             .unwrap();
-        let pool = rt.block_on(async {
+        let (pool, datadir) = rt.block_on(async {
             let dir = tempfile::tempdir().unwrap();
             let cfg =
                 crabcloud_config::test_support::minimal_sqlite_config(dir.path().join("v.db"));
+            let datadir = cfg.datadirectory.clone();
             std::mem::forget(dir);
             let pool = DbPool::connect(&cfg).await.unwrap();
             let mut runner = MigrationRunner::new(&pool, &cfg.dbtableprefix);
             runner.register(core_set());
             runner.run().await.unwrap();
-            pool
+            (pool, datadir)
         });
         let _ = MemoryCache::new(); // anchor crabcloud_cache
+        let trash = Arc::new(crabcloud_trash::Trash::new(Arc::new(pool.clone()), datadir));
 
         View::new(
             UserId::new("alice").unwrap(),
             mounts,
             Arc::new(FileCache::new(pool)),
             Arc::new(ChannelEventSink::new(8)),
+            trash,
         )
     }
 

@@ -127,6 +127,7 @@ pub async fn list_public_link(
         mounts,
         state.filecache.clone(),
         state.storage_sink.clone(),
+        state.trash.clone(),
     );
 
     let entries = view

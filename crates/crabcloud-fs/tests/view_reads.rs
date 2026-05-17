@@ -101,12 +101,18 @@ async fn view_mkdir_creates_directory() {
 
 #[tokio::test]
 async fn view_delete_removes_file() {
+    // SP12: `View::delete` routes through `Trash::soft_delete`, which
+    // moves on-disk bytes under `<datadir>/<uid>/files/...`. This test
+    // uses `MemoryStorage` (no on-disk bytes), so it asserts the
+    // hard-delete contract directly. The soft-delete reroute is
+    // exercised by `view_reroutes_delete_to_trash` below + the
+    // `crabcloud-trash` e2e tests.
     let h = harness().await;
     let view = view_home(&h);
     view.put_file(&UserPath::new("/del.txt").unwrap(), body(b"x".to_vec()))
         .await
         .unwrap();
-    view.delete(&UserPath::new("/del.txt").unwrap())
+    view.hard_delete(&UserPath::new("/del.txt").unwrap())
         .await
         .unwrap();
     let r = view.stat(&UserPath::new("/del.txt").unwrap()).await;
@@ -120,10 +126,12 @@ async fn view_delete_removes_file() {
 
 #[tokio::test]
 async fn view_delete_removes_empty_directory() {
+    // Same rationale as `view_delete_removes_file`; uses
+    // `hard_delete` because the harness storage is in-memory.
     let h = harness().await;
     let view = view_home(&h);
     view.mkdir(&UserPath::new("/empty").unwrap()).await.unwrap();
-    view.delete(&UserPath::new("/empty").unwrap())
+    view.hard_delete(&UserPath::new("/empty").unwrap())
         .await
         .unwrap();
     let r = view.stat(&UserPath::new("/empty").unwrap()).await;

@@ -197,6 +197,7 @@ async fn build_view(state: &AppState, ctx: &PublicLinkAuthContext) -> Result<Vie
         mounts,
         state.filecache.clone(),
         state.storage_sink.clone(),
+        state.trash.clone(),
     ))
 }
 
