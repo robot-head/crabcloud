@@ -8,6 +8,7 @@
 pub mod notification_prefs;
 pub mod public_link;
 pub mod trash;
+pub mod versions;
 
 use dioxus::fullstack::get;
 use dioxus::prelude::*;

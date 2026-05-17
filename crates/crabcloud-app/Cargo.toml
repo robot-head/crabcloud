@@ -87,6 +87,7 @@ crabcloud-sharing = { workspace = true }
 crabcloud-storage = { workspace = true }
 crabcloud-trash = { workspace = true }
 crabcloud-users = { workspace = true }
+crabcloud-versions = { workspace = true }
 # `dx serve` sets `IP` + `PORT` env vars on the spawned server. We read them
 # via `fullstack_address_or_localhost()` so the dev-server `Cmd::Serve` binds
 # where dx expects. Already a transitive of `dioxus`; declared direct so we
@@ -109,6 +110,7 @@ crabcloud-sharing = { workspace = true }
 crabcloud-storage = { workspace = true }
 crabcloud-trash = { workspace = true }
 crabcloud-users = { workspace = true }
+crabcloud-versions = { workspace = true }
 dioxus = { workspace = true, features = ["server"] }
 serde_json.workspace = true
 tempfile.workspace = true
@@ -138,6 +140,10 @@ required-features = ["server"]
 
 [[test]]
 name = "server_fns_trash"
+required-features = ["server"]
+
+[[test]]
+name = "server_fns_versions"
 required-features = ["server"]
 
 [lints]
