@@ -1,5 +1,6 @@
 //! Page chrome: top bar (logo, app name, user chip) + left sidebar
-//! ("All files" only for MVP). See spec §2 (decision 7).
+//! (currently "All files", "Shared with you", and "Deleted files").
+//! See spec §2 (decision 7) and SP12 (trash bin).
 
 use crate::context::RequestContext;
 use dioxus::prelude::*;
@@ -55,6 +56,14 @@ pub fn Sidebar() -> Element {
                     },
                     span { class: "sidebar-icon", "🌐" }
                     span { "Shared with you" }
+                }
+                li {
+                    class: "sidebar-item sidebar-link",
+                    onclick: move |_| {
+                        nav.push("/trash");
+                    },
+                    span { class: "sidebar-icon", "🗑" }
+                    span { "Deleted files" }
                 }
             }
         }
