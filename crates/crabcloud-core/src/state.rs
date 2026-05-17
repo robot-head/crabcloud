@@ -441,6 +441,7 @@ impl AppStateBuilder {
             Arc::new(pool.clone()),
             self.config.datadirectory.clone(),
             versions.clone(),
+            activity.clone(),
         ));
         let (trash_sweeper, trash_sweeper_shutdown) =
             TrashSweeper::new(trash.clone(), self.config.trash_retention_days);

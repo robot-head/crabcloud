@@ -96,7 +96,7 @@ mod tests {
             datadir.clone(),
             std::sync::Arc::new(crabcloud_activity::NoopEmitter),
         ));
-        Arc::new(Trash::new(pool, datadir, versions))
+        Arc::new(Trash::new(pool, datadir, versions, std::sync::Arc::new(crabcloud_activity::NoopEmitter)))
     }
 
     #[tokio::test]

@@ -38,7 +38,7 @@ async fn setup() -> (Arc<DbPool>, PathBuf, TempDir, TempDir) {
 /// cascade itself build their own.
 fn make_trash(pool: Arc<DbPool>, datadir: PathBuf) -> Trash {
     let versions = Arc::new(Versions::new(pool.clone(), datadir.clone(), std::sync::Arc::new(crabcloud_activity::NoopEmitter)));
-    Trash::new(pool, datadir, versions)
+    Trash::new(pool, datadir, versions, std::sync::Arc::new(crabcloud_activity::NoopEmitter))
 }
 
 /// Seed: write a file inside a user's "files" dir so we can soft-delete it.
@@ -434,7 +434,7 @@ async fn purge_cascades_to_versions_for_fileid() {
     // the source file on hard-delete.
     let (pool, datadir, _d, _dd) = setup().await;
     let versions = Arc::new(Versions::new(pool.clone(), datadir.clone(), std::sync::Arc::new(crabcloud_activity::NoopEmitter)));
-    let trash = Trash::new(pool.clone(), datadir.clone(), versions.clone());
+    let trash = Trash::new(pool.clone(), datadir.clone(), versions.clone(), std::sync::Arc::new(crabcloud_activity::NoopEmitter));
 
     // Seed: alice has a file at /report.docx with two snapshotted
     // versions tied to fileid 100.
@@ -474,7 +474,7 @@ async fn soft_delete_does_not_cascade_to_versions() {
     // until the row is purged.
     let (pool, datadir, _d, _dd) = setup().await;
     let versions = Arc::new(Versions::new(pool.clone(), datadir.clone(), std::sync::Arc::new(crabcloud_activity::NoopEmitter)));
-    let trash = Trash::new(pool.clone(), datadir.clone(), versions.clone());
+    let trash = Trash::new(pool.clone(), datadir.clone(), versions.clone(), std::sync::Arc::new(crabcloud_activity::NoopEmitter));
 
     write_user_file(&datadir, "alice", "/notes.md", b"hello").await;
     versions
@@ -490,4 +490,39 @@ async fn soft_delete_does_not_cascade_to_versions() {
 
     // Soft-delete did NOT touch versions.
     assert_eq!(versions.list_for("alice", 200).await.unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn restore_emits_file_restored() {
+    let (pool, datadir, _d, _dd) = setup().await;
+    let settings = crabcloud_activity::ActivitySettings::new(pool.clone());
+    let activity = std::sync::Arc::new(crabcloud_activity::Activity::new(
+        pool.clone(),
+        settings,
+        0,
+    ));
+    let versions = std::sync::Arc::new(crabcloud_versions::Versions::new(
+        pool.clone(),
+        datadir.clone(),
+        std::sync::Arc::new(crabcloud_activity::NoopEmitter),
+    ));
+    let trash = Trash::new(
+        pool.clone(),
+        datadir.clone(),
+        versions,
+        activity.clone() as std::sync::Arc<dyn crabcloud_activity::ActivityEmitter>,
+    );
+
+    write_user_file(&datadir, "alice", "/x.txt", b"hi").await;
+    let id = trash
+        .soft_delete("alice", "/x.txt", TrashType::File, Some(100))
+        .await
+        .unwrap();
+    trash.restore("alice", id, None).await.unwrap();
+
+    let rows = activity.list("alice", None, 100).await.unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].event_type, "file_restored");
+    assert_eq!(rows[0].actor, "alice");
+    assert_eq!(rows[0].object_id, Some(100));
 }

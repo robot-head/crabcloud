@@ -45,7 +45,7 @@ pub async fn harness() -> Harness {
     let datadir = dir.path().to_path_buf();
     let pool_arc = Arc::new(pool.clone());
     let versions = Arc::new(Versions::new(pool_arc.clone(), datadir.clone(), std::sync::Arc::new(crabcloud_activity::NoopEmitter)));
-    let trash = Arc::new(Trash::new(pool_arc, datadir.clone(), versions.clone()));
+    let trash = Arc::new(Trash::new(pool_arc, datadir.clone(), versions.clone(), std::sync::Arc::new(crabcloud_activity::NoopEmitter)));
     Harness {
         pool,
         filecache,

@@ -997,6 +997,7 @@ mod tests {
             pool_arc,
             datadir,
             versions.clone(),
+            std::sync::Arc::new(crabcloud_activity::NoopEmitter),
         ));
 
         View::new(

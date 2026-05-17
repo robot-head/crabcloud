@@ -177,6 +177,7 @@ pub(crate) mod tests {
             pool_arc,
             dir.path().to_path_buf(),
             versions.clone(),
+            std::sync::Arc::new(crabcloud_activity::NoopEmitter),
         ));
 
         // Seed:
