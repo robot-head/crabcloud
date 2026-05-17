@@ -148,7 +148,10 @@ async fn list_trash_returns_seeded_entry() {
     );
     let entries: Vec<crabcloud_app::TrashEntryDto> =
         serde_json::from_slice(&body).unwrap_or_else(|e| {
-            panic!("decode TrashEntryDto list: {e} body={:?}", String::from_utf8_lossy(&body))
+            panic!(
+                "decode TrashEntryDto list: {e} body={:?}",
+                String::from_utf8_lossy(&body)
+            )
         });
     assert_eq!(entries.len(), 1, "{entries:?}");
     let e = &entries[0];
@@ -241,7 +244,13 @@ async fn empty_trash_returns_count_and_clears_bin() {
     }
     let app = build_app(state);
 
-    let resp = post_json(&app, &token, "/api/files/trash/empty", serde_json::json!({})).await;
+    let resp = post_json(
+        &app,
+        &token,
+        "/api/files/trash/empty",
+        serde_json::json!({}),
+    )
+    .await;
     let (status, body) = decode_bytes(resp).await;
     assert_eq!(
         status,

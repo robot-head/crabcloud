@@ -135,12 +135,7 @@ async fn restore_handler(
     Path(id): Path<i64>,
 ) -> Response {
     match state.trash.restore(ctx.user_id.as_str(), id, None).await {
-        Ok(r) => ocs_envelope(
-            200,
-            "OK",
-            serde_json::json!({ "path": r.path }),
-            fmt.0,
-        ),
+        Ok(r) => ocs_envelope(200, "OK", serde_json::json!({ "path": r.path }), fmt.0),
         Err(e) => from_trash_error(e, fmt.0),
     }
 }
@@ -163,12 +158,7 @@ async fn empty_handler(
     fmt: OcsFormat,
 ) -> Response {
     match state.trash.purge_all(ctx.user_id.as_str()).await {
-        Ok(n) => ocs_envelope(
-            200,
-            "OK",
-            serde_json::json!({ "purged": n }),
-            fmt.0,
-        ),
+        Ok(n) => ocs_envelope(200, "OK", serde_json::json!({ "purged": n }), fmt.0),
         Err(e) => from_trash_error(e, fmt.0),
     }
 }

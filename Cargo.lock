@@ -852,6 +852,7 @@ dependencies = [
  "crabcloud-publiclinks",
  "crabcloud-sharing",
  "crabcloud-storage",
+ "crabcloud-trash",
  "crabcloud-users",
  "dioxus",
  "dioxus-cli-config",
