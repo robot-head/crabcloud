@@ -20,7 +20,7 @@ mod types;
 pub use error::ShareError;
 pub use mail::{MailEnqueueError, MailEnqueuer, NullEnqueuer};
 pub use permissions::SharePermissions;
-pub use service::Shares;
+pub use service::{Shares, SharesConfig};
 pub use types::{
     CreateShareRequest, ExpiringLink, ItemType, ShareRow, ShareType, UpdateShareFields,
 };

@@ -10,7 +10,9 @@ use crabcloud_config::test_support::minimal_sqlite_config;
 use crabcloud_config::{DbType, FileConfig};
 use crabcloud_db::{core_set, DbError, DbPool, MigrationRunner};
 use crabcloud_filecache::{FileCache, DIRECTORY_MIMETYPE};
-use crabcloud_sharing::{CreateShareRequest, MailEnqueueError, MailEnqueuer, ShareType, Shares};
+use crabcloud_sharing::{
+    CreateShareRequest, MailEnqueueError, MailEnqueuer, ShareType, Shares, SharesConfig,
+};
 use crabcloud_storage::{
     ETag, FileKind, FileMetadata, Mimetype, Permissions, StorageEvent, StoragePath,
 };
@@ -151,14 +153,14 @@ impl Fixture {
         ));
         let filecache = Arc::new(FileCache::new((*pool_arc).clone()));
         let prefs = NotificationPrefs::new(pool_arc.clone());
-        let shares = Shares::new(
-            pool_arc.clone(),
-            users.clone(),
-            filecache.clone(),
-            enqueuer,
+        let shares = Shares::new(SharesConfig {
+            pool: pool_arc.clone(),
+            users: users.clone(),
+            filecache: filecache.clone(),
+            mail: enqueuer,
             prefs,
-            "https://test.example".to_string(),
-        );
+            instance_url: "https://test.example".to_string(),
+        });
         let mail = recorder.unwrap_or_else(|| Arc::new(RecordingEnqueuer::new()));
         Self {
             pool: pool_arc,

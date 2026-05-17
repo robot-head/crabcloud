@@ -40,28 +40,34 @@ pub struct Shares {
     pub(crate) instance_url: String,
 }
 
+/// Construction parameters for `Shares::new`.
+///
+/// Workspace-internal callers are expected to use struct-literal form so each
+/// field is named at the call site (avoids silent positional swaps among the
+/// several `Arc<...>` parameters). Add new fields with care — every call site
+/// will need updating.
+pub struct SharesConfig {
+    pub pool: Arc<DbPool>,
+    pub users: Arc<UsersService>,
+    pub filecache: Arc<FileCache>,
+    pub mail: Arc<dyn MailEnqueuer>,
+    pub prefs: NotificationPrefs,
+    /// Base URL inserted into mail templates' `{{ link_url }}` (so callers
+    /// see `https://host/s/<token>`). Empty string is tolerated — the
+    /// templates degrade to relative `/s/<token>` URLs.
+    pub instance_url: String,
+}
+
 impl Shares {
-    /// Construct a `Shares` service.
-    ///
-    /// `instance_url` is the base URL inserted into mail templates'
-    /// `{{ link_url }}` (so callers see `https://host/s/<token>`).
-    /// Empty string is tolerated — the templates degrade to relative
-    /// `/s/<token>` URLs.
-    pub fn new(
-        pool: Arc<DbPool>,
-        users: Arc<UsersService>,
-        filecache: Arc<FileCache>,
-        mail: Arc<dyn MailEnqueuer>,
-        prefs: NotificationPrefs,
-        instance_url: String,
-    ) -> Self {
+    /// Construct a `Shares` service from a `SharesConfig`.
+    pub fn new(cfg: SharesConfig) -> Self {
         Self {
-            pool,
-            users,
-            filecache,
-            mail,
-            prefs,
-            instance_url,
+            pool: cfg.pool,
+            users: cfg.users,
+            filecache: cfg.filecache,
+            mail: cfg.mail,
+            prefs: cfg.prefs,
+            instance_url: cfg.instance_url,
         }
     }
 
