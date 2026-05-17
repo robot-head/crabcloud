@@ -311,12 +311,14 @@ impl AppStateBuilder {
         let instance_url = self.config.overwrite_cli_url.clone().unwrap_or_default();
 
         let shares = Arc::new(crabcloud_sharing::Shares::new(
-            Arc::new(pool.clone()),
-            Arc::new(users.clone()),
-            filecache.clone(),
-            Arc::new(mail_queue.clone()),
-            notification_prefs.clone(),
-            instance_url,
+            crabcloud_sharing::SharesConfig {
+                pool: Arc::new(pool.clone()),
+                users: Arc::new(users.clone()),
+                filecache: filecache.clone(),
+                mail: Arc::new(mail_queue.clone()),
+                prefs: notification_prefs.clone(),
+                instance_url,
+            },
         ));
         let mount_resolver: Arc<dyn MountResolver> = Arc::new(ShareMountResolver::new(
             HomeMountResolver::new(storage_factory.clone()),

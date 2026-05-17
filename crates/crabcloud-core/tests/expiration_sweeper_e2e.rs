@@ -15,7 +15,7 @@ use crabcloud_core::{ExpirationWarningSweeper, MailQueue};
 use crabcloud_db::{core_set, DbPool, MigrationRunner};
 use crabcloud_filecache::{FileCache, DIRECTORY_MIMETYPE};
 use crabcloud_mail::EventType;
-use crabcloud_sharing::Shares;
+use crabcloud_sharing::{Shares, SharesConfig};
 use crabcloud_storage::{
     ETag, FileKind, FileMetadata, Mimetype, Permissions, StorageEvent, StoragePath,
 };
@@ -54,14 +54,14 @@ async fn fixture() -> Fx {
     let filecache = Arc::new(FileCache::new((*pool_arc).clone()));
     let queue = MailQueue::new(pool_arc.clone());
     let prefs = NotificationPrefs::new(pool_arc.clone());
-    let shares = Arc::new(Shares::new(
-        pool_arc.clone(),
-        Arc::new(users.clone()),
-        filecache.clone(),
-        Arc::new(queue.clone()),
-        prefs.clone(),
-        "https://test.example".to_string(),
-    ));
+    let shares = Arc::new(Shares::new(SharesConfig {
+        pool: pool_arc.clone(),
+        users: Arc::new(users.clone()),
+        filecache: filecache.clone(),
+        mail: Arc::new(queue.clone()),
+        prefs: prefs.clone(),
+        instance_url: "https://test.example".to_string(),
+    }));
     Fx {
         pool: pool_arc,
         shares,
