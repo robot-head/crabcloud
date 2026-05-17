@@ -1,5 +1,6 @@
 //! `AppState` — the clone-cheap composition handle.
 
+use crate::activity_sweeper::ActivitySweeper;
 use crate::appconfig::AppConfigService;
 use crate::bootstrap::BootstrapRegistry;
 use crate::error::{CoreResult, Error};
@@ -122,6 +123,13 @@ pub struct AppState {
     /// Versions sweeper shutdown handle. Always present; spawned
     /// unconditionally in `AppStateBuilder::build`.
     pub versions_sweeper_shutdown: Arc<tokio::sync::Notify>,
+    /// Activity feed service. Cheap to clone.
+    pub activity: Arc<crabcloud_activity::Activity>,
+    /// Activity settings (per-user-per-event stream toggles).
+    pub activity_settings: crabcloud_activity::ActivitySettings,
+    /// Activity sweeper shutdown handle. Always present; spawned
+    /// unconditionally in `AppStateBuilder::build`.
+    pub activity_sweeper_shutdown: Arc<tokio::sync::Notify>,
 }
 
 impl std::fmt::Debug for AppState {
@@ -331,6 +339,23 @@ impl AppStateBuilder {
         let storage_factory: Arc<dyn StorageFactory> =
             Arc::new(LocalStorageFactory::new(self.config.datadirectory.clone()));
 
+        // Activity service + settings + daily sweeper. Constructed BEFORE
+        // shares/trash/versions/views so each of those can take an
+        // `Arc<dyn ActivityEmitter>` for their emit hooks (SP14 Batch A).
+        // The sweeper is spawned unconditionally; tests can
+        // `notify_one()` on `activity_sweeper_shutdown` in teardown. A
+        // `retention_days = 0` short-circuits sweep_once to Ok(0).
+        let activity_settings =
+            crabcloud_activity::ActivitySettings::new(Arc::new(pool.clone()));
+        let activity = Arc::new(crabcloud_activity::Activity::new(
+            Arc::new(pool.clone()),
+            activity_settings.clone(),
+            self.config.activity_coalesce_window_secs as i64,
+        ));
+        let (activity_sweeper, activity_sweeper_shutdown) =
+            ActivitySweeper::new(activity.clone(), self.config.activity_retention_days);
+        std::mem::drop(tokio::spawn(async move { activity_sweeper.run().await }));
+
         // Mail wiring needs to be built BEFORE `Shares` because the share
         // service owns an `Arc<dyn MailEnqueuer>` (impl'd by `MailQueue`).
         // `Shares::new` also takes `NotificationPrefs` and the instance URL
@@ -507,6 +532,9 @@ impl AppStateBuilder {
             trash_sweeper_shutdown,
             versions,
             versions_sweeper_shutdown,
+            activity,
+            activity_settings,
+            activity_sweeper_shutdown,
         };
 
         self.registry.run(&state).await?;
