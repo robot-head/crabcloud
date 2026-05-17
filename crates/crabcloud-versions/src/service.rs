@@ -113,6 +113,24 @@ impl Versions {
             .await
         {
             Ok(id) => id,
+            Err(VersionsError::DuplicateSnapshot) => {
+                // A concurrent writer in the same `version_mtime` second
+                // already inserted the row. Both racers copied the same
+                // source bytes to the same `.v{mtime}` destination path
+                // — the second copy overwrote the first with byte-
+                // identical content. Leaving the file in place keeps
+                // the winning row's on-disk bytes intact. Don't remove
+                // it: that path is shared state between both racers
+                // and the surviving row points at it.
+                tracing::debug!(
+                    storage_id,
+                    fileid,
+                    version_mtime = now_secs,
+                    uid,
+                    "versions: unique violation on concurrent snapshot; treating as no-op"
+                );
+                return Ok(None);
+            }
             Err(e) => {
                 tracing::warn!(
                     error = %e,
@@ -145,8 +163,11 @@ impl Versions {
                     .bind(version_mtime)
                     .bind(size)
                     .execute(p)
-                    .await?;
-                Ok(r.last_insert_rowid())
+                    .await;
+                match r {
+                    Ok(r) => Ok(r.last_insert_rowid()),
+                    Err(e) => Err(map_insert_err(e)),
+                }
             }
             DbPool::MySql(p) => {
                 let r = sqlx::query(sql::INSERT_QM)
@@ -157,11 +178,14 @@ impl Versions {
                     .bind(version_mtime)
                     .bind(size)
                     .execute(p)
-                    .await?;
-                Ok(r.last_insert_id() as i64)
+                    .await;
+                match r {
+                    Ok(r) => Ok(r.last_insert_id() as i64),
+                    Err(e) => Err(map_insert_err(e)),
+                }
             }
             DbPool::Postgres(p) => {
-                let row = sqlx::query(sql::INSERT_PG)
+                let r = sqlx::query(sql::INSERT_PG)
                     .bind(storage_id)
                     .bind(fileid)
                     .bind(uid)
@@ -169,8 +193,11 @@ impl Versions {
                     .bind(version_mtime)
                     .bind(size)
                     .fetch_one(p)
-                    .await?;
-                Ok(row.try_get::<i64, _>("id")?)
+                    .await;
+                match r {
+                    Ok(row) => Ok(row.try_get::<i64, _>("id")?),
+                    Err(e) => Err(map_insert_err(e)),
+                }
             }
         }
     }
@@ -297,9 +324,12 @@ impl Versions {
         if entry.user != uid {
             return Err(VersionsError::WrongUser);
         }
-        // Snapshot current first. A `None` here means current was zero or
-        // throttled; restore still proceeds.
-        let _ = self
+        // Snapshot current first. Mirror the View hook's policy:
+        // `SourceMissing` is a soft skip (restore is the recovery lever
+        // and must succeed even if current is gone). `Ok(None)` for
+        // zero-size / throttled / oversize is also fine — restore
+        // proceeds.
+        match self
             .snapshot_if_needed(
                 uid,
                 entry.storage_id,
@@ -310,7 +340,18 @@ impl Versions {
                 throttle_secs,
                 max_bytes,
             )
-            .await?;
+            .await
+        {
+            Ok(_) => {}
+            Err(VersionsError::SourceMissing) => {
+                tracing::debug!(
+                    version_id,
+                    uid,
+                    "restore: current source missing, proceeding with restore"
+                );
+            }
+            Err(e) => return Err(e),
+        }
 
         let rel = entry.path.trim_start_matches('/');
         let parent = Path::new(rel).parent().unwrap_or_else(|| Path::new(""));
@@ -648,6 +689,21 @@ fn row_from_mysql(row: sqlx::mysql::MySqlRow) -> Result<VersionEntry, VersionsEr
         version_mtime: row.try_get("version_mtime")?,
         size: row.try_get("size")?,
     })
+}
+
+/// Detect the canonical "unique violation" surface for the dialects
+/// crabcloud supports and translate it to `DuplicateSnapshot`. The race
+/// covered is: two concurrent writers in the same `version_mtime`
+/// second snapshotting the same `(storage_id, fileid)`; the UNIQUE
+/// index on `(storage_id, fileid, version_mtime)` rejects the second
+/// insert.
+fn map_insert_err(e: sqlx::Error) -> VersionsError {
+    if let sqlx::Error::Database(db_err) = &e {
+        if db_err.is_unique_violation() {
+            return VersionsError::DuplicateSnapshot;
+        }
+    }
+    VersionsError::Db(e)
 }
 
 fn row_from_postgres(row: sqlx::postgres::PgRow) -> Result<VersionEntry, VersionsError> {

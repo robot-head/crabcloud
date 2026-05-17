@@ -348,3 +348,80 @@ async fn sweep_tiered_drops_duplicates_in_same_hour_bucket() {
     // Newest-first ordering: the surviving row is the newer of the two.
     assert_eq!(post[0].version_mtime, now - 7 * day);
 }
+
+#[tokio::test]
+async fn restore_succeeds_when_current_source_missing() {
+    // Regression: restore is the recovery lever. The pre-restore
+    // snapshot of CURRENT must not abort restore when current is gone
+    // from disk (the very situation where the user needs to recover an
+    // older version).
+    let (pool, datadir, _d, _dd) = setup().await;
+    let versions = Versions::new(pool.clone(), datadir.clone());
+    write_user_file(&datadir, "alice", "/report.docx", b"v1").await;
+    let id = versions
+        .snapshot_if_needed("alice", 1, 100, "/report.docx", 2, 1_000, 2, 1024)
+        .await
+        .unwrap()
+        .expect("snapshot");
+
+    // Simulate current being gone on disk (no row removal — the
+    // filecache still thinks the file exists with size 2).
+    tokio::fs::remove_file(datadir.join("alice/files/report.docx"))
+        .await
+        .unwrap();
+
+    // Restore must succeed; the pre-snapshot of the missing current is
+    // a soft skip.
+    versions
+        .restore("alice", id, 2, 2_000, 0, 1024)
+        .await
+        .expect("restore should succeed even with current missing");
+
+    // Restored bytes are present.
+    let current = datadir.join("alice/files/report.docx");
+    assert_eq!(tokio::fs::read(&current).await.unwrap(), b"v1");
+
+    // Only the original version row remains (no pre-restore snapshot
+    // was taken because current was gone).
+    let rows = versions.list_for("alice", 100).await.unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].id, id);
+}
+
+#[tokio::test]
+async fn snapshot_duplicate_in_same_second_is_soft_skip() {
+    // The UNIQUE index on (storage_id, fileid, version_mtime) rejects
+    // a second insert with the same triple. `snapshot_if_needed` must
+    // surface that as `Ok(None)` (not Err) so concurrent writers in
+    // the same second don't break either caller's write path.
+    let (pool, datadir, _d, _dd) = setup().await;
+    let versions = Versions::new(pool.clone(), datadir.clone());
+    write_user_file(&datadir, "alice", "/race.txt", b"v1").await;
+
+    let id = versions
+        .snapshot_if_needed("alice", 7, 100, "/race.txt", 2, 1_000, 0, 1024)
+        .await
+        .unwrap()
+        .expect("first snapshot wins");
+    assert!(id > 0);
+
+    // Second snapshot at identical `now_secs` against the same
+    // (storage_id, fileid). Throttle is 0 so we don't short-circuit on
+    // the throttle path — we want the INSERT to actually be attempted.
+    let r = versions
+        .snapshot_if_needed("alice", 7, 100, "/race.txt", 2, 1_000, 0, 1024)
+        .await
+        .expect("duplicate must not error");
+    assert!(r.is_none(), "duplicate in same second is a soft skip");
+
+    // The on-disk version file is preserved (the winner's bytes — and
+    // since both racers race identical source bytes, it's lossless).
+    let v_path = datadir.join("alice/files_versions/race.txt.v1000");
+    assert!(v_path.exists());
+    assert_eq!(tokio::fs::read(&v_path).await.unwrap(), b"v1");
+
+    // Exactly one row in the table.
+    let rows = versions.list_for("alice", 100).await.unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].id, id);
+}

@@ -51,6 +51,13 @@ fn map_versions_err(e: crabcloud_versions::VersionsError) -> FsError {
         SourceMissing => FsError::NotFound,
         WrongUser => FsError::Forbidden,
         NotFound => FsError::NotFound,
+        // `snapshot_if_needed` maps DuplicateSnapshot to `Ok(None)`
+        // internally, so this branch is unreachable from the View
+        // hook today. Treat defensively as a benign internal db state
+        // if it ever escapes.
+        DuplicateSnapshot => FsError::Storage(crabcloud_storage::StorageError::Other(
+            "versions: duplicate snapshot leaked from service".into(),
+        )),
         Db(e) => FsError::Storage(crabcloud_storage::StorageError::Other(format!(
             "versions db: {e}"
         ))),
@@ -882,6 +889,44 @@ impl View {
             return Err(FsError::CrossMount);
         }
         self.snapshot_before_overwrite(to_mount, &to_path).await?;
+        from_mount
+            .storage
+            .rename(&from_path, &to_path, &*self.storage_sink)
+            .await?;
+        Ok(())
+    }
+
+    /// MOVE-with-overwrite helper exposing the rename hook as a single
+    /// unit. The DAV `MOVE` handler today delete-then-renames (because
+    /// `Storage::rename` rejects an existing destination), which means
+    /// the snapshot-before-overwrite hook in `View::rename` is
+    /// unreachable in production through that path. This helper takes
+    /// the snapshot of the destination's prior bytes first (so the
+    /// pre-overwrite state is preserved as a version), then performs
+    /// the storage-level delete-and-rename, mirroring what a future
+    /// atomic MOVE-overwrite would do. Used by tests to drive the
+    /// rename hook end-to-end; safe to call from anywhere that wants
+    /// the same semantics.
+    pub async fn rename_force_overwrite(&self, from: &UserPath, to: &UserPath) -> FsResult<()> {
+        let (from_mount, from_path) = self.resolve(from)?;
+        let (to_mount, to_path) = self.resolve(to)?;
+        if from_mount.path_prefix != to_mount.path_prefix {
+            return Err(FsError::CrossMount);
+        }
+        // Snapshot the destination FIRST so the prior bytes are
+        // recorded as a version before they're removed.
+        self.snapshot_before_overwrite(to_mount, &to_path).await?;
+        // Best-effort: if the destination doesn't exist, the snapshot
+        // hook no-ops and we proceed to plain rename. If it does, we
+        // remove it at the storage layer (NOT through trash — this is
+        // an overwrite, not a delete) so the rename can succeed.
+        let dst_exists = to_mount.storage.stat(&to_path).await.is_ok();
+        if dst_exists {
+            to_mount
+                .storage
+                .delete(&to_path, &*self.storage_sink)
+                .await?;
+        }
         from_mount
             .storage
             .rename(&from_path, &to_path, &*self.storage_sink)
