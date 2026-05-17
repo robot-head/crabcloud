@@ -170,6 +170,19 @@ pub struct FileConfig {
     #[serde(default)]
     pub versions_retention_disabled: bool,
 
+    /// How many days to keep activity feed rows before the daily sweeper
+    /// purges them. `0` disables sweeping (compliance retain-forever
+    /// escape hatch). Default 365 (matches Nextcloud).
+    #[serde(default = "default_activity_retention_days")]
+    pub activity_retention_days: u32,
+
+    /// Coalesce window for the activity feed. Successive same-
+    /// `(recipient, actor, event_type, object_id)` emits within this many
+    /// seconds bump the existing row's `count + last_seen_at` instead of
+    /// inserting. `0` disables coalesce. Default 600 (10 minutes).
+    #[serde(default = "default_activity_coalesce_window_secs")]
+    pub activity_coalesce_window_secs: u32,
+
     /// Optional bootstrap admin (Phase 3 deferred-users stand-in).
     pub bootstrap_admin: Option<BootstrapAdminConfig>,
 }
@@ -326,6 +339,12 @@ fn default_versions_min_interval_secs() -> u32 {
 fn default_versions_max_bytes() -> u64 {
     1024 * 1024 * 1024
 }
+fn default_activity_retention_days() -> u32 {
+    365
+}
+fn default_activity_coalesce_window_secs() -> u32 {
+    600
+}
 
 /// Errors raised while validating a parsed config.
 #[derive(Debug, thiserror::Error)]
@@ -411,6 +430,8 @@ mod tests {
             versions_min_interval_secs: default_versions_min_interval_secs(),
             versions_max_bytes: default_versions_max_bytes(),
             versions_retention_disabled: false,
+            activity_retention_days: default_activity_retention_days(),
+            activity_coalesce_window_secs: default_activity_coalesce_window_secs(),
             bootstrap_admin: None,
         }
     }
