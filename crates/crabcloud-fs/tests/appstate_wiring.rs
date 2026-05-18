@@ -132,13 +132,17 @@ async fn wait_for_index<F>(predicate: F)
 where
     F: Fn() -> std::pin::Pin<Box<dyn std::future::Future<Output = bool> + Send>>,
 {
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    // 30s deadline (was 15s) to absorb workspace-parallel `cargo test`
+    // contention. The indexer's own filecache-lookup backoff caps at ~5s
+    // per event; the test polls every 50ms so as soon as the indexer's
+    // upsert lands we observe it within a polling tick.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
     loop {
         if predicate().await {
             return;
         }
         if std::time::Instant::now() >= deadline {
-            panic!("index never reached expected state within 15s");
+            panic!("index never reached expected state within 30s");
         }
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     }

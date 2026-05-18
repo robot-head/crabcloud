@@ -356,16 +356,24 @@ async fn handle_move(
     Ok(())
 }
 
-/// Retry `filecache.lookup` up to ~500ms total to absorb the
+/// Retry `filecache.lookup` up to ~5s total to absorb the
 /// indexer-vs-scanner race on a single broadcast event. Both consumers
 /// receive the same event independently; without retry the indexer
 /// often loses the race when the scanner is busy on a different write.
+///
+/// The cap was bumped from 500ms → 5s after CI flakes (workspace-parallel
+/// `cargo test`) where the scanner's task was starved for several seconds
+/// by other concurrent test binaries hammering disk + sqlite. A proper
+/// fix would have the indexer subscribe to a "scanner-applied" signal
+/// instead of polling, but the backoff bump unblocks CI without that
+/// architectural change. The 5s ceiling is well under the e2e test's
+/// 30s deadline.
 async fn loop_lookup_with_backoff(
     filecache: &FileCache,
     storage_id: &str,
     path: &StoragePath,
 ) -> Result<Option<crabcloud_filecache::FilecacheRow>, crabcloud_search::SearchError> {
-    let backoffs = [10u64, 20, 40, 80, 150, 200];
+    let backoffs = [10u64, 20, 40, 80, 150, 300, 600, 1200, 2400];
     for (i, ms) in backoffs.iter().enumerate() {
         match filecache.lookup(storage_id, path).await {
             Ok(Some(r)) => return Ok(Some(r)),
