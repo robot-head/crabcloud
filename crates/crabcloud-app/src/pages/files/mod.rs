@@ -10,6 +10,7 @@ pub mod mkdir_row;
 pub mod path;
 pub mod progress_strip;
 pub mod row;
+pub mod search_bar;
 pub mod share_modal;
 pub mod states;
 pub mod toolbar;

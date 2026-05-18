@@ -1,8 +1,10 @@
-//! Page chrome: top bar (logo, app name, user chip) + left sidebar
-//! (currently "All files", "Shared with you", and "Deleted files").
-//! See spec §2 (decision 7) and SP12 (trash bin).
+//! Page chrome: top bar (logo, app name, search bar, user chip) + left
+//! sidebar (currently "All files", "Shared with you", and "Deleted
+//! files"). See spec §2 (decision 7), SP12 (trash bin), and SP15 (the
+//! top-bar search input).
 
 use crate::context::RequestContext;
+use crate::pages::files::search_bar::SearchBar;
 use dioxus::prelude::*;
 
 #[component]
@@ -22,6 +24,9 @@ pub fn TopBar(ctx: RequestContext) -> Element {
             a { class: "topbar-brand", href: "/", "Crabcloud" }
             nav { class: "topbar-nav",
                 a { class: "topbar-link active", href: "/apps/files/", "Files" }
+            }
+            div { class: "topbar-search-slot",
+                SearchBar {}
             }
             div { class: "topbar-spacer" }
             div { class: "topbar-user", title: "{display}", "{initial}" }
