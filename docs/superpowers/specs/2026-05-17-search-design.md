@@ -142,14 +142,15 @@ CREATE VIRTUAL TABLE oc_search USING fts5 (
 CREATE TABLE oc_search (
     viewer_uid  VARCHAR(64)  NOT NULL,
     fileid      BIGINT       NOT NULL,
-    storage_id  BIGINT       NOT NULL,
+    storage_id  VARCHAR(255) NOT NULL,
     basename    VARCHAR(255) NOT NULL,
     path        VARCHAR(512) NOT NULL,
     mime        VARCHAR(255) NOT NULL,
     mtime       BIGINT       NOT NULL,
     size        BIGINT       NOT NULL,
     PRIMARY KEY (viewer_uid, fileid),
-    INDEX idx_search_viewer (viewer_uid),
+    INDEX idx_search_viewer        (viewer_uid),
+    INDEX idx_search_storage_path  (storage_id, path),
     FULLTEXT INDEX ftx_search_text (basename, path)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 ```
@@ -160,7 +161,7 @@ CREATE TABLE oc_search (
 CREATE TABLE oc_search (
     viewer_uid  VARCHAR(64)  NOT NULL,
     fileid      BIGINT       NOT NULL,
-    storage_id  BIGINT       NOT NULL,
+    storage_id  VARCHAR(255) NOT NULL,
     basename    VARCHAR(255) NOT NULL,
     path        VARCHAR(512) NOT NULL,
     mime        VARCHAR(255) NOT NULL,
@@ -171,9 +172,25 @@ CREATE TABLE oc_search (
                 ) STORED,
     PRIMARY KEY (viewer_uid, fileid)
 );
-CREATE INDEX idx_search_viewer    ON oc_search (viewer_uid);
-CREATE INDEX idx_search_tsv       ON oc_search USING GIN (tsv);
+
+CREATE INDEX idx_search_viewer       ON oc_search (viewer_uid);
+CREATE INDEX idx_search_storage_path ON oc_search (storage_id, path);
+CREATE INDEX idx_search_tsv          ON oc_search USING GIN (tsv);
 ```
+
+> **Note (shipped reality):** `storage_id` is `VARCHAR(255)`, not
+> `BIGINT` as an earlier draft suggested. The indexer threads through
+> the *string* storage id that `storage_sink` events carry (e.g.
+> `"local::/var/.../alice/files"`) rather than the numeric one,
+> because the same string id is needed to look up
+> `(storage_id, path) → fileid` from `oc_search` itself when handling
+> a `Deleted` event (the upstream `filecache` row is already gone by
+> the time we process the event, so we cannot resolve a numeric
+> storage id at that point). A companion `(storage_id, path)` index is
+> added on mysql + postgres to keep that lookup cheap. The sqlite
+> FTS5 virtual table stores the same string in the `UNINDEXED`
+> `storage_id` column; FTS5 columns are untyped so no schema change
+> there.
 
 `path` stores the **viewer-relative** path (share-mount-translated). The `(viewer_uid, fileid)` composite primary key uniquely identifies a row.
 
