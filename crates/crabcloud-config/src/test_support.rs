@@ -60,10 +60,14 @@ pub fn minimal_sqlite_config(db_path: PathBuf) -> FileConfig {
         versions_retention_disabled: false,
         activity_retention_days: 365,
         activity_coalesce_window_secs: 600,
-        // Disabled by default in tests to avoid sqlite write contention
-        // under workspace-parallel `cargo test --workspace`. Tests that
-        // exercise indexer semantics opt in: `cfg.search_indexer_enabled = true`.
-        search_indexer_enabled: false,
+        // Matches the production default. The historical
+        // sqlite-contention flake under workspace-parallel
+        // `cargo test --workspace` was the indexer-vs-scanner race
+        // (loop_lookup_with_backoff stalling on the scanner's task);
+        // SP15 polish replaced the polling with a scanner-applied
+        // broadcast so the race window is now zero. Tests that need to
+        // skip the indexer can still set `search_indexer_enabled = false`.
+        search_indexer_enabled: true,
         bootstrap_admin: None,
     }
 }

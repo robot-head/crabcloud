@@ -1269,3 +1269,62 @@ async fn delete_user_share_by_owner_emits_works_on_sqlite() {
     let fx = Fixture::new(FixtureKind::Sqlite).await;
     delete_user_share_by_owner_emits_share_deleted(&fx).await;
 }
+
+async fn unaccept_user_share_by_recipient_emits_share_unaccepted(fx: &Fixture) {
+    seed_user(fx, "alice").await;
+    seed_user(fx, "bob").await;
+    let _ = seed_file(fx, "alice", "/Notes", true).await;
+    let sid = fx.home_storage_id("alice");
+    let row = fx
+        .shares
+        .create(share_request(
+            "alice",
+            &sid,
+            "/Notes",
+            ShareType::User,
+            "bob",
+            3,
+        ))
+        .await
+        .unwrap();
+
+    // Recipient drops the share (unaccept path). Row stays, accepted=false.
+    let bob_uid = UserId::new("bob").unwrap();
+    fx.shares.delete(row.id, &bob_uid).await.unwrap();
+    let persisted = fx
+        .shares
+        .get(row.id)
+        .await
+        .unwrap()
+        .expect("row still present after unaccept");
+    assert!(!persisted.accepted);
+
+    let bob_rows = fx.activity.list("bob", None, 100).await.unwrap();
+    // Recipient sees their own `_you` variant.
+    let bob_unaccept = bob_rows
+        .iter()
+        .find(|r| r.event_type == "share_unaccepted")
+        .expect("recipient sees share_unaccepted row");
+    assert_eq!(bob_unaccept.subject_id, "share_unaccepted_you");
+
+    // OWNER also sees the unaccept (added via `extra_recipient` in
+    // `emit_share_activity_with_extra_recipient` so the default
+    // `actor + share_with` dedup doesn't drop them).
+    let alice_rows = fx.activity.list("alice", None, 100).await.unwrap();
+    let alice_unaccept = alice_rows
+        .iter()
+        .find(|r| r.event_type == "share_unaccepted")
+        .expect("owner sees share_unaccepted row");
+    assert_eq!(alice_unaccept.subject_id, "share_unaccepted_by");
+
+    // The unaccept must NOT surface as a `share_deleted` event anywhere
+    // — that was the SP14 follow-up this test guards against.
+    assert!(alice_rows.iter().all(|r| r.event_type != "share_deleted"));
+    assert!(bob_rows.iter().all(|r| r.event_type != "share_deleted"));
+}
+
+#[tokio::test]
+async fn unaccept_user_share_by_recipient_emits_works_on_sqlite() {
+    let fx = Fixture::new(FixtureKind::Sqlite).await;
+    unaccept_user_share_by_recipient_emits_share_unaccepted(&fx).await;
+}

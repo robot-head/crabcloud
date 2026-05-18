@@ -22,7 +22,8 @@ pub use mail::{MailEnqueueError, MailEnqueuer, NullEnqueuer};
 pub use permissions::SharePermissions;
 pub use service::{Shares, SharesConfig};
 pub use types::{
-    CreateShareRequest, ExpiringLink, ItemType, ShareRow, ShareType, UpdateShareFields,
+    CreateShareRequest, ExpiringLink, ItemType, ShareFanoutContext, ShareRow, ShareType,
+    UpdateShareFields,
 };
 
 // Anchors for crates whose first real call site lands in later tasks/batches

@@ -25,7 +25,9 @@ use crate::error::ShareError;
 use crate::mail::MailEnqueuer;
 use crate::permissions::SharePermissions;
 use crate::sql::{self, Dialect};
-use crate::types::{CreateShareRequest, ItemType, ShareRow, ShareType, UpdateShareFields};
+use crate::types::{
+    CreateShareRequest, ItemType, ShareFanoutContext, ShareRow, ShareType, UpdateShareFields,
+};
 
 #[derive(Clone)]
 pub struct Shares {
@@ -704,21 +706,27 @@ impl Shares {
                         .await?;
                 }
             }
-            // Best-effort activity emit on unaccept (SP14). Actor here
-            // is the recipient choosing to drop the share.
-            // TODO sp14-followup: this emits `share_deleted` to the owner
-            // even though the share row still exists (unaccept just flips
-            // accepted=false). Revisit whether the owner should see a
-            // "share deleted" event on unaccept, or a distinct event type.
-            self.emit_share_activity(
-                crabcloud_activity::EventType::ShareDeleted,
-                "share_deleted_you",
-                "share_deleted_by",
+            // Best-effort activity emit on unaccept (SP14/SP15). Actor
+            // here is the recipient choosing to drop the share. Distinct
+            // from `ShareDeleted` because the share row still exists
+            // (unaccept just flips accepted=false), so the owner sees a
+            // "share declined" event rather than a removal.
+            //
+            // The default `share_activity_recipients(actor, share_with)`
+            // would dedup to only the unaccepting recipient (actor ==
+            // share_with for direct shares; the actor is a group member
+            // for group shares). The owner is the audience that actually
+            // cares about this event, so we add them explicitly.
+            self.emit_share_activity_with_extra_recipient(
+                crabcloud_activity::EventType::ShareUnaccepted,
+                "share_unaccepted_you",
+                "share_unaccepted_by",
                 id,
                 requester.as_str(),
                 row.share_type,
                 row.share_with.as_deref(),
                 row.file_target.as_str(),
+                Some(row.uid_owner.as_str()),
             )
             .await;
             Ok(())
@@ -1020,9 +1028,48 @@ impl Shares {
         share_with: Option<&str>,
         path: &str,
     ) {
-        let recipients = self
+        self.emit_share_activity_with_extra_recipient(
+            event_type,
+            subject_id_actor,
+            subject_id_recipient,
+            share_id,
+            actor,
+            share_type,
+            share_with,
+            path,
+            None,
+        )
+        .await
+    }
+
+    /// Same as [`Self::emit_share_activity`] but adds `extra_recipient`
+    /// to the audience after the default `actor + share_with` set is
+    /// resolved. Used by the `unaccept` branch of `delete` so the
+    /// share's OWNER also sees the event — the default set dedups to
+    /// just the unaccepting recipient otherwise.
+    #[allow(clippy::too_many_arguments)]
+    async fn emit_share_activity_with_extra_recipient(
+        &self,
+        event_type: crabcloud_activity::EventType,
+        subject_id_actor: &str,
+        subject_id_recipient: &str,
+        share_id: i64,
+        actor: &str,
+        share_type: ShareType,
+        share_with: Option<&str>,
+        path: &str,
+        extra_recipient: Option<&str>,
+    ) {
+        let mut recipients = self
             .share_activity_recipients(actor, share_type, share_with)
             .await;
+        if let Some(uid) = extra_recipient {
+            if let Ok(uid) = UserId::new(uid) {
+                if !recipients.iter().any(|r| r.as_str() == uid.as_str()) {
+                    recipients.push(uid);
+                }
+            }
+        }
         let event = crabcloud_activity::ActivityEvent {
             actor: actor.to_string(),
             event_type,
@@ -1225,6 +1272,228 @@ impl Shares {
         }
         Ok(out)
     }
+
+    /// Like [`Self::recipients_for_fileid`], but returns one
+    /// [`ShareFanoutContext`] per covering share row so the caller can
+    /// translate the owner-side path into each recipient's view (via
+    /// `crabcloud_search::translate_path`). The owner is NOT included
+    /// here — callers that also need the owner (e.g. the search
+    /// indexer) layer it on themselves using the storage's
+    /// `owner_uid()`.
+    ///
+    /// One share row → one context. If a fileid is covered by multiple
+    /// shares (e.g. shared to alice directly AND to a group alice is
+    /// in), each share yields its own context. Recipients within a
+    /// context are de-duplicated; recipients across contexts are not —
+    /// the per-write upsert is idempotent on `(viewer_uid, fileid)`, so
+    /// later contexts simply overwrite earlier paths for the same
+    /// recipient. Documented MVP behavior; the per-write path remains
+    /// well-formed, just non-deterministic when multiple shares apply.
+    pub async fn share_fanout_contexts_for_fileid(
+        &self,
+        fileid: i64,
+    ) -> Result<Vec<ShareFanoutContext>, ShareError> {
+        // Walk ancestors (same shape as recipients_for_fileid).
+        let mut ancestor_ids: Vec<i64> = vec![fileid];
+        let mut cursor: i64 = fileid;
+        for _ in 0..64 {
+            let row = self
+                .filecache
+                .lookup_by_id(cursor)
+                .await
+                .map_err(map_filecache)?;
+            let Some(row) = row else { break };
+            match row.parent {
+                Some(parent_id) => {
+                    ancestor_ids.push(parent_id);
+                    cursor = parent_id;
+                }
+                None => break,
+            }
+        }
+
+        // Pull the full per-share row context we need to build a
+        // [`ShareFanoutContext`]: `item_source` (to look up the owner
+        // subroot path) and `file_target` (the recipient prefix).
+        #[derive(Debug)]
+        struct ShareCtxRow {
+            share_type: i16,
+            share_with: String,
+            item_source: i64,
+            file_target: String,
+        }
+        let mut share_rows: Vec<ShareCtxRow> = Vec::new();
+        match self.pool.as_ref() {
+            DbPool::Sqlite(p) => {
+                let q_text =
+                    build_select_share_ctx_for_sources(ancestor_ids.len(), sql::Dialect::Qm);
+                let mut q = sqlx::query(&q_text);
+                for id in &ancestor_ids {
+                    q = q.bind(*id);
+                }
+                let rows = q.fetch_all(p).await?;
+                for r in rows {
+                    let share_type: i16 = r.try_get("share_type")?;
+                    let share_with: Option<String> = r.try_get("share_with")?;
+                    let item_source: i64 = r.try_get("item_source")?;
+                    let file_target: String = r.try_get("file_target")?;
+                    if let Some(sw) = share_with {
+                        share_rows.push(ShareCtxRow {
+                            share_type,
+                            share_with: sw,
+                            item_source,
+                            file_target,
+                        });
+                    }
+                }
+            }
+            DbPool::MySql(p) => {
+                let q_text =
+                    build_select_share_ctx_for_sources(ancestor_ids.len(), sql::Dialect::Qm);
+                let mut q = sqlx::query(&q_text);
+                for id in &ancestor_ids {
+                    q = q.bind(*id);
+                }
+                let rows = q.fetch_all(p).await?;
+                for r in rows {
+                    let share_type: i16 = r.try_get("share_type")?;
+                    let share_with: Option<String> = r.try_get_unchecked("share_with")?;
+                    let item_source: i64 = r.try_get("item_source")?;
+                    let file_target: String = r.try_get_unchecked("file_target")?;
+                    if let Some(sw) = share_with {
+                        share_rows.push(ShareCtxRow {
+                            share_type,
+                            share_with: sw,
+                            item_source,
+                            file_target,
+                        });
+                    }
+                }
+            }
+            DbPool::Postgres(p) => {
+                let q_text =
+                    build_select_share_ctx_for_sources(ancestor_ids.len(), sql::Dialect::Pg);
+                let mut q = sqlx::query(&q_text);
+                for id in &ancestor_ids {
+                    q = q.bind(*id);
+                }
+                let rows = q.fetch_all(p).await?;
+                for r in rows {
+                    let share_type: i16 = r.try_get("share_type")?;
+                    let share_with: Option<String> = r.try_get("share_with")?;
+                    let item_source: i64 = r.try_get("item_source")?;
+                    let file_target: String = r.try_get("file_target")?;
+                    if let Some(sw) = share_with {
+                        share_rows.push(ShareCtxRow {
+                            share_type,
+                            share_with: sw,
+                            item_source,
+                            file_target,
+                        });
+                    }
+                }
+            }
+        }
+
+        const ST_USER: i16 = ShareType::User as i16;
+        const ST_GROUP: i16 = ShareType::Group as i16;
+        let mut out: Vec<ShareFanoutContext> = Vec::with_capacity(share_rows.len());
+        for share in share_rows {
+            // Look up the OWNER-side path for this share's item_source.
+            let item_row = self
+                .filecache
+                .lookup_by_id(share.item_source)
+                .await
+                .map_err(map_filecache)?;
+            let Some(item_row) = item_row else {
+                // Stale share row whose source has been hard-deleted;
+                // skip silently — the un-share fan-out should clean it
+                // up on the next lifecycle event.
+                continue;
+            };
+            let owner_subroot = format!("/{}", item_row.path.as_str().trim_start_matches('/'));
+            let recipient_prefix =
+                format!("/{}", share.file_target.trim_start_matches('/'));
+
+            let mut recipients: Vec<UserId> = Vec::new();
+            let mut seen = std::collections::HashSet::new();
+            let push = |raw: String,
+                        seen: &mut std::collections::HashSet<String>,
+                        out: &mut Vec<UserId>| {
+                if let Ok(uid) = UserId::new(raw) {
+                    if seen.insert(uid.as_str().to_string()) {
+                        out.push(uid);
+                    }
+                }
+            };
+            match share.share_type {
+                ST_USER => push(share.share_with, &mut seen, &mut recipients),
+                ST_GROUP => {
+                    if let Ok(gid) = GroupId::new(share.share_with) {
+                        match self.users.group_store().members_of(&gid).await {
+                            Ok(members) => {
+                                for m in members {
+                                    push(m.into_inner(), &mut seen, &mut recipients);
+                                }
+                            }
+                            Err(e) => {
+                                tracing::warn!(
+                                    error = %e,
+                                    group = gid.as_str(),
+                                    "sharing: share_fanout_contexts_for_fileid group expansion failed"
+                                );
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+
+            if recipients.is_empty() {
+                continue;
+            }
+
+            out.push(ShareFanoutContext {
+                recipients,
+                owner_storage_id: item_row.storage_id,
+                owner_subroot,
+                recipient_prefix,
+            });
+        }
+        Ok(out)
+    }
+}
+
+/// Like [`build_select_shares_for_sources`] but pulls the additional
+/// `item_source` + `file_target` columns the per-share fan-out context
+/// needs.
+fn build_select_share_ctx_for_sources(n: usize, dialect: sql::Dialect) -> String {
+    let mut q = String::with_capacity(180 + n * 4);
+    q.push_str(
+        "SELECT share_type, share_with, item_source, file_target FROM oc_share \
+                WHERE share_type IN (0, 1) AND accepted = 1 AND item_source IN (",
+    );
+    match dialect {
+        sql::Dialect::Qm => {
+            for i in 0..n {
+                if i > 0 {
+                    q.push_str(", ");
+                }
+                q.push('?');
+            }
+        }
+        sql::Dialect::Pg => {
+            for i in 0..n {
+                if i > 0 {
+                    q.push_str(", ");
+                }
+                q.push('$');
+                q.push_str(&(i + 1).to_string());
+            }
+        }
+    }
+    q.push(')');
+    q
 }
 
 /// Build a `SELECT ... FROM oc_share WHERE item_source IN (?,?,...)` for

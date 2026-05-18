@@ -41,6 +41,21 @@ impl SearchQuery {
     }
 }
 
+/// A single row in a batched upsert. Same shape as the args to
+/// [`crate::Search::upsert_for_file`], in struct form so
+/// [`crate::Search::upsert_many`] can take a slice.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BatchUpsertRow {
+    pub viewer_uid: String,
+    pub fileid: i64,
+    pub storage_id: String,
+    pub basename: String,
+    pub path: String,
+    pub mime: String,
+    pub mtime: i64,
+    pub size: i64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SearchHit {
     pub fileid: i64,

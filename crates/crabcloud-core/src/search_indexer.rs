@@ -1,5 +1,5 @@
-//! Background task: subscribes to `storage_sink` events and maintains
-//! the `oc_search` per-user index.
+//! Background task: subscribes to the SCANNER's post-apply broadcast
+//! and maintains the `oc_search` per-user index.
 //!
 //! Spec: `docs/superpowers/specs/2026-05-17-search-design.md`.
 //!
@@ -7,15 +7,13 @@
 //! corrupt event can't take down the indexer.
 //!
 //! Recipients are resolved at the moment of the event via
-//! `Shares::recipients_for_fileid` (point-in-time) — the owner is
-//! always upserted, and the share-graph recipients are layered on top.
+//! `Shares::share_fanout_contexts_for_fileid` (point-in-time) — the
+//! owner is always upserted, and per-share recipient sets are layered
+//! on top with the share-mount-translated path so the recipient's
+//! search hit reads as e.g. `/from-alice/q1/r.docx` rather than the
+//! owner's `/docs/q1/r.docx`.
 //!
 //! Limitations called out in the SP15 spec §2 / §6:
-//!   - Path stored for recipient rows is the OWNER's path, not the
-//!     viewer's share-mount-translated path. The bulk
-//!     `Search::fan_out_for_share` path translates correctly. This
-//!     indexer's per-write path is the documented MVP compromise; UI
-//!     handles either.
 //!   - `Deleted` events don't carry a fileid; the indexer queries
 //!     `oc_search` directly by `(storage_id, path)` to discover it.
 //!   - Trash bytes are not pushed through `storage_sink` (`Trash`
@@ -33,10 +31,10 @@
 //! necessary, switch to a per-`(storage_id, path)` serialization
 //! queue.
 
-use crabcloud_filecache::FileCache;
-use crabcloud_search::Search;
+use crabcloud_filecache::{FileCache, Scanner};
+use crabcloud_search::{translate_path, Search};
 use crabcloud_sharing::Shares;
-use crabcloud_storage::{ChannelEventSink, FileKind, StorageEvent, StoragePath};
+use crabcloud_storage::{FileKind, StorageEvent, StoragePath};
 use std::sync::Arc;
 use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::Notify;
@@ -48,28 +46,33 @@ pub struct SearchIndexer {
     search: Arc<Search>,
     shares: Arc<Shares>,
     filecache: Arc<FileCache>,
+    scanner: Arc<Scanner>,
     rx: tokio::sync::broadcast::Receiver<StorageEvent>,
     shutdown: Arc<Notify>,
 }
 
 impl SearchIndexer {
     /// Construct an indexer + return its shutdown notify handle.
-    /// `storage_sink.subscribe()` is called eagerly so the indexer's
+    /// Subscribes to the SCANNER's post-apply broadcast eagerly so the
     /// receiver is registered before the consumer task starts, avoiding
-    /// a window where early events would be silently dropped.
+    /// a window where early events would be silently dropped. The
+    /// scanner's post-apply ordering means `filecache.lookup` for the
+    /// just-emitted event sees a populated row — no
+    /// poll-with-backoff race remains.
     pub fn new(
         search: Arc<Search>,
         shares: Arc<Shares>,
         filecache: Arc<FileCache>,
-        storage_sink: &ChannelEventSink,
+        scanner: Arc<Scanner>,
     ) -> (Self, Arc<Notify>) {
         let shutdown = Arc::new(Notify::new());
-        let rx = storage_sink.subscribe();
+        let rx = scanner.subscribe_applied();
         (
             Self {
                 search,
                 shares,
                 filecache,
+                scanner,
                 rx,
                 shutdown: shutdown.clone(),
             },
@@ -92,6 +95,7 @@ impl SearchIndexer {
                         let search = self.search.clone();
                         let shares = self.shares.clone();
                         let filecache = self.filecache.clone();
+                        let scanner = self.scanner.clone();
                         // Per-event panic survival: spawn the handler
                         // as a fire-and-forget task. A panic in the
                         // spawned task is logged by the tokio runtime
@@ -100,14 +104,14 @@ impl SearchIndexer {
                         // slow event handler doesn't backpressure the
                         // broadcast channel into `Lagged`.
                         std::mem::drop(tokio::spawn(async move {
-                            handle_event(&search, &shares, &filecache, event).await;
+                            handle_event(&search, &shares, &filecache, &scanner, event).await;
                         }));
                     }
                     Err(RecvError::Lagged(n)) => {
-                        warn!(dropped = n, "search indexer: lagged behind storage_sink; events dropped");
+                        warn!(dropped = n, "search indexer: lagged behind scanner; events dropped");
                     }
                     Err(RecvError::Closed) => {
-                        info!("search indexer: storage_sink closed; exiting");
+                        info!("search indexer: scanner channel closed; exiting");
                         return;
                     }
                 },
@@ -120,6 +124,7 @@ async fn handle_event(
     search: &Search,
     shares: &Shares,
     filecache: &FileCache,
+    scanner: &Scanner,
     event: StorageEvent,
 ) {
     if is_trash_event(&event) {
@@ -131,7 +136,9 @@ async fn handle_event(
             path,
             metadata: _,
         } => {
-            if let Err(e) = upsert_for_event(search, shares, filecache, &storage_id, &path).await {
+            if let Err(e) =
+                upsert_for_event(search, shares, filecache, scanner, &storage_id, &path).await
+            {
                 warn!(error = %e, storage_id, path = %path.as_str(), "search indexer: upsert failed");
             }
         }
@@ -148,7 +155,9 @@ async fn handle_event(
             from,
             to,
         } => {
-            if let Err(e) = handle_move(search, shares, filecache, &storage_id, &from, &to).await {
+            if let Err(e) =
+                handle_move(search, shares, filecache, scanner, &storage_id, &from, &to).await
+            {
                 warn!(error = %e, storage_id, from = %from.as_str(), to = %to.as_str(), "search indexer: move failed");
             }
         }
@@ -158,7 +167,9 @@ async fn handle_event(
             to,
         } => {
             // A copy creates a fresh fileid at `to`. Upsert that one.
-            if let Err(e) = upsert_for_event(search, shares, filecache, &storage_id, &to).await {
+            if let Err(e) =
+                upsert_for_event(search, shares, filecache, scanner, &storage_id, &to).await
+            {
                 warn!(error = %e, storage_id, to = %to.as_str(), "search indexer: copy-upsert failed");
             }
         }
@@ -166,73 +177,113 @@ async fn handle_event(
 }
 
 /// Resolve the filecache row for `(storage_id, path)` and UPSERT one
-/// search row per current recipient (owner + share recipients).
+/// search row per current viewer: the owner (path = owner's view) plus
+/// each per-share recipient (path = share-mount-translated view).
 async fn upsert_for_event(
     search: &Search,
     shares: &Shares,
     filecache: &FileCache,
+    scanner: &Scanner,
     storage_id: &str,
     path: &StoragePath,
 ) -> Result<(), crabcloud_search::SearchError> {
-    // Wait briefly for the filecache scanner to have applied this
-    // event. Both consumers race on the same broadcast channel; in
-    // practice the scanner wins quickly, but we retry on miss to be
-    // robust against scheduling jitter.
-    let row = loop_lookup_with_backoff(filecache, storage_id, path).await?;
+    // The scanner publishes post-apply, so the filecache row for this
+    // event is already written by the time we run. A single lookup is
+    // sufficient — no poll-with-backoff needed.
+    let row = filecache.lookup(storage_id, path).await?;
     let Some(row) = row else {
-        debug!(storage_id, path = %path.as_str(), "search indexer: filecache miss after retry; skipping");
+        // Apply failed (scanner logs + schedules a re-scan) or the row
+        // was deleted concurrently. Either way, skip; the re-scan path
+        // will repopulate and the next touch on this file will re-index.
+        debug!(
+            storage_id,
+            path = %path.as_str(),
+            "search indexer: filecache miss after scanner-applied; skipping"
+        );
         return Ok(());
     };
     if matches!(row.kind, FileKind::Directory) {
         return Ok(());
     }
 
-    let owner_uid = owner_uid_from_storage_id(storage_id);
-    let mut recipients = match shares.recipients_for_fileid(row.fileid).await {
-        Ok(r) => r,
+    let owner_uid = scanner
+        .storage_for(storage_id)
+        .and_then(|s| s.owner_uid().map(str::to_string));
+
+    let contexts = match shares.share_fanout_contexts_for_fileid(row.fileid).await {
+        Ok(c) => c,
         Err(e) => {
-            warn!(error = %e, fileid = row.fileid, "search indexer: recipients_for_fileid failed; indexing owner only");
+            warn!(
+                error = %e,
+                fileid = row.fileid,
+                "search indexer: share_fanout_contexts_for_fileid failed; indexing owner only"
+            );
             Vec::new()
         }
     };
-    // Make sure the owner is always included.
-    if let Some(uid) = owner_uid.as_deref() {
-        if !recipients.iter().any(|r| r.as_str() == uid) {
-            if let Ok(uid) = crabcloud_users::UserId::new(uid) {
-                recipients.push(uid);
-            }
-        }
-    }
 
-    if recipients.is_empty() {
-        // We don't know who owns this file (storage-id heuristic failed
-        // AND no shares exist). Skip rather than write a phantom row.
-        debug!(
-            storage_id,
-            "search indexer: no recipients resolved; skipping upsert"
-        );
-        return Ok(());
-    }
-
-    let viewer_path = web_path(path);
-    let basename = std::path::Path::new(&viewer_path)
+    let owner_path = web_path(path);
+    let owner_basename = std::path::Path::new(&owner_path)
         .file_name()
         .and_then(|s| s.to_str())
         .unwrap_or(&row.name)
         .to_string();
-    for r in recipients {
+
+    // Always upsert the owner if we know who they are.
+    if let Some(uid) = owner_uid.as_deref() {
         search
             .upsert_for_file(
-                r.as_str(),
+                uid,
                 row.fileid,
                 &row.storage_id,
-                &basename,
-                &viewer_path,
+                &owner_basename,
+                &owner_path,
                 row.mimetype.as_str(),
                 row.mtime as i64,
                 row.size as i64,
             )
             .await?;
+    } else if contexts.is_empty() {
+        // No owner attribution AND no shares cover this file: skip
+        // rather than fabricate a phantom row.
+        debug!(
+            storage_id,
+            "search indexer: no owner attribution and no shares; skipping upsert"
+        );
+        return Ok(());
+    }
+
+    // Per-share recipient upserts with translated paths. If multiple
+    // shares cover the same recipient, later contexts overwrite
+    // earlier ones (documented in `share_fanout_contexts_for_fileid`).
+    for ctx in &contexts {
+        let viewer_path = translate_path(&ctx.owner_subroot, &ctx.recipient_prefix, &owner_path);
+        let basename = std::path::Path::new(&viewer_path)
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or(&row.name)
+            .to_string();
+        for r in &ctx.recipients {
+            // Skip the owner — already upserted above with their own
+            // path (and the owner shouldn't appear in any recipient set
+            // for their own share, but defend against group-membership
+            // edge cases anyway).
+            if Some(r.as_str()) == owner_uid.as_deref() {
+                continue;
+            }
+            search
+                .upsert_for_file(
+                    r.as_str(),
+                    row.fileid,
+                    &row.storage_id,
+                    &basename,
+                    &viewer_path,
+                    row.mimetype.as_str(),
+                    row.mtime as i64,
+                    row.size as i64,
+                )
+                .await?;
+        }
     }
     Ok(())
 }
@@ -260,11 +311,19 @@ async fn delete_for_event(
 /// Handle a Move (rename / move-within-storage). The fileid is stable
 /// across a move, so we can resolve it from EITHER the old path (via
 /// the index, if it was indexed pre-move) or the new path (via
-/// filecache, which the scanner updates).
+/// filecache, which the scanner has already updated by the time we
+/// observe the post-apply signal).
+///
+/// The DELETE-ALL-then-re-UPSERT shape implicitly handles the
+/// out-of-share rename case: viewers who lost access (their share row
+/// no longer covers the new path) get cleaned up by
+/// `delete_for_file(to_row.fileid)` and are simply absent from the
+/// fresh recipient set we re-upsert against.
 async fn handle_move(
     search: &Search,
     shares: &Shares,
     filecache: &FileCache,
+    scanner: &Scanner,
     storage_id: &str,
     from: &StoragePath,
     to: &StoragePath,
@@ -276,11 +335,13 @@ async fn handle_move(
         .ok()
         .flatten();
     // Look up via filecache at the destination — this gives us the new
-    // path + mtime + recipient set for the upsert. Same scanner-race
-    // retry as `upsert_for_event`.
-    let to_row = loop_lookup_with_backoff(filecache, storage_id, to).await?;
+    // path + mtime + recipient set for the upsert. No backoff: scanner
+    // post-apply ordering guarantees the row is present.
+    let to_row = filecache.lookup(storage_id, to).await?;
     let Some(to_row) = to_row else {
-        // Race with scanner; just remove any stale row by fileid.
+        // Apply must have failed on the scanner side; just remove any
+        // stale row by fileid so search doesn't keep serving the
+        // pre-move path.
         if let Some(fid) = pre_move_fileid {
             debug!(
                 storage_id,
@@ -297,96 +358,75 @@ async fn handle_move(
         return Ok(());
     }
 
-    // Recompute the recipient set against the NEW path (it may have
-    // crossed a shared-subroot boundary).
-    let owner_uid = owner_uid_from_storage_id(storage_id);
-    let mut new_recipients = match shares.recipients_for_fileid(to_row.fileid).await {
-        Ok(r) => r,
+    let owner_uid = scanner
+        .storage_for(storage_id)
+        .and_then(|s| s.owner_uid().map(str::to_string));
+
+    let contexts = match shares.share_fanout_contexts_for_fileid(to_row.fileid).await {
+        Ok(c) => c,
         Err(e) => {
-            warn!(error = %e, fileid = to_row.fileid, "search indexer: recipients_for_fileid (post-move) failed; indexing owner only");
+            warn!(
+                error = %e,
+                fileid = to_row.fileid,
+                "search indexer: share_fanout_contexts_for_fileid (post-move) failed; indexing owner only"
+            );
             Vec::new()
         }
     };
-    if let Some(uid) = owner_uid.as_deref() {
-        if !new_recipients.iter().any(|r| r.as_str() == uid) {
-            if let Ok(uid) = crabcloud_users::UserId::new(uid) {
-                new_recipients.push(uid);
-            }
-        }
-    }
+
     // Rebuild: delete EVERY viewer row for this fileid (cleans up
-    // viewers who can no longer see it), then upsert one row per current
-    // recipient.
-    //
-    // TODO: out-of-share rename cleanup. Today a Move that takes a
-    // file OUT of a shared subroot will only refresh `oc_search` for
-    // the still-current recipient set — but if the share row itself
-    // is unchanged (e.g. the file was moved to a non-shared sibling
-    // path) the stale viewer rows are removed by the
-    // `delete_for_file(to_row.fileid)` below, so this is mostly fine.
-    // The remaining gap is: a Move that crosses share boundaries
-    // without a corresponding share update may leave stale rows
-    // until either (a) the file is hard-deleted, (b) the share is
-    // removed (which DELETE-cascades via `fan_out_for_unshare`), or
-    // (c) a future polish adds proper recipient-set-diff cleanup.
+    // viewers who can no longer see it, including out-of-share
+    // renames), then upsert one row per current recipient with the
+    // post-move translated path.
     search.delete_for_file(to_row.fileid).await?;
-    if new_recipients.is_empty() {
-        return Ok(());
-    }
-    let viewer_path = web_path(to);
-    let basename = std::path::Path::new(&viewer_path)
+
+    let owner_path = web_path(to);
+    let owner_basename = std::path::Path::new(&owner_path)
         .file_name()
         .and_then(|s| s.to_str())
         .unwrap_or(&to_row.name)
         .to_string();
-    for r in &new_recipients {
+    if let Some(uid) = owner_uid.as_deref() {
         search
             .upsert_for_file(
-                r.as_str(),
+                uid,
                 to_row.fileid,
                 &to_row.storage_id,
-                &basename,
-                &viewer_path,
+                &owner_basename,
+                &owner_path,
                 to_row.mimetype.as_str(),
                 to_row.mtime as i64,
                 to_row.size as i64,
             )
             .await?;
     }
-    Ok(())
-}
 
-/// Retry `filecache.lookup` up to ~5s total to absorb the
-/// indexer-vs-scanner race on a single broadcast event. Both consumers
-/// receive the same event independently; without retry the indexer
-/// often loses the race when the scanner is busy on a different write.
-///
-/// The cap was bumped from 500ms → 5s after CI flakes (workspace-parallel
-/// `cargo test`) where the scanner's task was starved for several seconds
-/// by other concurrent test binaries hammering disk + sqlite. A proper
-/// fix would have the indexer subscribe to a "scanner-applied" signal
-/// instead of polling, but the backoff bump unblocks CI without that
-/// architectural change. The 5s ceiling is well under the e2e test's
-/// 30s deadline.
-async fn loop_lookup_with_backoff(
-    filecache: &FileCache,
-    storage_id: &str,
-    path: &StoragePath,
-) -> Result<Option<crabcloud_filecache::FilecacheRow>, crabcloud_search::SearchError> {
-    let backoffs = [10u64, 20, 40, 80, 150, 300, 600, 1200, 2400];
-    for (i, ms) in backoffs.iter().enumerate() {
-        match filecache.lookup(storage_id, path).await {
-            Ok(Some(r)) => return Ok(Some(r)),
-            Ok(None) => {
-                if i + 1 == backoffs.len() {
-                    return Ok(None);
-                }
-                tokio::time::sleep(std::time::Duration::from_millis(*ms)).await;
+    for ctx in &contexts {
+        let viewer_path = translate_path(&ctx.owner_subroot, &ctx.recipient_prefix, &owner_path);
+        let basename = std::path::Path::new(&viewer_path)
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or(&to_row.name)
+            .to_string();
+        for r in &ctx.recipients {
+            if Some(r.as_str()) == owner_uid.as_deref() {
+                continue;
             }
-            Err(e) => return Err(crabcloud_search::SearchError::from(e)),
+            search
+                .upsert_for_file(
+                    r.as_str(),
+                    to_row.fileid,
+                    &to_row.storage_id,
+                    &basename,
+                    &viewer_path,
+                    to_row.mimetype.as_str(),
+                    to_row.mtime as i64,
+                    to_row.size as i64,
+                )
+                .await?;
         }
     }
-    Ok(None)
+    Ok(())
 }
 
 /// Return the leading-`/` form of a StoragePath, suitable for the
@@ -401,28 +441,6 @@ fn web_path(p: &StoragePath) -> String {
     } else {
         format!("/{s}")
     }
-}
-
-/// Heuristic: parse the owner uid out of a `LocalStorage`-shaped
-/// `storage_id`. Format is `local::<canonical_path>` where the path
-/// ends with `<uid>/files`. We strip the `local::` scheme, normalize
-/// path separators, and return the segment before the final `files`.
-///
-/// Returns `None` for any storage_id we don't recognize — the caller
-/// falls back to skipping owner-injection rather than fabricating a
-/// uid. A non-local storage backend (S3, etc.) would surface as
-/// `None` here and would need its own owner-resolution path.
-fn owner_uid_from_storage_id(storage_id: &str) -> Option<String> {
-    let stripped = storage_id.strip_prefix("local::")?;
-    // Normalize both unix and windows-style separators.
-    let normalized = stripped.replace('\\', "/");
-    let mut segments: Vec<&str> = normalized.split('/').filter(|s| !s.is_empty()).collect();
-    let last = segments.pop()?;
-    if last != "files" {
-        return None;
-    }
-    let uid = segments.pop()?;
-    Some(uid.to_string())
 }
 
 /// Defensive check: any future event whose path lives under
@@ -442,33 +460,6 @@ fn is_trash_event(event: &StorageEvent) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn owner_uid_extracts_from_local_storage_id_unix() {
-        assert_eq!(
-            owner_uid_from_storage_id("local::/var/lib/cc/alice/files"),
-            Some("alice".to_string())
-        );
-    }
-
-    #[test]
-    fn owner_uid_extracts_from_local_storage_id_windows() {
-        assert_eq!(
-            owner_uid_from_storage_id(r"local::C:\Users\test\data\alice\files"),
-            Some("alice".to_string())
-        );
-    }
-
-    #[test]
-    fn owner_uid_returns_none_for_non_local() {
-        assert_eq!(owner_uid_from_storage_id("s3::bucket/prefix"), None);
-        assert_eq!(owner_uid_from_storage_id("home::alice"), None);
-    }
-
-    #[test]
-    fn owner_uid_returns_none_for_unexpected_suffix() {
-        assert_eq!(owner_uid_from_storage_id("local::/var/lib/cc/alice"), None);
-    }
 
     #[test]
     fn web_path_adds_leading_slash() {

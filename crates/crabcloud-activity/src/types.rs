@@ -14,6 +14,7 @@ pub enum EventType {
     FileRestored,
     ShareCreated,
     ShareDeleted,
+    ShareUnaccepted,
     VersionRestored,
 }
 
@@ -27,6 +28,7 @@ impl EventType {
             EventType::FileRestored => "file_restored",
             EventType::ShareCreated => "share_created",
             EventType::ShareDeleted => "share_deleted",
+            EventType::ShareUnaccepted => "share_unaccepted",
             EventType::VersionRestored => "version_restored",
         }
     }
@@ -44,6 +46,7 @@ impl EventType {
             "file_restored" => Some(Self::FileRestored),
             "share_created" => Some(Self::ShareCreated),
             "share_deleted" => Some(Self::ShareDeleted),
+            "share_unaccepted" => Some(Self::ShareUnaccepted),
             "version_restored" => Some(Self::VersionRestored),
             _ => None,
         }
