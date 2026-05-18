@@ -121,10 +121,7 @@ pub async fn get_activity_settings() -> Result<Vec<ActivitySettingDto>, ServerFn
 /// has no HTTP verb constraint and so just takes the two fields as
 /// positional inputs.
 #[server(endpoint = "api/files/activity/settings/put", prefix = "")]
-pub async fn set_activity_setting(
-    event_type: String,
-    stream: bool,
-) -> Result<(), ServerFnError> {
+pub async fn set_activity_setting(event_type: String, stream: bool) -> Result<(), ServerFnError> {
     let (state, uid) = super::require_user().await?;
     state
         .activity_settings

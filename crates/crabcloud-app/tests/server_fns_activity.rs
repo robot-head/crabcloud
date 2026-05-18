@@ -260,7 +260,11 @@ async fn list_activity_respects_since_and_limit() {
     let page2: crabcloud_app::ListActivityResponse = serde_json::from_slice(&body).unwrap();
     assert_eq!(page2.items.len(), 3, "{:?}", page2.items);
     for it in &page2.items {
-        assert!(it.id < cursor, "id {} not strictly less than {cursor}", it.id);
+        assert!(
+            it.id < cursor,
+            "id {} not strictly less than {cursor}",
+            it.id
+        );
     }
 }
 
@@ -282,8 +286,7 @@ async fn settings_round_trip_set_then_get() {
     .await;
     let (status, body) = decode_bytes(resp).await;
     assert_eq!(status, StatusCode::OK);
-    let settings: Vec<crabcloud_app::ActivitySettingDto> =
-        serde_json::from_slice(&body).unwrap();
+    let settings: Vec<crabcloud_app::ActivitySettingDto> = serde_json::from_slice(&body).unwrap();
     assert!(settings.is_empty(), "{settings:?}");
 
     // Upsert two toggles via the PUT-equivalent server fn.
@@ -315,8 +318,7 @@ async fn settings_round_trip_set_then_get() {
     .await;
     let (status, body) = decode_bytes(resp).await;
     assert_eq!(status, StatusCode::OK);
-    let settings: Vec<crabcloud_app::ActivitySettingDto> =
-        serde_json::from_slice(&body).unwrap();
+    let settings: Vec<crabcloud_app::ActivitySettingDto> = serde_json::from_slice(&body).unwrap();
     assert_eq!(settings.len(), 2, "{settings:?}");
     let by_type: std::collections::HashMap<_, _> = settings
         .iter()
