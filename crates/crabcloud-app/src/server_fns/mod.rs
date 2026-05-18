@@ -8,6 +8,7 @@
 pub mod activity;
 pub mod notification_prefs;
 pub mod public_link;
+pub mod search;
 pub mod trash;
 pub mod versions;
 

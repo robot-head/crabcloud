@@ -856,6 +856,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum",
+ "base64",
  "chrono",
  "clap",
  "crabcloud-activity",
@@ -868,6 +869,7 @@ dependencies = [
  "crabcloud-mail",
  "crabcloud-preview",
  "crabcloud-publiclinks",
+ "crabcloud-search",
  "crabcloud-sharing",
  "crabcloud-storage",
  "crabcloud-trash",
