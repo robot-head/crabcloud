@@ -95,6 +95,13 @@ pub const CORE_MIGRATIONS: &[Migration] = &[
         mysql: include_str!("../../../migrations/core/0011_activity_and_settings/mysql.sql"),
         postgres: include_str!("../../../migrations/core/0011_activity_and_settings/postgres.sql"),
     },
+    Migration {
+        version: 12,
+        name: "search_index",
+        sqlite: include_str!("../../../migrations/core/0012_search_index/sqlite.sql"),
+        mysql: include_str!("../../../migrations/core/0012_search_index/mysql.sql"),
+        postgres: include_str!("../../../migrations/core/0012_search_index/postgres.sql"),
+    },
 ];
 
 /// Returns the `core` migration set ready to be registered with a
@@ -122,7 +129,7 @@ mod tests {
         let mut runner = MigrationRunner::new(&pool, &cfg.dbtableprefix);
         runner.register(core_set());
         let applied = runner.run().await.unwrap();
-        assert_eq!(applied, 11);
+        assert_eq!(applied, 12);
 
         // Verify oc_appconfig exists and accepts a row.
         match &pool {
