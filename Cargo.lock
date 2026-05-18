@@ -1032,6 +1032,7 @@ dependencies = [
  "crabcloud-ocs",
  "crabcloud-preview",
  "crabcloud-publiclinks",
+ "crabcloud-search",
  "crabcloud-sharing",
  "crabcloud-storage",
  "crabcloud-trash",

@@ -9,6 +9,7 @@ pub mod envelope;
 pub mod files_sharing;
 pub mod files_trashbin;
 pub mod files_versions;
+pub mod search;
 pub mod user;
 
 use axum::routing::{delete, get, put};
@@ -27,6 +28,7 @@ pub fn router() -> Router<AppState> {
             "/v2.php/apps/files_versions/api/v1",
             files_versions::router(),
         )
+        .nest("/v2.php/search/providers/files", search::router())
         .route("/v2.php/cloud/capabilities", get(capabilities::handler))
         .route(
             "/v2.php/cloud/user",

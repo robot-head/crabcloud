@@ -24,6 +24,7 @@ crabcloud-filecache.workspace = true
 crabcloud-ocs.workspace = true
 crabcloud-preview.workspace = true
 crabcloud-publiclinks.workspace = true
+crabcloud-search.workspace = true
 crabcloud-sharing.workspace = true
 crabcloud-storage.workspace = true
 crabcloud-trash.workspace = true
