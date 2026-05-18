@@ -183,6 +183,16 @@ pub struct FileConfig {
     #[serde(default = "default_activity_coalesce_window_secs")]
     pub activity_coalesce_window_secs: u32,
 
+    /// When `true`, `AppStateBuilder::build` spawns the `SearchIndexer`
+    /// background task that subscribes to `storage_sink` and maintains
+    /// the per-user `oc_search` index. When `false`, the indexer task
+    /// is suppressed; `Search::query` and direct `Search::upsert_for_file`
+    /// still work. Tests that don't exercise search-indexing semantics
+    /// set this `false` to avoid sqlite write contention under
+    /// workspace-parallel `cargo test`.
+    #[serde(default = "default_search_indexer_enabled")]
+    pub search_indexer_enabled: bool,
+
     /// Optional bootstrap admin (Phase 3 deferred-users stand-in).
     pub bootstrap_admin: Option<BootstrapAdminConfig>,
 }
@@ -345,6 +355,9 @@ fn default_activity_retention_days() -> u32 {
 fn default_activity_coalesce_window_secs() -> u32 {
     600
 }
+fn default_search_indexer_enabled() -> bool {
+    true
+}
 
 /// Errors raised while validating a parsed config.
 #[derive(Debug, thiserror::Error)]
@@ -432,6 +445,7 @@ mod tests {
             versions_retention_disabled: false,
             activity_retention_days: default_activity_retention_days(),
             activity_coalesce_window_secs: default_activity_coalesce_window_secs(),
+            search_indexer_enabled: default_search_indexer_enabled(),
             bootstrap_admin: None,
         }
     }

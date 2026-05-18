@@ -60,6 +60,10 @@ pub fn minimal_sqlite_config(db_path: PathBuf) -> FileConfig {
         versions_retention_disabled: false,
         activity_retention_days: 365,
         activity_coalesce_window_secs: 600,
+        // Disabled by default in tests to avoid sqlite write contention
+        // under workspace-parallel `cargo test --workspace`. Tests that
+        // exercise indexer semantics opt in: `cfg.search_indexer_enabled = true`.
+        search_indexer_enabled: false,
         bootstrap_admin: None,
     }
 }
