@@ -519,15 +519,22 @@ impl AppStateBuilder {
         }
 
         // SearchIndexer: subscribes to `storage_sink` and maintains the
-        // per-user `oc_search` index. Spawned unconditionally — search
-        // is on for every install.
+        // per-user `oc_search` index. Production default is enabled; the
+        // shutdown handle is always present so tests / callers can
+        // notify it without checking. The spawn is gated on
+        // `config.search_indexer_enabled` so test fixtures using
+        // `minimal_sqlite_config` (which defaults the flag to false)
+        // don't suffer sqlite write contention under workspace-parallel
+        // `cargo test --workspace`.
         let (search_indexer, search_indexer_shutdown) = crate::SearchIndexer::new(
             search.clone(),
             shares.clone(),
             filecache.clone(),
             &storage_sink,
         );
-        std::mem::drop(tokio::spawn(async move { search_indexer.run().await }));
+        if self.config.search_indexer_enabled {
+            std::mem::drop(tokio::spawn(async move { search_indexer.run().await }));
+        }
 
         let state = AppState {
             config: self.config.clone(),

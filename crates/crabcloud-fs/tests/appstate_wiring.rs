@@ -150,6 +150,7 @@ async fn appstate_write_eventually_indexed_then_queryable() {
     let data_dir = tempdir().unwrap();
     let mut cfg = minimal_sqlite_config(db_dir.path().join("state.db"));
     cfg.datadirectory = data_dir.path().to_path_buf();
+    cfg.search_indexer_enabled = true;
     let state = AppStateBuilder::new(cfg).build().await.unwrap();
 
     let uid = UserId::new("alice").unwrap();
@@ -192,6 +193,7 @@ async fn appstate_delete_eventually_removes_from_index() {
     let data_dir = tempdir().unwrap();
     let mut cfg = minimal_sqlite_config(db_dir.path().join("state.db"));
     cfg.datadirectory = data_dir.path().to_path_buf();
+    cfg.search_indexer_enabled = true;
     let state = AppStateBuilder::new(cfg).build().await.unwrap();
 
     let uid = UserId::new("alice").unwrap();
