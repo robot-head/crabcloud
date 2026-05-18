@@ -1412,8 +1412,7 @@ impl Shares {
                 continue;
             };
             let owner_subroot = format!("/{}", item_row.path.as_str().trim_start_matches('/'));
-            let recipient_prefix =
-                format!("/{}", share.file_target.trim_start_matches('/'));
+            let recipient_prefix = format!("/{}", share.file_target.trim_start_matches('/'));
 
             let mut recipients: Vec<UserId> = Vec::new();
             let mut seen = std::collections::HashSet::new();

@@ -100,11 +100,7 @@ impl Scanner {
                         // apply keeps failing. The retry envelope is
                         // bounded so a genuinely broken apply still
                         // surfaces in a reasonable time.
-                        let apply_result = apply_with_busy_retry(
-                            &self.cache,
-                            &event,
-                        )
-                        .await;
+                        let apply_result = apply_with_busy_retry(&self.cache, &event).await;
                         match apply_result {
                             Ok(()) => {
                                 let _ = self.applied_tx.send(event);
@@ -141,10 +137,7 @@ impl Scanner {
 /// inserts) overlapping the scanner's apply, this case shows up
 /// occasionally; a short retry loop converges on the next pool slice
 /// without surfacing a transient error to the apply caller.
-async fn apply_with_busy_retry(
-    cache: &FileCache,
-    event: &StorageEvent,
-) -> FileCacheResult<()> {
+async fn apply_with_busy_retry(cache: &FileCache, event: &StorageEvent) -> FileCacheResult<()> {
     // ~1.5s upper bound — 50% margin over sqlx-sqlite's 5s
     // `busy_timeout` default would be excessive for what is almost
     // always a sub-50ms wait under real contention. Bound on attempts,
