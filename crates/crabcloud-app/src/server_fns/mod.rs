@@ -5,6 +5,7 @@
 //! explicit `endpoint` attributes so external Nextcloud-compatible clients
 //! keep working.
 
+pub mod activity;
 pub mod notification_prefs;
 pub mod public_link;
 pub mod trash;

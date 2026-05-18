@@ -71,6 +71,12 @@ pub use app::{App, Route};
 pub use context::RequestContext;
 // re-exported for integration tests (tests/server_fns_public_link.rs)
 pub use server_fns::public_link::PublicLinkMeta;
+// re-exported for integration tests (tests/server_fns_activity.rs) and
+// the Dioxus UI (SP14 Batch D).
+pub use server_fns::activity::{
+    get_activity_settings, list_activity, set_activity_setting, ActivityRowDto, ActivitySettingDto,
+    ListActivityResponse,
+};
 // re-exported for integration tests (tests/server_fns_trash.rs) and the
 // Dioxus UI (Batch D).
 pub use server_fns::trash::{
