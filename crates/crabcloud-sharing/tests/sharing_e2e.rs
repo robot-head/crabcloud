@@ -411,6 +411,102 @@ async fn recipients_for_fileid_resolves_cascading_share(fx: &Fixture) {
     assert!(uids.contains("bob"), "ancestor-share recipient included");
 }
 
+async fn user_share_create_fans_out_into_search_index(fx: &Fixture) {
+    seed_user(fx, "alice").await;
+    seed_user(fx, "bob").await;
+    let _ = seed_file(fx, "alice", "/report.docx", false).await;
+    let sid = fx.home_storage_id("alice");
+    fx.shares
+        .create(share_request(
+            "alice",
+            &sid,
+            "/report.docx",
+            ShareType::User,
+            "bob",
+            3,
+        ))
+        .await
+        .unwrap();
+
+    let hits = fx
+        .search
+        .query("bob", &crabcloud_search::parse_query("report"), 10, None)
+        .await
+        .unwrap();
+    assert_eq!(hits.len(), 1, "bob should see the shared file in the index");
+    assert_eq!(hits[0].basename, "report.docx");
+}
+
+async fn user_share_delete_removes_from_search_index(fx: &Fixture) {
+    seed_user(fx, "alice").await;
+    seed_user(fx, "bob").await;
+    let _ = seed_file(fx, "alice", "/report.docx", false).await;
+    let sid = fx.home_storage_id("alice");
+    let created = fx
+        .shares
+        .create(share_request(
+            "alice",
+            &sid,
+            "/report.docx",
+            ShareType::User,
+            "bob",
+            3,
+        ))
+        .await
+        .unwrap();
+    // Sanity: bob is indexed.
+    assert_eq!(
+        fx.search
+            .query("bob", &crabcloud_search::parse_query("report"), 10, None)
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
+
+    fx.shares
+        .delete(created.id, &UserId::new("alice").unwrap())
+        .await
+        .unwrap();
+    let hits = fx
+        .search
+        .query("bob", &crabcloud_search::parse_query("report"), 10, None)
+        .await
+        .unwrap();
+    assert!(hits.is_empty(), "bob's row should be removed after unshare");
+}
+
+async fn group_share_create_fans_out_to_each_member(fx: &Fixture) {
+    seed_user(fx, "alice").await;
+    seed_user(fx, "bob").await;
+    seed_user(fx, "carol").await;
+    seed_group(fx, "team").await;
+    add_user_to_group(fx, "bob", "team").await;
+    add_user_to_group(fx, "carol", "team").await;
+    let _ = seed_file(fx, "alice", "/teamdoc.docx", false).await;
+    let sid = fx.home_storage_id("alice");
+    fx.shares
+        .create(share_request(
+            "alice",
+            &sid,
+            "/teamdoc.docx",
+            ShareType::Group,
+            "team",
+            3,
+        ))
+        .await
+        .unwrap();
+
+    for u in ["bob", "carol"] {
+        let hits = fx
+            .search
+            .query(u, &crabcloud_search::parse_query("teamdoc"), 10, None)
+            .await
+            .unwrap();
+        assert_eq!(hits.len(), 1, "{u} should see teamdoc.docx");
+    }
+}
+
 async fn recipients_for_fileid_returns_empty_for_unshared_file(fx: &Fixture) {
     seed_user(fx, "alice").await;
     let fileid = seed_file(fx, "alice", "/solo.txt", false).await;
@@ -1026,6 +1122,9 @@ per_dialect!(recipients_for_fileid_resolves_user_share);
 per_dialect!(recipients_for_fileid_resolves_group_share);
 per_dialect!(recipients_for_fileid_resolves_cascading_share);
 per_dialect!(recipients_for_fileid_returns_empty_for_unshared_file);
+per_dialect!(user_share_create_fans_out_into_search_index);
+per_dialect!(user_share_delete_removes_from_search_index);
+per_dialect!(group_share_create_fans_out_to_each_member);
 
 per_dialect!(update_permissions_owner_can_flip_bits);
 per_dialect!(update_rejects_non_owner);

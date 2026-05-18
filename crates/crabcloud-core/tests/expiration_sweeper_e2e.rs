@@ -62,6 +62,7 @@ async fn fixture() -> Fx {
         prefs: prefs.clone(),
         instance_url: "https://test.example".to_string(),
         activity: Arc::new(crabcloud_activity::NoopEmitter),
+        search: Arc::new(crabcloud_search::NoopSearchFanout),
     }));
     Fx {
         pool: pool_arc,

@@ -43,6 +43,9 @@ pub struct Fixture {
     /// `share_created` / `share_deleted` rows. Tests that don't care
     /// simply ignore it.
     pub activity: Arc<crabcloud_activity::Activity>,
+    /// Real `Search` service wired into `shares` so tests can assert
+    /// that share create / delete drove the fan-out into `oc_search`.
+    pub search: Arc<crabcloud_search::Search>,
     // Hold the tempdir alive for sqlite-backed fixtures so the file lasts.
     _tempdir: Option<TempDir>,
 }
@@ -163,6 +166,8 @@ impl Fixture {
             activity_settings,
             0,
         ));
+        let search_concrete = Arc::new(crabcloud_search::Search::new(pool_arc.clone()));
+        let search: Arc<dyn crabcloud_search::SearchFanout> = search_concrete.clone();
         let shares = Shares::new(SharesConfig {
             pool: pool_arc.clone(),
             users: users.clone(),
@@ -171,6 +176,7 @@ impl Fixture {
             prefs,
             instance_url: "https://test.example".to_string(),
             activity: activity.clone(),
+            search: search.clone(),
         });
         let mail = recorder.unwrap_or_else(|| Arc::new(RecordingEnqueuer::new()));
         Self {
@@ -180,6 +186,7 @@ impl Fixture {
             shares,
             mail,
             activity,
+            search: search_concrete,
             _tempdir: tempdir,
         }
     }

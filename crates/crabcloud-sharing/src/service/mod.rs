@@ -42,6 +42,10 @@ pub struct Shares {
     /// because the user-visible share create/delete must not be rolled
     /// back by a down activity log (SP14 spec §6 emit-failure row).
     pub(crate) activity: Arc<dyn crabcloud_activity::ActivityEmitter>,
+    /// Search-index fan-out. Best-effort; failures are logged + swallowed
+    /// so a misbehaving search index can't block a share create / delete
+    /// (SP15 spec §6 — same eventually-consistent contract as activity).
+    pub(crate) search: Arc<dyn crabcloud_search::SearchFanout>,
 }
 
 /// Construction parameters for `Shares::new`.
@@ -64,6 +68,10 @@ pub struct SharesConfig {
     /// Tests can pass `Arc::new(crabcloud_activity::NoopEmitter)` to
     /// skip activity logging.
     pub activity: Arc<dyn crabcloud_activity::ActivityEmitter>,
+    /// Search-index fan-out. Tests can pass
+    /// `Arc::new(crabcloud_search::NoopSearchFanout)` to skip search
+    /// indexing.
+    pub search: Arc<dyn crabcloud_search::SearchFanout>,
 }
 
 impl Shares {
@@ -77,6 +85,7 @@ impl Shares {
             prefs: cfg.prefs,
             instance_url: cfg.instance_url,
             activity: cfg.activity,
+            search: cfg.search,
         }
     }
 
@@ -245,6 +254,30 @@ impl Shares {
             req.path.as_str(),
         )
         .await;
+
+        // Best-effort search fan-out (SP15). Failures are logged + dropped
+        // so the user-visible share-create still succeeds. The recipient
+        // list mirrors `share_activity_recipients` minus the actor.
+        let recipients = self
+            .search_fanout_recipients(req.share_type, Some(req.share_with.as_str()))
+            .await;
+        if !recipients.is_empty() {
+            let recipient_prefix = format!("/{}", file_target.trim_start_matches('/'));
+            let owner_path = format!("/{}", req.path.trim_start_matches('/'));
+            if let Err(e) = self
+                .search
+                .fan_out_for_share(
+                    &self.filecache,
+                    recipients,
+                    &req.home_storage_id,
+                    &owner_path,
+                    &recipient_prefix,
+                )
+                .await
+            {
+                tracing::warn!(error = %e, share_id = id, "sharing: search fan_out_for_share failed");
+            }
+        }
 
         Ok(ShareRow {
             id,
@@ -599,6 +632,53 @@ impl Shares {
                 row.file_target.as_str(),
             )
             .await;
+
+            // Best-effort search fan-out unshare. Walks the same owner
+            // subroot and removes recipient rows. We have to look the
+            // owner subroot path up via the filecache (the share row
+            // stores fileid in item_source, not the path string).
+            let recipients = self
+                .search_fanout_recipients(row.share_type, row.share_with.as_deref())
+                .await;
+            if !recipients.is_empty() {
+                match self.filecache.lookup_by_id(row.item_source).await {
+                    Ok(Some(fc_row)) => {
+                        let owner_subroot = format!("/{}", fc_row.path.as_str());
+                        // Owner-storage id is the storage id stamped on
+                        // the filecache row itself.
+                        if let Err(e) = self
+                            .search
+                            .fan_out_for_unshare(
+                                &self.filecache,
+                                recipients,
+                                &fc_row.storage_id,
+                                &owner_subroot,
+                            )
+                            .await
+                        {
+                            tracing::warn!(
+                                error = %e,
+                                share_id = id,
+                                "sharing: search fan_out_for_unshare failed"
+                            );
+                        }
+                    }
+                    Ok(None) => {
+                        tracing::debug!(
+                            share_id = id,
+                            item_source = row.item_source,
+                            "sharing: search fan-out unshare skipped (filecache row missing)"
+                        );
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            error = %e,
+                            share_id = id,
+                            "sharing: search fan-out unshare filecache lookup failed"
+                        );
+                    }
+                }
+            }
             Ok(())
         } else if is_direct || is_group_recipient {
             if !row.accepted {
@@ -966,6 +1046,52 @@ impl Shares {
                 "sharing: activity emit failed"
             );
         }
+    }
+
+    /// Resolve the recipient list for a search fan-out tied to a share.
+    /// User shares fan out to `[share_with]`; group shares fan out to
+    /// every member of the group. Link / email shares fan out to none
+    /// (public-link visibility is token-based, not viewer-uid-based).
+    /// The owner is NOT included — they're already indexed via the
+    /// per-write indexer; fan-out only touches recipient rows.
+    async fn search_fanout_recipients(
+        &self,
+        share_type: ShareType,
+        share_with: Option<&str>,
+    ) -> Vec<UserId> {
+        let mut raw: Vec<String> = Vec::new();
+        match share_type {
+            ShareType::User => {
+                if let Some(s) = share_with {
+                    raw.push(s.to_string());
+                }
+            }
+            ShareType::Group => {
+                if let Some(gname) = share_with {
+                    match GroupId::new(gname) {
+                        Ok(gid) => match self.users.group_store().members_of(&gid).await {
+                            Ok(members) => raw.extend(members.into_iter().map(|u| u.into_inner())),
+                            Err(e) => tracing::warn!(
+                                error = %e,
+                                group = gname,
+                                "sharing: search fanout group expansion failed"
+                            ),
+                        },
+                        Err(e) => tracing::warn!(
+                            error = %e,
+                            group = gname,
+                            "sharing: search fanout skipping invalid group id"
+                        ),
+                    }
+                }
+            }
+            ShareType::Link | ShareType::Email => {}
+        }
+        let mut seen = std::collections::HashSet::new();
+        raw.into_iter()
+            .filter_map(|s| UserId::new(s).ok())
+            .filter(|u| seen.insert(u.as_str().to_string()))
+            .collect()
     }
 
     /// Returns the de-duped set of `UserId`s that can see `fileid` via

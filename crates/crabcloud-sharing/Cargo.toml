@@ -13,6 +13,7 @@ crabcloud-db.workspace = true
 crabcloud-filecache.workspace = true
 crabcloud-mail.workspace = true
 crabcloud-publiclinks.workspace = true
+crabcloud-search.workspace = true
 crabcloud-storage.workspace = true
 crabcloud-users.workspace = true
 serde.workspace = true

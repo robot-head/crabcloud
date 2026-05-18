@@ -364,6 +364,10 @@ impl AppStateBuilder {
         let notification_prefs = crabcloud_users::NotificationPrefs::new(Arc::new(pool.clone()));
         let instance_url = self.config.overwrite_cli_url.clone().unwrap_or_default();
 
+        // Search service (SP15). Constructed before Shares so the share
+        // service can carry the fan-out handle into its lifecycle hooks.
+        let search = Arc::new(crabcloud_search::Search::new(Arc::new(pool.clone())));
+
         let shares = Arc::new(crabcloud_sharing::Shares::new(
             crabcloud_sharing::SharesConfig {
                 pool: Arc::new(pool.clone()),
@@ -373,6 +377,7 @@ impl AppStateBuilder {
                 prefs: notification_prefs.clone(),
                 instance_url,
                 activity: activity.clone(),
+                search: search.clone(),
             },
         ));
         let mount_resolver: Arc<dyn MountResolver> = Arc::new(ShareMountResolver::new(
