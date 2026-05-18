@@ -1,5 +1,6 @@
 //! Page components mounted by the App's Router.
 
+pub mod activity;
 pub mod files;
 pub mod home;
 pub mod login;
