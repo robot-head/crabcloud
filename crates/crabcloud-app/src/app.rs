@@ -7,9 +7,9 @@
 use crate::context::RequestContext;
 use crate::pages::{
     activity::ActivityPage, activity_settings::ActivitySettingsPage, home::Home, login::Login,
-    login_v2_flow::LoginV2Flow, not_found::NotFound,
-    public_link::PublicLink as PublicLinkPage, settings_notifications::SettingsNotifications,
-    settings_security::SettingsSecurity, trash::TrashPage,
+    login_v2_flow::LoginV2Flow, not_found::NotFound, public_link::PublicLink as PublicLinkPage,
+    settings_notifications::SettingsNotifications, settings_security::SettingsSecurity,
+    trash::TrashPage,
 };
 use dioxus::prelude::*;
 

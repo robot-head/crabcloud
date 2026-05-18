@@ -31,7 +31,10 @@ pub fn ActivityPage(ctx: RequestContext) -> Element {
     use_effect(move || {
         spawn(async move {
             match list_activity(None, Some(30)).await {
-                Ok(ListActivityResponse { items, next_since: ns }) => {
+                Ok(ListActivityResponse {
+                    items,
+                    next_since: ns,
+                }) => {
                     entries.set(items);
                     next_since.set(ns);
                     last_error.set(None);
@@ -50,7 +53,10 @@ pub fn ActivityPage(ctx: RequestContext) -> Element {
         loading_more.set(true);
         spawn(async move {
             match list_activity(since, Some(30)).await {
-                Ok(ListActivityResponse { items, next_since: ns }) => {
+                Ok(ListActivityResponse {
+                    items,
+                    next_since: ns,
+                }) => {
                     entries.with_mut(|v| v.extend(items));
                     next_since.set(ns);
                     last_error.set(None);
@@ -208,7 +214,13 @@ fn format_when(unix_secs: i64) -> String {
 mod tests {
     use super::*;
 
-    fn row(id: i64, event_type: &str, subject: &str, count: i32, last_seen_at: i64) -> ActivityRowDto {
+    fn row(
+        id: i64,
+        event_type: &str,
+        subject: &str,
+        count: i32,
+        last_seen_at: i64,
+    ) -> ActivityRowDto {
         ActivityRowDto {
             id,
             actor: "alice".into(),
@@ -236,8 +248,20 @@ mod tests {
     #[test]
     fn renders_two_rows_with_icons_and_when() {
         let rows = vec![
-            row(1, "file_created", "alice created notes.txt", 1, 1_700_000_000),
-            row(2, "share_created", "alice shared photos with you", 1, 1_700_000_100),
+            row(
+                1,
+                "file_created",
+                "alice created notes.txt",
+                1,
+                1_700_000_000,
+            ),
+            row(
+                2,
+                "share_created",
+                "alice shared photos with you",
+                1,
+                1_700_000_100,
+            ),
         ];
 
         #[component]
@@ -318,7 +342,13 @@ mod tests {
     #[test]
     fn coalesced_row_shows_count_badge() {
         let rows = vec![
-            row(1, "file_updated", "alice updated notes.txt", 5, 1_700_000_000),
+            row(
+                1,
+                "file_updated",
+                "alice updated notes.txt",
+                5,
+                1_700_000_000,
+            ),
             row(2, "file_created", "alice created log.txt", 1, 1_700_000_100),
         ];
 
@@ -350,7 +380,13 @@ mod tests {
     /// subject. Mirrors trash-row's accessibility assertions.
     #[test]
     fn row_emits_accessibility_attributes() {
-        let rows = vec![row(1, "file_created", "alice created notes.txt", 1, 1_700_000_000)];
+        let rows = vec![row(
+            1,
+            "file_created",
+            "alice created notes.txt",
+            1,
+            1_700_000_000,
+        )];
 
         #[component]
         fn Wrapper(rows: Vec<ActivityRowDto>) -> Element {
@@ -372,7 +408,13 @@ mod tests {
     /// screen reader hears the multiplicity, not just the latest subject.
     #[test]
     fn coalesced_row_aria_label_includes_count() {
-        let rows = vec![row(1, "file_updated", "alice updated notes.txt", 3, 1_700_000_000)];
+        let rows = vec![row(
+            1,
+            "file_updated",
+            "alice updated notes.txt",
+            3,
+            1_700_000_000,
+        )];
 
         #[component]
         fn Wrapper(rows: Vec<ActivityRowDto>) -> Element {
