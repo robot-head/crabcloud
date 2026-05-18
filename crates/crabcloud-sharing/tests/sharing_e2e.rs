@@ -332,6 +332,95 @@ async fn list_incoming_returns_group_shares(fx: &Fixture) {
     assert_eq!(rows[0].share_type, ShareType::Group);
 }
 
+async fn recipients_for_fileid_resolves_user_share(fx: &Fixture) {
+    seed_user(fx, "alice").await;
+    seed_user(fx, "bob").await;
+    let fileid = seed_file(fx, "alice", "/report.docx", false).await;
+    let sid = fx.home_storage_id("alice");
+    fx.shares
+        .create(share_request(
+            "alice",
+            &sid,
+            "/report.docx",
+            ShareType::User,
+            "bob",
+            3,
+        ))
+        .await
+        .unwrap();
+
+    let recipients = fx.shares.recipients_for_fileid(fileid).await.unwrap();
+    let uids: std::collections::HashSet<String> =
+        recipients.iter().map(|u| u.as_str().to_string()).collect();
+    assert!(uids.contains("alice"), "owner included");
+    assert!(uids.contains("bob"), "share recipient included");
+}
+
+async fn recipients_for_fileid_resolves_group_share(fx: &Fixture) {
+    seed_user(fx, "alice").await;
+    seed_user(fx, "bob").await;
+    seed_user(fx, "carol").await;
+    seed_group(fx, "team").await;
+    add_user_to_group(fx, "bob", "team").await;
+    add_user_to_group(fx, "carol", "team").await;
+    let fileid = seed_file(fx, "alice", "/team-doc.docx", false).await;
+    let sid = fx.home_storage_id("alice");
+    fx.shares
+        .create(share_request(
+            "alice",
+            &sid,
+            "/team-doc.docx",
+            ShareType::Group,
+            "team",
+            3,
+        ))
+        .await
+        .unwrap();
+
+    let recipients = fx.shares.recipients_for_fileid(fileid).await.unwrap();
+    let uids: std::collections::HashSet<String> =
+        recipients.iter().map(|u| u.as_str().to_string()).collect();
+    assert!(uids.contains("alice"));
+    assert!(uids.contains("bob"));
+    assert!(uids.contains("carol"));
+}
+
+async fn recipients_for_fileid_resolves_cascading_share(fx: &Fixture) {
+    // Sharing /docs to bob makes /docs/report.docx visible to bob too.
+    seed_user(fx, "alice").await;
+    seed_user(fx, "bob").await;
+    let _dir_id = seed_file(fx, "alice", "/docs", true).await;
+    let leaf_id = seed_file(fx, "alice", "/docs/report.docx", false).await;
+    let sid = fx.home_storage_id("alice");
+    fx.shares
+        .create(share_request(
+            "alice",
+            &sid,
+            "/docs",
+            ShareType::User,
+            "bob",
+            3,
+        ))
+        .await
+        .unwrap();
+
+    let recipients = fx.shares.recipients_for_fileid(leaf_id).await.unwrap();
+    let uids: std::collections::HashSet<String> =
+        recipients.iter().map(|u| u.as_str().to_string()).collect();
+    assert!(uids.contains("alice"), "owner included");
+    assert!(uids.contains("bob"), "ancestor-share recipient included");
+}
+
+async fn recipients_for_fileid_returns_empty_for_unshared_file(fx: &Fixture) {
+    seed_user(fx, "alice").await;
+    let fileid = seed_file(fx, "alice", "/solo.txt", false).await;
+    let recipients = fx.shares.recipients_for_fileid(fileid).await.unwrap();
+    assert!(
+        recipients.is_empty(),
+        "no shares = no recipients (owner-indexing is the caller's job)"
+    );
+}
+
 async fn list_incoming_skips_unaccepted_rows(fx: &Fixture) {
     seed_user(fx, "alice").await;
     seed_user(fx, "bob").await;
@@ -933,6 +1022,10 @@ per_dialect!(list_for_owner_path_filters_by_source);
 per_dialect!(list_incoming_returns_user_shares);
 per_dialect!(list_incoming_returns_group_shares);
 per_dialect!(list_incoming_skips_unaccepted_rows);
+per_dialect!(recipients_for_fileid_resolves_user_share);
+per_dialect!(recipients_for_fileid_resolves_group_share);
+per_dialect!(recipients_for_fileid_resolves_cascading_share);
+per_dialect!(recipients_for_fileid_returns_empty_for_unshared_file);
 
 per_dialect!(update_permissions_owner_can_flip_bits);
 per_dialect!(update_rejects_non_owner);

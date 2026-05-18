@@ -83,6 +83,63 @@ pub async fn lookup_row(
     raw.map(FilecacheRowRaw::into_row).transpose()
 }
 
+/// Walk every row whose path is `path_prefix` itself or a descendant
+/// of `path_prefix`, in the storage identified by `storage_id`. Used by
+/// `crabcloud-search` to drive bulk fan-out at share lifecycle events.
+///
+/// The match semantics:
+///   - exact-path match on `path_prefix`
+///   - OR `path` starts with `path_prefix + "/"` (sub-tree match)
+///
+/// `path_prefix = ""` (root) matches every row in the storage.
+pub async fn walk_under(
+    cache: &FileCache,
+    storage_id: &str,
+    path_prefix: &str,
+) -> FileCacheResult<Vec<FilecacheRow>> {
+    let prefix = path_prefix.trim_matches('/').to_string();
+    let descendant_pattern = if prefix.is_empty() {
+        // Empty prefix means match every non-root row. Use LIKE '%' which
+        // matches any non-NULL path string (including '').
+        "%".to_string()
+    } else {
+        format!("{prefix}/%")
+    };
+    let raws: Vec<FilecacheRowRaw> = match cache.pool() {
+        DbPool::Sqlite(p) => sqlx::query(SQL_WALK_UNDER_QM)
+            .bind(storage_id)
+            .bind(&prefix)
+            .bind(&descendant_pattern)
+            .fetch_all(p)
+            .await
+            .map_err(FileCacheError::Db)?
+            .into_iter()
+            .map(decode_sqlite_row)
+            .collect::<FileCacheResult<Vec<_>>>()?,
+        DbPool::MySql(p) => sqlx::query(SQL_WALK_UNDER_QM)
+            .bind(storage_id)
+            .bind(&prefix)
+            .bind(&descendant_pattern)
+            .fetch_all(p)
+            .await
+            .map_err(FileCacheError::Db)?
+            .into_iter()
+            .map(decode_mysql_row)
+            .collect::<FileCacheResult<Vec<_>>>()?,
+        DbPool::Postgres(p) => sqlx::query(SQL_WALK_UNDER_PG)
+            .bind(storage_id)
+            .bind(&prefix)
+            .bind(&descendant_pattern)
+            .fetch_all(p)
+            .await
+            .map_err(FileCacheError::Db)?
+            .into_iter()
+            .map(decode_postgres_row)
+            .collect::<FileCacheResult<Vec<_>>>()?,
+    };
+    raws.into_iter().map(FilecacheRowRaw::into_row).collect()
+}
+
 /// Lookup by `fileid`.
 pub async fn lookup_row_by_id(
     cache: &FileCache,
@@ -148,6 +205,24 @@ const SQL_SELECT_BY_FILEID_PG: &str = "SELECT f.fileid, s.id AS storage_id, f.pa
     JOIN oc_storages s ON s.numeric_id = f.storage \
     JOIN oc_mimetypes m ON m.id = f.mimetype \
     WHERE f.fileid = $1";
+
+const SQL_WALK_UNDER_QM: &str = "SELECT f.fileid, s.id AS storage_id, f.path, \
+    f.parent, f.name, m.mimetype AS mimetype, f.size, f.mtime, f.storage_mtime, f.etag, \
+    f.permissions \
+    FROM oc_filecache f \
+    JOIN oc_storages s ON s.numeric_id = f.storage \
+    JOIN oc_mimetypes m ON m.id = f.mimetype \
+    WHERE s.id = ? AND (f.path = ? OR f.path LIKE ?) \
+    ORDER BY f.fileid";
+
+const SQL_WALK_UNDER_PG: &str = "SELECT f.fileid, s.id AS storage_id, f.path, \
+    f.parent, f.name, m.mimetype AS mimetype, f.size, f.mtime, f.storage_mtime, f.etag, \
+    f.permissions \
+    FROM oc_filecache f \
+    JOIN oc_storages s ON s.numeric_id = f.storage \
+    JOIN oc_mimetypes m ON m.id = f.mimetype \
+    WHERE s.id = $1 AND (f.path = $2 OR f.path LIKE $3) \
+    ORDER BY f.fileid";
 
 // Reference the constant so unused-const warnings stay quiet across batches.
 const _: &str = SQL_SELECT_COLUMNS;

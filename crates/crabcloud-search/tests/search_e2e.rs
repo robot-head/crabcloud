@@ -397,6 +397,102 @@ async fn fileid_for_storage_path_finds_owner_row() {
 }
 
 #[tokio::test]
+async fn fan_out_for_share_indexes_recipients_with_translated_path() {
+    use crabcloud_filecache::{FileCache, DIRECTORY_MIMETYPE};
+    use crabcloud_search::SearchFanout;
+    use crabcloud_users::UserId;
+    let (pool, _d) = setup().await;
+    let search = Search::new(pool.clone());
+    let filecache = FileCache::new((*pool).clone());
+
+    // Seed alice's filecache: /docs (dir) and /docs/report.docx.
+    let storage_id = "local::/alice/files".to_string();
+    let now = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000);
+    let dir_meta = crabcloud_storage::FileMetadata {
+        path: crabcloud_storage::StoragePath::root(),
+        kind: crabcloud_storage::FileKind::Directory,
+        size: 0,
+        mtime: now,
+        etag: crabcloud_storage::ETag::new(),
+        mimetype: crabcloud_storage::Mimetype::parse(DIRECTORY_MIMETYPE).unwrap(),
+        permissions: crabcloud_storage::Permissions::full(),
+    };
+    // Root.
+    filecache
+        .apply(&crabcloud_storage::StorageEvent::DirCreated {
+            storage_id: storage_id.clone(),
+            path: crabcloud_storage::StoragePath::root(),
+            metadata: dir_meta.clone(),
+        })
+        .await
+        .unwrap();
+    // /docs
+    let docs = crabcloud_storage::StoragePath::new("docs").unwrap();
+    let mut docs_meta = dir_meta.clone();
+    docs_meta.path = docs.clone();
+    filecache
+        .apply(&crabcloud_storage::StorageEvent::DirCreated {
+            storage_id: storage_id.clone(),
+            path: docs.clone(),
+            metadata: docs_meta,
+        })
+        .await
+        .unwrap();
+    // /docs/report.docx
+    let report = crabcloud_storage::StoragePath::new("docs/report.docx").unwrap();
+    let report_meta = crabcloud_storage::FileMetadata {
+        path: report.clone(),
+        kind: crabcloud_storage::FileKind::File,
+        size: 12345,
+        mtime: now,
+        etag: crabcloud_storage::ETag::new(),
+        mimetype: crabcloud_storage::Mimetype::parse("text/plain").unwrap(),
+        permissions: crabcloud_storage::Permissions::full(),
+    };
+    filecache
+        .apply(&crabcloud_storage::StorageEvent::Written {
+            storage_id: storage_id.clone(),
+            path: report.clone(),
+            metadata: report_meta,
+        })
+        .await
+        .unwrap();
+
+    // Share /docs with bob via the trait method.
+    let bob = UserId::new("bob").unwrap();
+    search
+        .fan_out_for_share(
+            &filecache,
+            vec![bob.clone()],
+            &storage_id,
+            "/docs",
+            "/from-alice",
+        )
+        .await
+        .unwrap();
+
+    // Bob should now see report.docx via /from-alice/report.docx.
+    let bob_hits = search
+        .query("bob", &parse_query("report"), 10, None)
+        .await
+        .unwrap();
+    assert_eq!(bob_hits.len(), 1);
+    assert_eq!(bob_hits[0].path, "/from-alice/report.docx");
+    assert_eq!(bob_hits[0].basename, "report.docx");
+
+    // Unshare deletes the row.
+    search
+        .fan_out_for_unshare(&filecache, vec![bob], &storage_id, "/docs")
+        .await
+        .unwrap();
+    let bob_hits = search
+        .query("bob", &parse_query("report"), 10, None)
+        .await
+        .unwrap();
+    assert!(bob_hits.is_empty());
+}
+
+#[tokio::test]
 async fn phrase_query_matches_adjacent_tokens() {
     let (pool, _d) = setup().await;
     let search = Search::new(pool);

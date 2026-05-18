@@ -547,26 +547,145 @@ pub trait SearchFanout: Send + Sync {
 
 #[async_trait]
 impl SearchFanout for Search {
+    /// Walk every filecache row under `owner_subroot_path` in
+    /// `owner_storage_id` (passed via `owner_uid` — the parameter name
+    /// is historical; we treat it as the storage id) and UPSERT one
+    /// search row per recipient with the share-mount-translated path.
+    ///
+    /// Convention: `owner_uid` is the OWNER's storage id (e.g.
+    /// `"local::/var/.../alice/files"`). This matches what
+    /// `Shares::create` already has on hand (`req.home_storage_id`).
     async fn fan_out_for_share(
         &self,
-        _filecache: &FileCache,
-        _recipients: Vec<UserId>,
-        _owner_uid: &str,
-        _owner_subroot_path: &str,
-        _recipient_path_prefix: &str,
+        filecache: &FileCache,
+        recipients: Vec<UserId>,
+        owner_uid: &str,
+        owner_subroot_path: &str,
+        recipient_path_prefix: &str,
     ) -> Result<(), SearchError> {
-        // Real impl lands in Task A6 (needs `FileCache::walk_under`).
+        if recipients.is_empty() {
+            return Ok(());
+        }
+        let rows = filecache.walk_under(owner_uid, owner_subroot_path).await?;
+        for row in rows {
+            let owner_path_str = row.path.as_str();
+            let viewer_path =
+                translate_path(owner_subroot_path, recipient_path_prefix, owner_path_str);
+            let basename = std::path::Path::new(&viewer_path)
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or(&row.name)
+                .to_string();
+            for r in &recipients {
+                self.upsert_for_file(
+                    r.as_str(),
+                    row.fileid,
+                    &row.storage_id,
+                    &basename,
+                    &viewer_path,
+                    row.mimetype.as_str(),
+                    row.mtime as i64,
+                    row.size as i64,
+                )
+                .await?;
+            }
+        }
         Ok(())
     }
 
+    /// Inverse: walk the same subroot and DELETE per-(recipient,
+    /// fileid). `owner_uid` carries the OWNER's storage id (same
+    /// convention as `fan_out_for_share`).
     async fn fan_out_for_unshare(
         &self,
-        _filecache: &FileCache,
-        _former_recipients: Vec<UserId>,
-        _owner_uid: &str,
-        _owner_subroot_path: &str,
+        filecache: &FileCache,
+        former_recipients: Vec<UserId>,
+        owner_uid: &str,
+        owner_subroot_path: &str,
     ) -> Result<(), SearchError> {
+        if former_recipients.is_empty() {
+            return Ok(());
+        }
+        let rows = filecache.walk_under(owner_uid, owner_subroot_path).await?;
+        for row in rows {
+            for r in &former_recipients {
+                self.delete_for_viewer_file(r.as_str(), row.fileid).await?;
+            }
+        }
         Ok(())
+    }
+}
+
+/// Translate an owner-relative path to a viewer-relative path. Given
+/// owner_subroot=`/docs` and recipient_prefix=`/from-alice`,
+/// owner_path=`/docs/q1/r.docx` becomes `/from-alice/q1/r.docx`.
+///
+/// Strips leading slashes from both inputs so it's tolerant of the
+/// "no leading slash" StoragePath representation as well as the
+/// "leading-slash" web-facing form.
+fn translate_path(owner_subroot: &str, recipient_prefix: &str, owner_path: &str) -> String {
+    let owner_subroot_trim = owner_subroot.trim_matches('/');
+    let owner_path_trim = owner_path.trim_start_matches('/');
+    let suffix = if owner_subroot_trim.is_empty() {
+        owner_path_trim
+    } else if owner_path_trim == owner_subroot_trim {
+        ""
+    } else if let Some(rest) = owner_path_trim.strip_prefix(&format!("{owner_subroot_trim}/")) {
+        rest
+    } else {
+        owner_path_trim
+    };
+    let prefix = recipient_prefix.trim_end_matches('/');
+    if suffix.is_empty() {
+        prefix.to_string()
+    } else {
+        format!("{prefix}/{suffix}")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn translate_path_replaces_subroot_prefix() {
+        assert_eq!(
+            translate_path("/docs", "/from-alice", "/docs/q1/report.docx"),
+            "/from-alice/q1/report.docx",
+        );
+    }
+
+    #[test]
+    fn translate_path_handles_root_owner_subroot() {
+        assert_eq!(
+            translate_path("/", "/from-alice", "/q1/report.docx"),
+            "/from-alice/q1/report.docx",
+        );
+    }
+
+    #[test]
+    fn translate_path_handles_trailing_slash_in_prefix() {
+        assert_eq!(
+            translate_path("/docs", "/from-alice/", "/docs/r.txt"),
+            "/from-alice/r.txt",
+        );
+    }
+
+    #[test]
+    fn translate_path_handles_subroot_exact_match() {
+        assert_eq!(
+            translate_path("/docs", "/from-alice", "/docs"),
+            "/from-alice",
+        );
+    }
+
+    #[test]
+    fn translate_path_tolerates_no_leading_slash_in_owner_path() {
+        // StoragePath stores paths without leading slash.
+        assert_eq!(
+            translate_path("/docs", "/from-alice", "docs/r.txt"),
+            "/from-alice/r.txt",
+        );
     }
 }
 
