@@ -176,10 +176,15 @@ async fn search_handler(
 
     // `next_cursor` is the (rank, fileid) of the last (lowest-ranked /
     // largest-fileid-tiebreak) hit in this page. The client passes it
-    // back as `?cursor=` for the next page. None when the page is empty,
-    // matching the activity feed's `next_since`.
-    let next_cursor = hits.last().map(|h| encode_cursor(h.rank, h.fileid));
+    // back as `?cursor=` for the next page. Null when this is the final
+    // page (Nextcloud unified-search convention: polite clients stop on
+    // `isLast`, but the wire shape pairs `cursor: null` with it).
     let is_last = (hits.len() as i64) < limit;
+    let next_cursor = if is_last {
+        None
+    } else {
+        hits.last().map(|h| encode_cursor(h.rank, h.fileid))
+    };
     let entries: Vec<EntryDto> = hits.iter().map(hit_to_entry).collect();
 
     ocs_envelope(

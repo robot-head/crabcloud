@@ -185,9 +185,10 @@ async fn matching_query_returns_entries_in_unified_search_shape() {
     }
 
     // With 2 entries returned under the default limit of 20, isLast is
-    // true and cursor is present (carries the last hit's rank+fileid).
+    // true and cursor is null (Nextcloud unified-search convention pairs
+    // `cursor: null` with `isLast: true`).
     assert_eq!(v["ocs"]["data"]["isLast"], true);
-    assert!(v["ocs"]["data"]["cursor"].is_string(), "{v}");
+    assert!(v["ocs"]["data"]["cursor"].is_null(), "{v}");
 }
 
 #[tokio::test]
@@ -196,8 +197,10 @@ async fn limit_one_paginates_via_cursor() {
     let data = tempdir().unwrap();
     let (state, token) = make_alice(dir.path().join("sp.db"), data.path().to_path_buf()).await;
 
-    // Seed 3 rows that all match `report`. With limit=1 we expect three
-    // pages: hit / hit / empty (or isLast on the second page).
+    // Seed 3 rows that all match `report`. With limit=1 we expect four
+    // pages: hit / hit / hit / empty — `isLast` flips on the short page
+    // (entries.len() < limit), which for limit=1 only fires on the
+    // trailing empty page.
     seed_search_row(
         &state,
         "alice",
@@ -267,10 +270,73 @@ async fn limit_one_paginates_via_cursor() {
     assert_eq!(status, StatusCode::OK, "body={v}");
     let entries = v["ocs"]["data"]["entries"].as_array().unwrap();
     assert_eq!(entries.len(), 1, "page2 has 1 entry: {v}");
-    let page2_fileid = entries[0]["attributes"]["fileid"].as_str().unwrap();
+    assert_eq!(
+        v["ocs"]["data"]["isLast"], false,
+        "page2 still has more: {v}"
+    );
+    let page2_fileid = entries[0]["attributes"]["fileid"]
+        .as_str()
+        .unwrap()
+        .to_string();
     assert_ne!(
         page1_fileid, page2_fileid,
         "page2 fileid differs from page1: {page1_fileid} vs {page2_fileid}"
+    );
+    let cursor_p2 = v["ocs"]["data"]["cursor"]
+        .as_str()
+        .expect("page2 cursor")
+        .to_string();
+
+    // Page 3 — walks the page-2 cursor, returns the third (and final)
+    // matching row. With limit=1, isLast doesn't flip yet because
+    // entries.len() (1) is not < limit (1) — the terminator is the next
+    // empty page.
+    let resp = app
+        .clone()
+        .oneshot(ocs_get(
+            &format!(
+                "{BASE}/search?query=report&limit=1&cursor={}&format=json",
+                urlencoding::encode(&cursor_p2)
+            ),
+            &token,
+        ))
+        .await
+        .unwrap();
+    let (status, v) = decode(resp).await;
+    assert_eq!(status, StatusCode::OK, "body={v}");
+    let entries = v["ocs"]["data"]["entries"].as_array().unwrap();
+    assert_eq!(entries.len(), 1, "page3 has the final entry: {v}");
+    let page3_fileid = entries[0]["attributes"]["fileid"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert_ne!(page3_fileid, page1_fileid);
+    assert_ne!(page3_fileid, page2_fileid);
+    let cursor_p3 = v["ocs"]["data"]["cursor"]
+        .as_str()
+        .expect("page3 cursor")
+        .to_string();
+
+    // Page 4 — the terminating empty page. Closes the comment-vs-code
+    // gap: asserts entries.len() == 0, isLast == true, cursor == null.
+    let resp = app
+        .oneshot(ocs_get(
+            &format!(
+                "{BASE}/search?query=report&limit=1&cursor={}&format=json",
+                urlencoding::encode(&cursor_p3)
+            ),
+            &token,
+        ))
+        .await
+        .unwrap();
+    let (status, v) = decode(resp).await;
+    assert_eq!(status, StatusCode::OK, "body={v}");
+    let entries = v["ocs"]["data"]["entries"].as_array().unwrap();
+    assert!(entries.is_empty(), "page4 is empty: {v}");
+    assert_eq!(v["ocs"]["data"]["isLast"], true, "page4 is last: {v}");
+    assert!(
+        v["ocs"]["data"]["cursor"].is_null(),
+        "page4 cursor is null on final page: {v}"
     );
 }
 
