@@ -130,6 +130,12 @@ pub struct AppState {
     /// Activity sweeper shutdown handle. Always present; spawned
     /// unconditionally in `AppStateBuilder::build`.
     pub activity_sweeper_shutdown: Arc<tokio::sync::Notify>,
+    /// File-metadata search service. Cheap to clone.
+    pub search: Arc<crabcloud_search::Search>,
+    /// `SearchIndexer` shutdown handle. Always present; the indexer
+    /// is spawned unconditionally in `AppStateBuilder::build`. Tests
+    /// can `notify_one()` here in teardown.
+    pub search_indexer_shutdown: Arc<tokio::sync::Notify>,
 }
 
 impl std::fmt::Debug for AppState {
@@ -512,6 +518,17 @@ impl AppStateBuilder {
             std::mem::drop(tokio::spawn(async move { mail_queue_cleanup.run().await }));
         }
 
+        // SearchIndexer: subscribes to `storage_sink` and maintains the
+        // per-user `oc_search` index. Spawned unconditionally — search
+        // is on for every install.
+        let (search_indexer, search_indexer_shutdown) = crate::SearchIndexer::new(
+            search.clone(),
+            shares.clone(),
+            filecache.clone(),
+            &storage_sink,
+        );
+        std::mem::drop(tokio::spawn(async move { search_indexer.run().await }));
+
         let state = AppState {
             config: self.config.clone(),
             pool,
@@ -543,6 +560,8 @@ impl AppStateBuilder {
             activity,
             activity_settings,
             activity_sweeper_shutdown,
+            search,
+            search_indexer_shutdown,
         };
 
         self.registry.run(&state).await?;
