@@ -6,10 +6,10 @@
 //!
 //! Search rows are seeded by calling `Search::upsert_for_file` directly
 //! (same pattern as the OCS `ocs_search.rs` suite). The wider indexer
-//! + share-fan-out semantics are exercised by the `crabcloud-search`
-//! unit / e2e suites — these tests stay focused on the server-fn wire
-//! surface (auth gating, DTO shape, empty-query short-circuit, cursor
-//! plumbing).
+//! and share-fan-out semantics are exercised by the `crabcloud-search`
+//! unit / e2e suites; these tests stay focused on the server-fn wire
+//! surface: auth gating, DTO shape, empty-query short-circuit, and
+//! cursor plumbing.
 
 #![allow(unused_crate_dependencies)]
 

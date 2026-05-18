@@ -187,7 +187,8 @@ fn parent_route(path: &str) -> String {
 
 /// Map a mime to a 1-character display icon. Mirrors
 /// `pages::activity::icon_for_event_type` — emoji-only, no asset
-/// dependency, no localization. Fall-through is the generic `📄`.
+/// dependency, no localization. Fall-through is the generic `📄`,
+/// which is also used for `text/*`.
 fn icon_for_mime(mime: &str) -> &'static str {
     if mime.starts_with("image/") {
         "🖼"
@@ -197,8 +198,6 @@ fn icon_for_mime(mime: &str) -> &'static str {
         "🎵"
     } else if mime == "application/pdf" {
         "📕"
-    } else if mime.starts_with("text/") {
-        "📄"
     } else {
         "📄"
     }
@@ -238,10 +237,7 @@ mod tests {
     #[test]
     fn parent_route_handles_nested_and_top_level() {
         assert_eq!(parent_route("/photos/vacation.jpg"), "/apps/files/photos");
-        assert_eq!(
-            parent_route("/docs/q3/report.docx"),
-            "/apps/files/docs/q3"
-        );
+        assert_eq!(parent_route("/docs/q3/report.docx"), "/apps/files/docs/q3");
         assert_eq!(parent_route("/readme.md"), "/apps/files/");
         // Path without a leading slash still works.
         assert_eq!(parent_route("notes.txt"), "/apps/files/");
