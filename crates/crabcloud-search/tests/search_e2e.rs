@@ -540,3 +540,91 @@ async fn phrase_query_matches_adjacent_tokens() {
     assert_eq!(hits.len(), 1);
     assert_eq!(hits[0].fileid, 100);
 }
+
+// FTS5-sanitization regression coverage. Each of these queries would
+// crash sqlite FTS5 with a syntax error ("no such column: foo",
+// unbalanced paren, prefix without preceding token, etc.) if the bare
+// `q.text` were appended raw. `sanitize_fts5_bare_tokens` wraps each
+// whitespace-separated token in a quoted phrase so meta-chars are
+// literal.
+
+#[tokio::test]
+async fn query_with_colon_in_unknown_key_does_not_error() {
+    let (pool, _d) = setup().await;
+    let search = Search::new(pool);
+    search
+        .upsert_for_file(
+            "alice",
+            100,
+            "1",
+            "report.docx",
+            "/docs/report.docx",
+            "text/plain",
+            1_700_000_000,
+            1,
+        )
+        .await
+        .unwrap();
+    // `foo:bar` is an unknown-key:value that the parser leaves in
+    // text. FTS5 would interpret it as column-qualified search and
+    // error; the sanitizer makes it a literal-token match (no hit,
+    // but no error).
+    let hits = search
+        .query("alice", &parse_query("foo:bar report"), 10, None)
+        .await
+        .unwrap();
+    // Asserts the query SUCCEEDS (no SQL error). Result set may be
+    // empty or contain the report hit depending on whether
+    // "foo:bar" tokenizes apart; both are acceptable as long as we
+    // don't 500.
+    let _ = hits;
+}
+
+#[tokio::test]
+async fn query_with_fts5_meta_chars_does_not_error() {
+    let (pool, _d) = setup().await;
+    let search = Search::new(pool);
+    search
+        .upsert_for_file(
+            "alice",
+            100,
+            "1",
+            "report.docx",
+            "/docs/report.docx",
+            "text/plain",
+            1_700_000_000,
+            1,
+        )
+        .await
+        .unwrap();
+    // Each of these would be a FTS5 syntax error if appended raw.
+    for q in &["foo(bar)", "a*", "-noterm", "^caret", "report:foo"] {
+        let _ = search
+            .query("alice", &parse_query(q), 10, None)
+            .await
+            .unwrap_or_else(|e| panic!("query {q:?} failed: {e}"));
+    }
+}
+
+#[tokio::test]
+async fn query_with_unterminated_phrase_does_not_error() {
+    let (pool, _d) = setup().await;
+    let search = Search::new(pool);
+    search
+        .upsert_for_file(
+            "alice",
+            100,
+            "1",
+            "report.docx",
+            "/docs/report.docx",
+            "text/plain",
+            1_700_000_000,
+            1,
+        )
+        .await
+        .unwrap();
+    let _ = search
+        .query("alice", &parse_query("\"unterminated text"), 10, None)
+        .await
+        .expect("unterminated phrase must not crash");
+}

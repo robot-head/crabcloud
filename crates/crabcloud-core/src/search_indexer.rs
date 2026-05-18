@@ -24,12 +24,19 @@
 //!     soft-deleted to trash. A defensive `is_trash_path` heuristic
 //!     also short-circuits any future event that happens to live
 //!     under `files_trashbin/`.
+//!
+//! Event ordering: this indexer uses fire-and-forget `tokio::spawn`
+//! per event, so a `Written` and `Deleted` on the same path in quick
+//! succession may be processed out of order under contention. The race
+//! window is short (sub-second under normal load) and the eventual
+//! state converges via subsequent events. If strict ordering becomes
+//! necessary, switch to a per-`(storage_id, path)` serialization
+//! queue.
 
 use crabcloud_filecache::FileCache;
 use crabcloud_search::Search;
 use crabcloud_sharing::Shares;
 use crabcloud_storage::{ChannelEventSink, FileKind, StorageEvent, StoragePath};
-use std::collections::HashSet;
 use std::sync::Arc;
 use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::Notify;
@@ -307,14 +314,21 @@ async fn handle_move(
             }
         }
     }
-    let new_recipient_set: HashSet<String> = new_recipients
-        .iter()
-        .map(|u| u.as_str().to_string())
-        .collect();
-
     // Rebuild: delete EVERY viewer row for this fileid (cleans up
     // viewers who can no longer see it), then upsert one row per current
     // recipient.
+    //
+    // TODO: out-of-share rename cleanup. Today a Move that takes a
+    // file OUT of a shared subroot will only refresh `oc_search` for
+    // the still-current recipient set — but if the share row itself
+    // is unchanged (e.g. the file was moved to a non-shared sibling
+    // path) the stale viewer rows are removed by the
+    // `delete_for_file(to_row.fileid)` below, so this is mostly fine.
+    // The remaining gap is: a Move that crosses share boundaries
+    // without a corresponding share update may leave stale rows
+    // until either (a) the file is hard-deleted, (b) the share is
+    // removed (which DELETE-cascades via `fan_out_for_unshare`), or
+    // (c) a future polish adds proper recipient-set-diff cleanup.
     search.delete_for_file(to_row.fileid).await?;
     if new_recipients.is_empty() {
         return Ok(());
@@ -339,9 +353,6 @@ async fn handle_move(
             )
             .await?;
     }
-    // Touch the set just to suppress the unused warning — we may use
-    // it for finer-grained delta-application in a future iteration.
-    let _ = new_recipient_set;
     Ok(())
 }
 

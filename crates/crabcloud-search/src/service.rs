@@ -222,7 +222,7 @@ impl Search {
             if !match_expr.is_empty() {
                 match_expr.push(' ');
             }
-            match_expr.push_str(&q.text);
+            match_expr.push_str(&sanitize_fts5_bare_tokens(&q.text));
         }
         let mut sql = String::from(sql::QUERY_BASE_SQLITE);
         let mut bind_mime = None;
@@ -472,6 +472,24 @@ fn escape_fts5(s: &str) -> String {
     s.replace('"', "\"\"")
 }
 
+/// Sanitize a bare token string for FTS5 by wrapping each
+/// whitespace-separated token in a quoted phrase. This makes colons,
+/// parens, operators (`*`, `-`, `+`, `^`, `:`), and unknown
+/// `key:value` tokens literal — FTS5 would otherwise parse them as
+/// column-qualified search, NOT operator, prefix wildcard, etc., and
+/// either error with "no such column: foo" or return wrong results.
+/// mysql `NATURAL LANGUAGE MODE` and pg `plainto_tsquery` are already
+/// permissive, so this helper is sqlite-FTS5 only.
+///
+/// Empty input → empty output (the caller checks `has_text_match`
+/// before invoking us).
+fn sanitize_fts5_bare_tokens(text: &str) -> String {
+    text.split_whitespace()
+        .map(|t| format!("\"{}\"", t.replace('"', "\"\"")))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 fn row_from_sqlite(r: sqlx::sqlite::SqliteRow) -> Result<SearchHit, SearchError> {
     Ok(SearchHit {
         fileid: r.try_get("fileid")?,
@@ -557,6 +575,13 @@ impl SearchFanout for Search {
     /// Convention: `owner_uid` is the OWNER's storage id (e.g.
     /// `"local::/var/.../alice/files"`). This matches what
     /// `Shares::create` already has on hand (`req.home_storage_id`).
+    ///
+    /// Scale: this issues `recipients.len() × files_under_subroot`
+    /// sequential UPSERTs. A 100-member group share of a 10k-file
+    /// folder is 1M serialized DB writes inside the `Shares::create`
+    /// call. Acceptable for MVP; if real-world group shares show up as
+    /// latency, batch by `(viewer_uid, fileid)` tuples in a multi-row
+    /// INSERT or move the fan-out to a background task.
     async fn fan_out_for_share(
         &self,
         filecache: &FileCache,

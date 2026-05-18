@@ -1196,11 +1196,13 @@ impl Shares {
                     }
                 }
             };
+        const ST_USER: i16 = ShareType::User as i16;
+        const ST_GROUP: i16 = ShareType::Group as i16;
         for (share_type, share_with, uid_owner) in shares {
             push_uid(uid_owner, &mut seen, &mut out);
             match share_type {
-                0 => push_uid(share_with, &mut seen, &mut out),
-                1 => {
+                ST_USER => push_uid(share_with, &mut seen, &mut out),
+                ST_GROUP => {
                     if let Ok(gid) = GroupId::new(share_with) {
                         match self.users.group_store().members_of(&gid).await {
                             Ok(members) => {
