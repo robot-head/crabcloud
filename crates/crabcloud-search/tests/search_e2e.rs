@@ -1,5 +1,16 @@
 //! sqlite e2e for the Search service.
 
+// Anchors for crates declared on `crabcloud-search` but only used by
+// the library (not directly by this integration test target). Keeps
+// `unused_crate_dependencies` quiet.
+use async_trait as _;
+use chrono as _;
+use crabcloud_users as _;
+use serde as _;
+use sqlx as _;
+use thiserror as _;
+use tracing as _;
+
 use crabcloud_config::test_support::minimal_sqlite_config;
 use crabcloud_db::{core_set, DbPool, MigrationRunner};
 use crabcloud_search::{parse_query, Search};

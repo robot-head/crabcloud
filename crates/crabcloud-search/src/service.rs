@@ -438,7 +438,9 @@ impl Search {
             next_arg += 3;
         }
         let limit_pos = next_arg;
-        sql.push_str(&format!(" ORDER BY rank DESC, fileid ASC LIMIT ${limit_pos}"));
+        sql.push_str(&format!(
+            " ORDER BY rank DESC, fileid ASC LIMIT ${limit_pos}"
+        ));
 
         let mut query = sqlx::query(&sql).bind(&match_text).bind(viewer_uid);
         if let Some(m) = bind_mime {
@@ -643,6 +645,34 @@ fn translate_path(owner_subroot: &str, recipient_prefix: &str, owner_path: &str)
     }
 }
 
+/// No-op implementation. Tests / fixtures that don't need search
+/// fan-out can pass `Arc::new(NoopSearchFanout)` into `SharesConfig`.
+pub struct NoopSearchFanout;
+
+#[async_trait]
+impl SearchFanout for NoopSearchFanout {
+    async fn fan_out_for_share(
+        &self,
+        _filecache: &FileCache,
+        _recipients: Vec<UserId>,
+        _owner_uid: &str,
+        _owner_subroot_path: &str,
+        _recipient_path_prefix: &str,
+    ) -> Result<(), SearchError> {
+        Ok(())
+    }
+
+    async fn fan_out_for_unshare(
+        &self,
+        _filecache: &FileCache,
+        _former_recipients: Vec<UserId>,
+        _owner_uid: &str,
+        _owner_subroot_path: &str,
+    ) -> Result<(), SearchError> {
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -688,32 +718,3 @@ mod tests {
         );
     }
 }
-
-/// No-op implementation. Tests / fixtures that don't need search
-/// fan-out can pass `Arc::new(NoopSearchFanout)` into `SharesConfig`.
-pub struct NoopSearchFanout;
-
-#[async_trait]
-impl SearchFanout for NoopSearchFanout {
-    async fn fan_out_for_share(
-        &self,
-        _filecache: &FileCache,
-        _recipients: Vec<UserId>,
-        _owner_uid: &str,
-        _owner_subroot_path: &str,
-        _recipient_path_prefix: &str,
-    ) -> Result<(), SearchError> {
-        Ok(())
-    }
-
-    async fn fan_out_for_unshare(
-        &self,
-        _filecache: &FileCache,
-        _former_recipients: Vec<UserId>,
-        _owner_uid: &str,
-        _owner_subroot_path: &str,
-    ) -> Result<(), SearchError> {
-        Ok(())
-    }
-}
-

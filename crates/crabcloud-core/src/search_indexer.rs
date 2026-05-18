@@ -85,16 +85,16 @@ impl SearchIndexer {
                         let search = self.search.clone();
                         let shares = self.shares.clone();
                         let filecache = self.filecache.clone();
-                        let event_for_log = format!("{event:?}");
-                        // Per-event panic survival: drive the handler
-                        // through a `spawn`. A panic surfaces as a
-                        // `JoinError` we log + continue past.
-                        let handle = tokio::spawn(async move {
+                        // Per-event panic survival: spawn the handler
+                        // as a fire-and-forget task. A panic in the
+                        // spawned task is logged by the tokio runtime
+                        // and does NOT propagate back to this loop. We
+                        // intentionally don't `await` the handle so a
+                        // slow event handler doesn't backpressure the
+                        // broadcast channel into `Lagged`.
+                        std::mem::drop(tokio::spawn(async move {
                             handle_event(&search, &shares, &filecache, event).await;
-                        });
-                        if let Err(e) = handle.await {
-                            warn!(error = %e, event = %event_for_log, "search indexer: handler panicked");
-                        }
+                        }));
                     }
                     Err(RecvError::Lagged(n)) => {
                         warn!(dropped = n, "search indexer: lagged behind storage_sink; events dropped");
@@ -141,9 +141,7 @@ async fn handle_event(
             from,
             to,
         } => {
-            if let Err(e) =
-                handle_move(search, shares, filecache, &storage_id, &from, &to).await
-            {
+            if let Err(e) = handle_move(search, shares, filecache, &storage_id, &from, &to).await {
                 warn!(error = %e, storage_id, from = %from.as_str(), to = %to.as_str(), "search indexer: move failed");
             }
         }
@@ -202,7 +200,10 @@ async fn upsert_for_event(
     if recipients.is_empty() {
         // We don't know who owns this file (storage-id heuristic failed
         // AND no shares exist). Skip rather than write a phantom row.
-        debug!(storage_id, "search indexer: no recipients resolved; skipping upsert");
+        debug!(
+            storage_id,
+            "search indexer: no recipients resolved; skipping upsert"
+        );
         return Ok(());
     }
 
@@ -274,7 +275,10 @@ async fn handle_move(
     let Some(to_row) = to_row else {
         // Race with scanner; just remove any stale row by fileid.
         if let Some(fid) = pre_move_fileid {
-            debug!(storage_id, "search indexer: post-move filecache miss; removing stale row by fileid");
+            debug!(
+                storage_id,
+                "search indexer: post-move filecache miss; removing stale row by fileid"
+            );
             search.delete_for_file(fid).await?;
         }
         return Ok(());

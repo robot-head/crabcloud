@@ -124,24 +124,27 @@ async fn appstate_view_for_emits_activity_to_state_activity() {
 }
 
 /// Poll `state.search.query(uid, "<text>")` until a hit appears or
-/// the deadline expires.
+/// the deadline expires. Deadline is generous (15s) so a heavily
+/// loaded workspace-parallel test run doesn't time out behind a
+/// scheduling spike — the indexer is event-driven, normal latency is
+/// sub-100ms.
 async fn wait_for_index<F>(predicate: F)
 where
     F: Fn() -> std::pin::Pin<Box<dyn std::future::Future<Output = bool> + Send>>,
 {
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
     loop {
         if predicate().await {
             return;
         }
         if std::time::Instant::now() >= deadline {
-            panic!("index never reached expected state within 5s");
+            panic!("index never reached expected state within 15s");
         }
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     }
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn appstate_write_eventually_indexed_then_queryable() {
     let db_dir = tempdir().unwrap();
     let data_dir = tempdir().unwrap();
@@ -163,12 +166,7 @@ async fn appstate_write_eventually_indexed_then_queryable() {
         let search = search.clone();
         Box::pin(async move {
             let hits = search
-                .query(
-                    "alice",
-                    &crabcloud_search::parse_query("report"),
-                    10,
-                    None,
-                )
+                .query("alice", &crabcloud_search::parse_query("report"), 10, None)
                 .await
                 .unwrap_or_default();
             !hits.is_empty()
@@ -178,12 +176,7 @@ async fn appstate_write_eventually_indexed_then_queryable() {
 
     let hits = state
         .search
-        .query(
-            "alice",
-            &crabcloud_search::parse_query("report"),
-            10,
-            None,
-        )
+        .query("alice", &crabcloud_search::parse_query("report"), 10, None)
         .await
         .unwrap();
     assert_eq!(hits.len(), 1);
@@ -193,7 +186,7 @@ async fn appstate_write_eventually_indexed_then_queryable() {
     state.search_indexer_shutdown.notify_one();
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn appstate_delete_eventually_removes_from_index() {
     let db_dir = tempdir().unwrap();
     let data_dir = tempdir().unwrap();

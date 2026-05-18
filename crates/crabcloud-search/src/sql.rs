@@ -9,8 +9,7 @@
 //! filter / cursor AND clauses dynamically before binding.
 
 // -- DELETE one (viewer, fileid) row.
-pub const DELETE_VIEWER_FILE_QM: &str =
-    "DELETE FROM oc_search WHERE viewer_uid = ? AND fileid = ?";
+pub const DELETE_VIEWER_FILE_QM: &str = "DELETE FROM oc_search WHERE viewer_uid = ? AND fileid = ?";
 pub const DELETE_VIEWER_FILE_PG: &str =
     "DELETE FROM oc_search WHERE viewer_uid = $1 AND fileid = $2";
 
@@ -52,7 +51,8 @@ pub const LOOKUP_FILEID_BY_STORAGE_PATH_PG: &str =
 // -- QUERY base templates.
 // sqlite (FTS5): `MATCH ?` predicate on the virtual table; rank via
 // `bm25(oc_search)` (lower = better; ORDER BY rank ASC).
-pub const QUERY_BASE_SQLITE: &str = "SELECT fileid, storage_id, basename, path, mime, mtime, size, \
+pub const QUERY_BASE_SQLITE: &str =
+    "SELECT fileid, storage_id, basename, path, mime, mtime, size, \
             bm25(oc_search) AS rank \
      FROM oc_search \
      WHERE viewer_uid = ? AND oc_search MATCH ?";

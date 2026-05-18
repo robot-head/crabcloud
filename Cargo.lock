@@ -935,6 +935,7 @@ dependencies = [
  "crabcloud-ocs",
  "crabcloud-preview",
  "crabcloud-publiclinks",
+ "crabcloud-search",
  "crabcloud-sharing",
  "crabcloud-storage",
  "crabcloud-trash",
@@ -998,6 +999,7 @@ dependencies = [
  "crabcloud-core",
  "crabcloud-db",
  "crabcloud-filecache",
+ "crabcloud-search",
  "crabcloud-sharing",
  "crabcloud-storage",
  "crabcloud-trash",
@@ -1146,6 +1148,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "crabcloud-search"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "crabcloud-config",
+ "crabcloud-db",
+ "crabcloud-filecache",
+ "crabcloud-storage",
+ "crabcloud-users",
+ "serde",
+ "sqlx",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "crabcloud-sharing"
 version = "0.1.0"
 dependencies = [
@@ -1159,6 +1180,7 @@ dependencies = [
  "crabcloud-filecache",
  "crabcloud-mail",
  "crabcloud-publiclinks",
+ "crabcloud-search",
  "crabcloud-storage",
  "crabcloud-users",
  "paste",

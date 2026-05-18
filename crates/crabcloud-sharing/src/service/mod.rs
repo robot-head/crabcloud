@@ -1110,16 +1110,17 @@ impl Shares {
     /// recipient resolution. The owner of files that aren't shared at
     /// all is NOT returned by this method (no oc_share row exists);
     /// the indexer is responsible for separately indexing the owner.
-    pub async fn recipients_for_fileid(
-        &self,
-        fileid: i64,
-    ) -> Result<Vec<UserId>, ShareError> {
+    pub async fn recipients_for_fileid(&self, fileid: i64) -> Result<Vec<UserId>, ShareError> {
         // 1. Collect ancestor fileids (including `fileid` itself).
         let mut ancestor_ids: Vec<i64> = vec![fileid];
         let mut cursor: i64 = fileid;
         for _ in 0..64 {
             // Depth-cap defensively; path depth in practice is < 16.
-            let row = self.filecache.lookup_by_id(cursor).await.map_err(map_filecache)?;
+            let row = self
+                .filecache
+                .lookup_by_id(cursor)
+                .await
+                .map_err(map_filecache)?;
             let Some(row) = row else { break };
             match row.parent {
                 Some(parent_id) => {
@@ -1187,15 +1188,14 @@ impl Shares {
         // 3. Expand group shares + de-dupe.
         let mut seen = std::collections::HashSet::new();
         let mut out: Vec<UserId> = Vec::new();
-        let push_uid = |raw: String,
-                            seen: &mut std::collections::HashSet<String>,
-                            out: &mut Vec<UserId>| {
-            if let Ok(uid) = UserId::new(raw) {
-                if seen.insert(uid.as_str().to_string()) {
-                    out.push(uid);
+        let push_uid =
+            |raw: String, seen: &mut std::collections::HashSet<String>, out: &mut Vec<UserId>| {
+                if let Ok(uid) = UserId::new(raw) {
+                    if seen.insert(uid.as_str().to_string()) {
+                        out.push(uid);
+                    }
                 }
-            }
-        };
+            };
         for (share_type, share_with, uid_owner) in shares {
             push_uid(uid_owner, &mut seen, &mut out);
             match share_type {
@@ -1229,8 +1229,10 @@ impl Shares {
 /// `n` placeholders. Used by `Shares::recipients_for_fileid`.
 fn build_select_shares_for_sources(n: usize, dialect: sql::Dialect) -> String {
     let mut q = String::with_capacity(160 + n * 4);
-    q.push_str("SELECT share_type, share_with, uid_owner FROM oc_share \
-                WHERE share_type IN (0, 1) AND accepted = 1 AND item_source IN (");
+    q.push_str(
+        "SELECT share_type, share_with, uid_owner FROM oc_share \
+                WHERE share_type IN (0, 1) AND accepted = 1 AND item_source IN (",
+    );
     match dialect {
         sql::Dialect::Qm => {
             for i in 0..n {
