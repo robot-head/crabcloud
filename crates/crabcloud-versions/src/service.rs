@@ -397,10 +397,7 @@ impl Versions {
                     subject_id_recipient: "version_restored_by".into(),
                     subject_params: serde_json::json!({
                         "actor": uid,
-                        "file": Path::new(&entry.path)
-                            .file_name()
-                            .and_then(|s| s.to_str())
-                            .unwrap_or(&entry.path),
+                        "file": entry.path.clone(),
                     }),
                     object_type: crabcloud_activity::ObjectType::Version,
                     object_id: Some(entry.id),

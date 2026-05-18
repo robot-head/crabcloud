@@ -11,6 +11,12 @@ use async_trait::async_trait;
 
 #[async_trait]
 pub trait ActivityEmitter: Send + Sync {
+    /// **Atomicity caveat:** the per-recipient loop is not transactional —
+    /// each recipient gets its own SELECT+INSERT/UPDATE pair. A panic or
+    /// connection loss mid-loop can leave some recipients with the row and
+    /// others without. Activity is best-effort; emit failures are not
+    /// retried. Callers must not wrap `emit` in a transaction expecting
+    /// atomicity across recipients.
     async fn emit(&self, event: ActivityEvent) -> Result<(), ActivityEmitError>;
 }
 

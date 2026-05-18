@@ -142,6 +142,13 @@ impl Activity {
         Ok(id)
     }
 
+    /// **subject_id staleness note:** This UPDATEs `subject_params` but
+    /// preserves the stored `subject_id`. If a future caller emits a
+    /// different subject_id for the same (recipient, actor, event_type,
+    /// object_id) within the window, the stored subject_id won't reflect
+    /// the new event. Current callers always produce stable subject_ids per
+    /// (recipient, actor, event_type), so this is fine — but worth knowing
+    /// if a future caller diverges.
     async fn coalesce_update(
         &self,
         id: i64,
@@ -241,6 +248,12 @@ impl Activity {
 
 #[async_trait]
 impl ActivityEmitter for Activity {
+    /// **Atomicity caveat:** the per-recipient loop is not transactional —
+    /// each recipient gets its own SELECT+INSERT/UPDATE pair. A panic or
+    /// connection loss mid-loop can leave some recipients with the row and
+    /// others without. Activity is best-effort; emit failures are not
+    /// retried. Callers must not wrap `emit` in a transaction expecting
+    /// atomicity across recipients.
     async fn emit(&self, event: ActivityEvent) -> Result<(), ActivityEmitError> {
         // De-dupe recipients in case a caller composes the list naively.
         let mut seen = std::collections::HashSet::new();

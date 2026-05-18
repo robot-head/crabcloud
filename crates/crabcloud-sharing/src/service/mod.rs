@@ -626,6 +626,10 @@ impl Shares {
             }
             // Best-effort activity emit on unaccept (SP14). Actor here
             // is the recipient choosing to drop the share.
+            // TODO sp14-followup: this emits `share_deleted` to the owner
+            // even though the share row still exists (unaccept just flips
+            // accepted=false). Revisit whether the owner should see a
+            // "share deleted" event on unaccept, or a distinct event type.
             self.emit_share_activity(
                 crabcloud_activity::EventType::ShareDeleted,
                 "share_deleted_you",

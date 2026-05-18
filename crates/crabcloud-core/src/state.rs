@@ -163,7 +163,7 @@ impl AppState {
                 min_interval_secs: self.config.versions_min_interval_secs as i64,
                 max_bytes: self.config.versions_max_bytes,
             },
-            std::sync::Arc::new(crabcloud_activity::NoopEmitter),
+            self.activity.clone() as Arc<dyn crabcloud_activity::ActivityEmitter>,
         ))
     }
 

@@ -17,7 +17,6 @@ tokio = { workspace = true, features = ["fs", "io-util"] }
 tracing.workspace = true
 
 [dev-dependencies]
-crabcloud-activity = { workspace = true }
 crabcloud-config = { workspace = true, features = ["test-support"] }
 tempfile.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
