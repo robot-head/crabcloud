@@ -169,15 +169,14 @@ async fn upsert_for_event(
     storage_id: &str,
     path: &StoragePath,
 ) -> Result<(), crabcloud_search::SearchError> {
-    let row = match filecache.lookup(storage_id, path).await {
-        Ok(Some(r)) => r,
-        Ok(None) => {
-            // Race with the scanner — filecache hasn't applied this
-            // event yet. Skip; the next write of this file will hit.
-            debug!(storage_id, path = %path.as_str(), "search indexer: filecache miss; skipping");
-            return Ok(());
-        }
-        Err(e) => return Err(crabcloud_search::SearchError::from(e)),
+    // Wait briefly for the filecache scanner to have applied this
+    // event. Both consumers race on the same broadcast channel; in
+    // practice the scanner wins quickly, but we retry on miss to be
+    // robust against scheduling jitter.
+    let row = loop_lookup_with_backoff(filecache, storage_id, path).await?;
+    let Some(row) = row else {
+        debug!(storage_id, path = %path.as_str(), "search indexer: filecache miss after retry; skipping");
+        return Ok(());
     };
     if matches!(row.kind, FileKind::Directory) {
         return Ok(());
@@ -269,18 +268,16 @@ async fn handle_move(
         .ok()
         .flatten();
     // Look up via filecache at the destination — this gives us the new
-    // path + mtime + recipient set for the upsert.
-    let to_row = match filecache.lookup(storage_id, to).await {
-        Ok(Some(r)) => r,
-        Ok(None) => {
-            // Race with scanner; just remove any stale row by fileid.
-            if let Some(fid) = pre_move_fileid {
-                debug!(storage_id, "search indexer: post-move filecache miss; removing stale row by fileid");
-                search.delete_for_file(fid).await?;
-            }
-            return Ok(());
+    // path + mtime + recipient set for the upsert. Same scanner-race
+    // retry as `upsert_for_event`.
+    let to_row = loop_lookup_with_backoff(filecache, storage_id, to).await?;
+    let Some(to_row) = to_row else {
+        // Race with scanner; just remove any stale row by fileid.
+        if let Some(fid) = pre_move_fileid {
+            debug!(storage_id, "search indexer: post-move filecache miss; removing stale row by fileid");
+            search.delete_for_file(fid).await?;
         }
-        Err(e) => return Err(crabcloud_search::SearchError::from(e)),
+        return Ok(());
     };
     if matches!(to_row.kind, FileKind::Directory) {
         // Directories themselves aren't indexed; their children will
@@ -342,6 +339,31 @@ async fn handle_move(
     // it for finer-grained delta-application in a future iteration.
     let _ = new_recipient_set;
     Ok(())
+}
+
+/// Retry `filecache.lookup` up to ~500ms total to absorb the
+/// indexer-vs-scanner race on a single broadcast event. Both consumers
+/// receive the same event independently; without retry the indexer
+/// often loses the race when the scanner is busy on a different write.
+async fn loop_lookup_with_backoff(
+    filecache: &FileCache,
+    storage_id: &str,
+    path: &StoragePath,
+) -> Result<Option<crabcloud_filecache::FilecacheRow>, crabcloud_search::SearchError> {
+    let backoffs = [10u64, 20, 40, 80, 150, 200];
+    for (i, ms) in backoffs.iter().enumerate() {
+        match filecache.lookup(storage_id, path).await {
+            Ok(Some(r)) => return Ok(Some(r)),
+            Ok(None) => {
+                if i + 1 == backoffs.len() {
+                    return Ok(None);
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(*ms)).await;
+            }
+            Err(e) => return Err(crabcloud_search::SearchError::from(e)),
+        }
+    }
+    Ok(None)
 }
 
 /// Return the leading-`/` form of a StoragePath, suitable for the

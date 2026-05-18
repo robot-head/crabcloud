@@ -25,6 +25,7 @@ crabcloud-cache.workspace = true
 crabcloud-config = { workspace = true, features = ["test-support"] }
 crabcloud-core.workspace = true
 crabcloud-db.workspace = true
+crabcloud-search.workspace = true
 tempfile.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "fs", "io-util", "sync", "time"] }
 
