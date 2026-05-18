@@ -1,5 +1,6 @@
 //! OCS sub-router under `/ocs/v2.php`.
 
+pub mod activity;
 pub mod admin_groups;
 pub mod admin_users;
 pub mod app_password;
@@ -16,6 +17,7 @@ use crabcloud_core::AppState;
 
 pub fn router() -> Router<AppState> {
     Router::new()
+        .nest("/v2.php/apps/activity/api/v2", activity::router())
         .nest("/v2.php/apps/files_sharing/api/v1", files_sharing::router())
         .nest(
             "/v2.php/apps/files_trashbin/api/v1",
