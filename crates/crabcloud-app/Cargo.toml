@@ -84,11 +84,18 @@ crabcloud-fs = { workspace = true }
 crabcloud-http = { workspace = true }
 crabcloud-i18n = { workspace = true }
 crabcloud-publiclinks = { workspace = true }
+crabcloud-search = { workspace = true }
 crabcloud-sharing = { workspace = true }
 crabcloud-storage = { workspace = true }
 crabcloud-trash = { workspace = true }
 crabcloud-users = { workspace = true }
 crabcloud-versions = { workspace = true }
+# Cursor encode/decode in `server_fns::search` is base64-flavored to keep
+# the URL-safe + opaque-to-clients contract the OCS surface uses (the
+# server-fn surface speaks JSON, so URL-safety isn't strictly required,
+# but matching the OCS cursor shape lets the two surfaces share future
+# polish). base64 is already in the workspace via `crabcloud-http`.
+base64 = { workspace = true }
 # `dx serve` sets `IP` + `PORT` env vars on the spawned server. We read them
 # via `fullstack_address_or_localhost()` so the dev-server `Cmd::Serve` binds
 # where dx expects. Already a transitive of `dioxus`; declared direct so we
@@ -108,6 +115,7 @@ crabcloud-config = { workspace = true, features = ["test-support"] }
 crabcloud-core = { workspace = true }
 crabcloud-http = { workspace = true }
 crabcloud-publiclinks = { workspace = true }
+crabcloud-search = { workspace = true }
 crabcloud-sharing = { workspace = true }
 crabcloud-storage = { workspace = true }
 crabcloud-trash = { workspace = true }
@@ -150,6 +158,10 @@ required-features = ["server"]
 
 [[test]]
 name = "server_fns_activity"
+required-features = ["server"]
+
+[[test]]
+name = "server_fns_search"
 required-features = ["server"]
 
 [lints]

@@ -85,6 +85,9 @@ pub use server_fns::trash::{
 // re-exported for integration tests (tests/server_fns_versions.rs) and the
 // Dioxus UI (Batch D).
 pub use server_fns::versions::{delete_version, list_versions, restore_version, VersionDto};
+// re-exported for integration tests (tests/server_fns_search.rs) and the
+// Dioxus UI (SP15 Batch C).
+pub use server_fns::search::{search_files, SearchHitDto, SearchResponseDto};
 pub use server_fns::{
     count_incoming_shares, delete, list_dir, login, mkdir, move_paths, rename,
     share_recipient_search, status, upload_begin, FileEntry, RecipientCandidate, StatusInfo,
