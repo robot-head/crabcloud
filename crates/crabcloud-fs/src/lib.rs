@@ -39,4 +39,6 @@ pub use view::{ListedEntry, VersionsHooks, View};
 use crabcloud_config as _;
 #[cfg(test)]
 use crabcloud_core as _;
+#[cfg(test)]
+use crabcloud_search as _;
 use tracing as _;

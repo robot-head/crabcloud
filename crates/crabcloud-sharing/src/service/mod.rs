@@ -42,6 +42,10 @@ pub struct Shares {
     /// because the user-visible share create/delete must not be rolled
     /// back by a down activity log (SP14 spec §6 emit-failure row).
     pub(crate) activity: Arc<dyn crabcloud_activity::ActivityEmitter>,
+    /// Search-index fan-out. Best-effort; failures are logged + swallowed
+    /// so a misbehaving search index can't block a share create / delete
+    /// (SP15 spec §6 — same eventually-consistent contract as activity).
+    pub(crate) search: Arc<dyn crabcloud_search::SearchFanout>,
 }
 
 /// Construction parameters for `Shares::new`.
@@ -64,6 +68,10 @@ pub struct SharesConfig {
     /// Tests can pass `Arc::new(crabcloud_activity::NoopEmitter)` to
     /// skip activity logging.
     pub activity: Arc<dyn crabcloud_activity::ActivityEmitter>,
+    /// Search-index fan-out. Tests can pass
+    /// `Arc::new(crabcloud_search::NoopSearchFanout)` to skip search
+    /// indexing.
+    pub search: Arc<dyn crabcloud_search::SearchFanout>,
 }
 
 impl Shares {
@@ -77,6 +85,7 @@ impl Shares {
             prefs: cfg.prefs,
             instance_url: cfg.instance_url,
             activity: cfg.activity,
+            search: cfg.search,
         }
     }
 
@@ -245,6 +254,30 @@ impl Shares {
             req.path.as_str(),
         )
         .await;
+
+        // Best-effort search fan-out (SP15). Failures are logged + dropped
+        // so the user-visible share-create still succeeds. The recipient
+        // list mirrors `share_activity_recipients` minus the actor.
+        let recipients = self
+            .search_fanout_recipients(req.share_type, Some(req.share_with.as_str()))
+            .await;
+        if !recipients.is_empty() {
+            let recipient_prefix = format!("/{}", file_target.trim_start_matches('/'));
+            let owner_path = format!("/{}", req.path.trim_start_matches('/'));
+            if let Err(e) = self
+                .search
+                .fan_out_for_share(
+                    &self.filecache,
+                    recipients,
+                    &req.home_storage_id,
+                    &owner_path,
+                    &recipient_prefix,
+                )
+                .await
+            {
+                tracing::warn!(error = %e, share_id = id, "sharing: search fan_out_for_share failed");
+            }
+        }
 
         Ok(ShareRow {
             id,
@@ -599,6 +632,53 @@ impl Shares {
                 row.file_target.as_str(),
             )
             .await;
+
+            // Best-effort search fan-out unshare. Walks the same owner
+            // subroot and removes recipient rows. We have to look the
+            // owner subroot path up via the filecache (the share row
+            // stores fileid in item_source, not the path string).
+            let recipients = self
+                .search_fanout_recipients(row.share_type, row.share_with.as_deref())
+                .await;
+            if !recipients.is_empty() {
+                match self.filecache.lookup_by_id(row.item_source).await {
+                    Ok(Some(fc_row)) => {
+                        let owner_subroot = format!("/{}", fc_row.path.as_str());
+                        // Owner-storage id is the storage id stamped on
+                        // the filecache row itself.
+                        if let Err(e) = self
+                            .search
+                            .fan_out_for_unshare(
+                                &self.filecache,
+                                recipients,
+                                &fc_row.storage_id,
+                                &owner_subroot,
+                            )
+                            .await
+                        {
+                            tracing::warn!(
+                                error = %e,
+                                share_id = id,
+                                "sharing: search fan_out_for_unshare failed"
+                            );
+                        }
+                    }
+                    Ok(None) => {
+                        tracing::debug!(
+                            share_id = id,
+                            item_source = row.item_source,
+                            "sharing: search fan-out unshare skipped (filecache row missing)"
+                        );
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            error = %e,
+                            share_id = id,
+                            "sharing: search fan-out unshare filecache lookup failed"
+                        );
+                    }
+                }
+            }
             Ok(())
         } else if is_direct || is_group_recipient {
             if !row.accepted {
@@ -967,6 +1047,215 @@ impl Shares {
             );
         }
     }
+
+    /// Resolve the recipient list for a search fan-out tied to a share.
+    /// User shares fan out to `[share_with]`; group shares fan out to
+    /// every member of the group. Link / email shares fan out to none
+    /// (public-link visibility is token-based, not viewer-uid-based).
+    /// The owner is NOT included — they're already indexed via the
+    /// per-write indexer; fan-out only touches recipient rows.
+    async fn search_fanout_recipients(
+        &self,
+        share_type: ShareType,
+        share_with: Option<&str>,
+    ) -> Vec<UserId> {
+        let mut raw: Vec<String> = Vec::new();
+        match share_type {
+            ShareType::User => {
+                if let Some(s) = share_with {
+                    raw.push(s.to_string());
+                }
+            }
+            ShareType::Group => {
+                if let Some(gname) = share_with {
+                    match GroupId::new(gname) {
+                        Ok(gid) => match self.users.group_store().members_of(&gid).await {
+                            Ok(members) => raw.extend(members.into_iter().map(|u| u.into_inner())),
+                            Err(e) => tracing::warn!(
+                                error = %e,
+                                group = gname,
+                                "sharing: search fanout group expansion failed"
+                            ),
+                        },
+                        Err(e) => tracing::warn!(
+                            error = %e,
+                            group = gname,
+                            "sharing: search fanout skipping invalid group id"
+                        ),
+                    }
+                }
+            }
+            ShareType::Link | ShareType::Email => {}
+        }
+        let mut seen = std::collections::HashSet::new();
+        raw.into_iter()
+            .filter_map(|s| UserId::new(s).ok())
+            .filter(|u| seen.insert(u.as_str().to_string()))
+            .collect()
+    }
+
+    /// Returns the de-duped set of `UserId`s that can see `fileid` via
+    /// the share graph: every direct user-share recipient plus every
+    /// group-share member (group expanded). Plus the owner row of each
+    /// matched share so the indexer can index the owner under their own
+    /// uid even when the file is shared.
+    ///
+    /// Cascading shares are honored: a share of `/docs` makes
+    /// `/docs/q1/r.docx` (a descendant) visible to the recipients. The
+    /// implementation walks the filecache parent chain from `fileid`
+    /// up to root collecting ancestor fileids, then queries `oc_share`
+    /// for any row whose `item_source` is one of those fileids.
+    ///
+    /// Used by `crabcloud-search`'s `SearchIndexer` for per-write
+    /// recipient resolution. The owner of files that aren't shared at
+    /// all is NOT returned by this method (no oc_share row exists);
+    /// the indexer is responsible for separately indexing the owner.
+    pub async fn recipients_for_fileid(&self, fileid: i64) -> Result<Vec<UserId>, ShareError> {
+        // 1. Collect ancestor fileids (including `fileid` itself).
+        let mut ancestor_ids: Vec<i64> = vec![fileid];
+        let mut cursor: i64 = fileid;
+        for _ in 0..64 {
+            // Depth-cap defensively; path depth in practice is < 16.
+            let row = self
+                .filecache
+                .lookup_by_id(cursor)
+                .await
+                .map_err(map_filecache)?;
+            let Some(row) = row else { break };
+            match row.parent {
+                Some(parent_id) => {
+                    ancestor_ids.push(parent_id);
+                    cursor = parent_id;
+                }
+                None => break,
+            }
+        }
+
+        // 2. Query oc_share for any user/group share whose item_source
+        //    is in the ancestor set. Build the placeholder list dynamically.
+        let mut shares: Vec<(i16, String, String)> = Vec::new(); // (share_type, share_with, uid_owner)
+        match self.pool.as_ref() {
+            DbPool::Sqlite(p) => {
+                let q_text = build_select_shares_for_sources(ancestor_ids.len(), sql::Dialect::Qm);
+                let mut q = sqlx::query(&q_text);
+                for id in &ancestor_ids {
+                    q = q.bind(*id);
+                }
+                let rows = q.fetch_all(p).await?;
+                for r in rows {
+                    let share_type: i16 = r.try_get("share_type")?;
+                    let share_with: Option<String> = r.try_get("share_with")?;
+                    let uid_owner: String = r.try_get("uid_owner")?;
+                    if let Some(sw) = share_with {
+                        shares.push((share_type, sw, uid_owner));
+                    }
+                }
+            }
+            DbPool::MySql(p) => {
+                let q_text = build_select_shares_for_sources(ancestor_ids.len(), sql::Dialect::Qm);
+                let mut q = sqlx::query(&q_text);
+                for id in &ancestor_ids {
+                    q = q.bind(*id);
+                }
+                let rows = q.fetch_all(p).await?;
+                for r in rows {
+                    let share_type: i16 = r.try_get("share_type")?;
+                    let share_with: Option<String> = r.try_get_unchecked("share_with")?;
+                    let uid_owner: String = r.try_get_unchecked("uid_owner")?;
+                    if let Some(sw) = share_with {
+                        shares.push((share_type, sw, uid_owner));
+                    }
+                }
+            }
+            DbPool::Postgres(p) => {
+                let q_text = build_select_shares_for_sources(ancestor_ids.len(), sql::Dialect::Pg);
+                let mut q = sqlx::query(&q_text);
+                for id in &ancestor_ids {
+                    q = q.bind(*id);
+                }
+                let rows = q.fetch_all(p).await?;
+                for r in rows {
+                    let share_type: i16 = r.try_get("share_type")?;
+                    let share_with: Option<String> = r.try_get("share_with")?;
+                    let uid_owner: String = r.try_get("uid_owner")?;
+                    if let Some(sw) = share_with {
+                        shares.push((share_type, sw, uid_owner));
+                    }
+                }
+            }
+        }
+
+        // 3. Expand group shares + de-dupe.
+        let mut seen = std::collections::HashSet::new();
+        let mut out: Vec<UserId> = Vec::new();
+        let push_uid =
+            |raw: String, seen: &mut std::collections::HashSet<String>, out: &mut Vec<UserId>| {
+                if let Ok(uid) = UserId::new(raw) {
+                    if seen.insert(uid.as_str().to_string()) {
+                        out.push(uid);
+                    }
+                }
+            };
+        const ST_USER: i16 = ShareType::User as i16;
+        const ST_GROUP: i16 = ShareType::Group as i16;
+        for (share_type, share_with, uid_owner) in shares {
+            push_uid(uid_owner, &mut seen, &mut out);
+            match share_type {
+                ST_USER => push_uid(share_with, &mut seen, &mut out),
+                ST_GROUP => {
+                    if let Ok(gid) = GroupId::new(share_with) {
+                        match self.users.group_store().members_of(&gid).await {
+                            Ok(members) => {
+                                for m in members {
+                                    push_uid(m.into_inner(), &mut seen, &mut out);
+                                }
+                            }
+                            Err(e) => {
+                                tracing::warn!(
+                                    error = %e,
+                                    group = gid.as_str(),
+                                    "sharing: recipients_for_fileid group expansion failed"
+                                );
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        Ok(out)
+    }
+}
+
+/// Build a `SELECT ... FROM oc_share WHERE item_source IN (?,?,...)` for
+/// `n` placeholders. Used by `Shares::recipients_for_fileid`.
+fn build_select_shares_for_sources(n: usize, dialect: sql::Dialect) -> String {
+    let mut q = String::with_capacity(160 + n * 4);
+    q.push_str(
+        "SELECT share_type, share_with, uid_owner FROM oc_share \
+                WHERE share_type IN (0, 1) AND accepted = 1 AND item_source IN (",
+    );
+    match dialect {
+        sql::Dialect::Qm => {
+            for i in 0..n {
+                if i > 0 {
+                    q.push_str(", ");
+                }
+                q.push('?');
+            }
+        }
+        sql::Dialect::Pg => {
+            for i in 0..n {
+                if i > 0 {
+                    q.push_str(", ");
+                }
+                q.push('$');
+                q.push_str(&(i + 1).to_string());
+            }
+        }
+    }
+    q.push(')');
+    q
 }
 
 async fn run_update_permissions(pool: &DbPool, id: i64, perms_db: i32) -> Result<(), ShareError> {

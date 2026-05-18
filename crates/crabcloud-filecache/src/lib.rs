@@ -133,6 +133,20 @@ impl FileCache {
         propagate::lookup_row_by_id(self, fileid).await
     }
 
+    /// Walk every row whose path is `path_prefix` itself or a descendant
+    /// of `path_prefix`, scoped to `storage_id`. Returns rows ordered by
+    /// `fileid` ascending. Used by `crabcloud-search` for bulk fan-out at
+    /// share lifecycle events.
+    ///
+    /// `path_prefix = ""` matches every row in the storage.
+    pub async fn walk_under(
+        &self,
+        storage_id: &str,
+        path_prefix: &str,
+    ) -> FileCacheResult<Vec<FilecacheRow>> {
+        propagate::walk_under(self, storage_id, path_prefix).await
+    }
+
     /// Update `oc_storages.last_checked` for `storage_id`. Called by the
     /// scanner at the end of `full_scan` (Batch D).
     pub async fn stamp_last_checked(&self, storage_id: &str) -> FileCacheResult<()> {

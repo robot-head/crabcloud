@@ -1,33 +1,23 @@
 [package]
-name = "crabcloud-sharing"
+name = "crabcloud-search"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-anyhow.workspace = true
 async-trait.workspace = true
 chrono.workspace = true
-crabcloud-activity.workspace = true
 crabcloud-db.workspace = true
 crabcloud-filecache.workspace = true
-crabcloud-mail.workspace = true
-crabcloud-publiclinks.workspace = true
-crabcloud-search.workspace = true
-crabcloud-storage.workspace = true
 crabcloud-users.workspace = true
 serde.workspace = true
-serde_json.workspace = true
 sqlx.workspace = true
 thiserror.workspace = true
-tokio = { workspace = true, features = ["sync"] }
 tracing.workspace = true
 
 [dev-dependencies]
 crabcloud-config = { workspace = true, features = ["test-support"] }
-crabcloud-core.workspace = true
-paste.workspace = true
-secrecy.workspace = true
+crabcloud-storage.workspace = true
 tempfile.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 

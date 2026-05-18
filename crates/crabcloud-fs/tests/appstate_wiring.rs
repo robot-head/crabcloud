@@ -123,6 +123,129 @@ async fn appstate_view_for_emits_activity_to_state_activity() {
     );
 }
 
+/// Poll `state.search.query(uid, "<text>")` until a hit appears or
+/// the deadline expires. Deadline is generous (15s) so a heavily
+/// loaded workspace-parallel test run doesn't time out behind a
+/// scheduling spike — the indexer is event-driven, normal latency is
+/// sub-100ms.
+async fn wait_for_index<F>(predicate: F)
+where
+    F: Fn() -> std::pin::Pin<Box<dyn std::future::Future<Output = bool> + Send>>,
+{
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    loop {
+        if predicate().await {
+            return;
+        }
+        if std::time::Instant::now() >= deadline {
+            panic!("index never reached expected state within 15s");
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn appstate_write_eventually_indexed_then_queryable() {
+    let db_dir = tempdir().unwrap();
+    let data_dir = tempdir().unwrap();
+    let mut cfg = minimal_sqlite_config(db_dir.path().join("state.db"));
+    cfg.datadirectory = data_dir.path().to_path_buf();
+    let state = AppStateBuilder::new(cfg).build().await.unwrap();
+
+    let uid = UserId::new("alice").unwrap();
+    let view = state.view_for(&uid).await.unwrap();
+    view.put_file(
+        &UserPath::new("/report.docx").unwrap(),
+        body(b"contents".to_vec()),
+    )
+    .await
+    .unwrap();
+
+    let search = state.search.clone();
+    wait_for_index(move || {
+        let search = search.clone();
+        Box::pin(async move {
+            let hits = search
+                .query("alice", &crabcloud_search::parse_query("report"), 10, None)
+                .await
+                .unwrap_or_default();
+            !hits.is_empty()
+        })
+    })
+    .await;
+
+    let hits = state
+        .search
+        .query("alice", &crabcloud_search::parse_query("report"), 10, None)
+        .await
+        .unwrap();
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].basename, "report.docx");
+    assert_eq!(hits[0].path, "/report.docx");
+
+    state.search_indexer_shutdown.notify_one();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn appstate_delete_eventually_removes_from_index() {
+    let db_dir = tempdir().unwrap();
+    let data_dir = tempdir().unwrap();
+    let mut cfg = minimal_sqlite_config(db_dir.path().join("state.db"));
+    cfg.datadirectory = data_dir.path().to_path_buf();
+    let state = AppStateBuilder::new(cfg).build().await.unwrap();
+
+    let uid = UserId::new("alice").unwrap();
+    let view = state.view_for(&uid).await.unwrap();
+    view.put_file(
+        &UserPath::new("/deleteme.txt").unwrap(),
+        body(b"x".to_vec()),
+    )
+    .await
+    .unwrap();
+
+    let search = state.search.clone();
+    wait_for_index(move || {
+        let search = search.clone();
+        Box::pin(async move {
+            !search
+                .query(
+                    "alice",
+                    &crabcloud_search::parse_query("deleteme"),
+                    10,
+                    None,
+                )
+                .await
+                .unwrap_or_default()
+                .is_empty()
+        })
+    })
+    .await;
+
+    view.delete(&UserPath::new("/deleteme.txt").unwrap())
+        .await
+        .unwrap();
+
+    let search = state.search.clone();
+    wait_for_index(move || {
+        let search = search.clone();
+        Box::pin(async move {
+            search
+                .query(
+                    "alice",
+                    &crabcloud_search::parse_query("deleteme"),
+                    10,
+                    None,
+                )
+                .await
+                .unwrap_or_default()
+                .is_empty()
+        })
+    })
+    .await;
+
+    state.search_indexer_shutdown.notify_one();
+}
+
 #[tokio::test]
 async fn appstate_uploads_for_round_trip() {
     let db_dir = tempdir().unwrap();

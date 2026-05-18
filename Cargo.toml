@@ -14,6 +14,7 @@ members = [
     "crates/crabcloud-ocs",
     "crates/crabcloud-preview",
     "crates/crabcloud-publiclinks",
+    "crates/crabcloud-search",
     "crates/crabcloud-sharing",
     "crates/crabcloud-storage",
     "crates/crabcloud-trash",
@@ -116,6 +117,7 @@ crabcloud-mail = { path = "crates/crabcloud-mail" }
 crabcloud-ocs = { path = "crates/crabcloud-ocs" }
 crabcloud-preview = { path = "crates/crabcloud-preview" }
 crabcloud-publiclinks = { path = "crates/crabcloud-publiclinks" }
+crabcloud-search = { path = "crates/crabcloud-search" }
 crabcloud-sharing = { path = "crates/crabcloud-sharing" }
 crabcloud-storage = { path = "crates/crabcloud-storage" }
 crabcloud-trash = { path = "crates/crabcloud-trash" }
