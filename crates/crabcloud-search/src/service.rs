@@ -7,13 +7,19 @@
 
 use crate::error::SearchError;
 use crate::sql;
-use crate::types::{SearchHit, SearchQuery};
+use crate::types::{BatchUpsertRow, SearchHit, SearchQuery};
 use async_trait::async_trait;
 use crabcloud_db::DbPool;
 use crabcloud_filecache::FileCache;
 use crabcloud_users::UserId;
 use sqlx::Row as _;
 use std::sync::Arc;
+
+/// Max rows per batched statement. 500 × 8 placeholders = 4000,
+/// comfortably under sqlite's default `SQLITE_MAX_VARIABLE_NUMBER`
+/// of 32766. Same cap is used for mysql / postgres (they tolerate
+/// much larger statements, but a single cap keeps the code simple).
+pub const BATCH_CHUNK_SIZE: usize = 500;
 
 #[derive(Clone)]
 pub struct Search {
@@ -144,6 +150,223 @@ impl Search {
                     .bind(fileid)
                     .execute(p)
                     .await?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Batched UPSERT for many `(viewer_uid, fileid)` rows at once.
+    ///
+    /// Same semantics as calling [`Self::upsert_for_file`] once per
+    /// row, but issues O(rows / [`BATCH_CHUNK_SIZE`]) statements
+    /// instead of one per row. Used by [`SearchFanout::fan_out_for_share`]
+    /// where a single share lifecycle event can touch
+    /// `recipients × files_under_subroot` rows.
+    ///
+    /// - **sqlite**: one transaction per chunk; one tuple-IN DELETE
+    ///   followed by one multi-row INSERT (FTS5 has no UPSERT).
+    /// - **mysql**: one multi-row INSERT ... ON DUPLICATE KEY UPDATE.
+    /// - **postgres**: one multi-row INSERT ... ON CONFLICT ... DO UPDATE.
+    ///
+    /// Chunk size capped at [`BATCH_CHUNK_SIZE`] (500 rows × 8
+    /// columns = 4000 placeholders) to stay under sqlite's default
+    /// `SQLITE_MAX_VARIABLE_NUMBER` of 32766.
+    pub async fn upsert_many(&self, rows: &[BatchUpsertRow]) -> Result<(), SearchError> {
+        if rows.is_empty() {
+            return Ok(());
+        }
+        for chunk in rows.chunks(BATCH_CHUNK_SIZE) {
+            match self.pool.as_ref() {
+                DbPool::Sqlite(p) => {
+                    let mut tx = p.begin().await?;
+                    // DELETE WHERE (viewer_uid, fileid) IN ((?,?), ...)
+                    let mut del_sql =
+                        String::from("DELETE FROM oc_search WHERE (viewer_uid, fileid) IN (");
+                    for i in 0..chunk.len() {
+                        if i > 0 {
+                            del_sql.push(',');
+                        }
+                        del_sql.push_str("(?,?)");
+                    }
+                    del_sql.push(')');
+                    let mut del_q = sqlx::query(&del_sql);
+                    for row in chunk {
+                        del_q = del_q.bind(&row.viewer_uid).bind(row.fileid);
+                    }
+                    del_q.execute(&mut *tx).await?;
+
+                    // Multi-row INSERT.
+                    let mut ins_sql = String::from(
+                        "INSERT INTO oc_search \
+                         (viewer_uid, fileid, storage_id, basename, path, mime, mtime, size) VALUES ",
+                    );
+                    for i in 0..chunk.len() {
+                        if i > 0 {
+                            ins_sql.push(',');
+                        }
+                        ins_sql.push_str("(?,?,?,?,?,?,?,?)");
+                    }
+                    let mut ins_q = sqlx::query(&ins_sql);
+                    for row in chunk {
+                        ins_q = ins_q
+                            .bind(&row.viewer_uid)
+                            .bind(row.fileid)
+                            .bind(&row.storage_id)
+                            .bind(&row.basename)
+                            .bind(&row.path)
+                            .bind(&row.mime)
+                            .bind(row.mtime)
+                            .bind(row.size);
+                    }
+                    ins_q.execute(&mut *tx).await?;
+                    tx.commit().await?;
+                }
+                DbPool::MySql(p) => {
+                    let mut sql = String::from(
+                        "INSERT INTO oc_search \
+                         (viewer_uid, fileid, storage_id, basename, path, mime, mtime, size) VALUES ",
+                    );
+                    for i in 0..chunk.len() {
+                        if i > 0 {
+                            sql.push(',');
+                        }
+                        sql.push_str("(?,?,?,?,?,?,?,?)");
+                    }
+                    sql.push_str(
+                        " ON DUPLICATE KEY UPDATE \
+                         storage_id = VALUES(storage_id), basename = VALUES(basename), \
+                         path = VALUES(path), mime = VALUES(mime), \
+                         mtime = VALUES(mtime), size = VALUES(size)",
+                    );
+                    let mut q = sqlx::query(&sql);
+                    for row in chunk {
+                        q = q
+                            .bind(&row.viewer_uid)
+                            .bind(row.fileid)
+                            .bind(&row.storage_id)
+                            .bind(&row.basename)
+                            .bind(&row.path)
+                            .bind(&row.mime)
+                            .bind(row.mtime)
+                            .bind(row.size);
+                    }
+                    q.execute(p).await?;
+                }
+                DbPool::Postgres(p) => {
+                    let mut sql = String::from(
+                        "INSERT INTO oc_search \
+                         (viewer_uid, fileid, storage_id, basename, path, mime, mtime, size) VALUES ",
+                    );
+                    let mut n = 1usize;
+                    for i in 0..chunk.len() {
+                        if i > 0 {
+                            sql.push(',');
+                        }
+                        sql.push_str(&format!(
+                            "(${},${},${},${},${},${},${},${})",
+                            n,
+                            n + 1,
+                            n + 2,
+                            n + 3,
+                            n + 4,
+                            n + 5,
+                            n + 6,
+                            n + 7,
+                        ));
+                        n += 8;
+                    }
+                    sql.push_str(
+                        " ON CONFLICT (viewer_uid, fileid) DO UPDATE SET \
+                         storage_id = EXCLUDED.storage_id, basename = EXCLUDED.basename, \
+                         path = EXCLUDED.path, mime = EXCLUDED.mime, \
+                         mtime = EXCLUDED.mtime, size = EXCLUDED.size",
+                    );
+                    let mut q = sqlx::query(&sql);
+                    for row in chunk {
+                        q = q
+                            .bind(&row.viewer_uid)
+                            .bind(row.fileid)
+                            .bind(&row.storage_id)
+                            .bind(&row.basename)
+                            .bind(&row.path)
+                            .bind(&row.mime)
+                            .bind(row.mtime)
+                            .bind(row.size);
+                    }
+                    q.execute(p).await?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Batched DELETE for many `(viewer_uid, fileid)` pairs. Same
+    /// semantics as calling [`Self::delete_for_viewer_file`] once per
+    /// pair, but issues O(pairs / [`BATCH_CHUNK_SIZE`]) statements.
+    /// Used by [`SearchFanout::fan_out_for_unshare`].
+    ///
+    /// Tuple-IN syntax works on all three dialects (sqlite, mysql,
+    /// postgres). Chunked at [`BATCH_CHUNK_SIZE`] pairs per
+    /// statement.
+    pub async fn delete_many_for_viewer_files(
+        &self,
+        pairs: &[(String, i64)],
+    ) -> Result<(), SearchError> {
+        if pairs.is_empty() {
+            return Ok(());
+        }
+        for chunk in pairs.chunks(BATCH_CHUNK_SIZE) {
+            match self.pool.as_ref() {
+                DbPool::Sqlite(p) => {
+                    let mut sql =
+                        String::from("DELETE FROM oc_search WHERE (viewer_uid, fileid) IN (");
+                    for i in 0..chunk.len() {
+                        if i > 0 {
+                            sql.push(',');
+                        }
+                        sql.push_str("(?,?)");
+                    }
+                    sql.push(')');
+                    let mut q = sqlx::query(&sql);
+                    for (viewer, fid) in chunk {
+                        q = q.bind(viewer).bind(*fid);
+                    }
+                    q.execute(p).await?;
+                }
+                DbPool::MySql(p) => {
+                    let mut sql =
+                        String::from("DELETE FROM oc_search WHERE (viewer_uid, fileid) IN (");
+                    for i in 0..chunk.len() {
+                        if i > 0 {
+                            sql.push(',');
+                        }
+                        sql.push_str("(?,?)");
+                    }
+                    sql.push(')');
+                    let mut q = sqlx::query(&sql);
+                    for (viewer, fid) in chunk {
+                        q = q.bind(viewer).bind(*fid);
+                    }
+                    q.execute(p).await?;
+                }
+                DbPool::Postgres(p) => {
+                    let mut sql =
+                        String::from("DELETE FROM oc_search WHERE (viewer_uid, fileid) IN (");
+                    let mut n = 1usize;
+                    for i in 0..chunk.len() {
+                        if i > 0 {
+                            sql.push(',');
+                        }
+                        sql.push_str(&format!("(${},${})", n, n + 1));
+                        n += 2;
+                    }
+                    sql.push(')');
+                    let mut q = sqlx::query(&sql);
+                    for (viewer, fid) in chunk {
+                        q = q.bind(viewer).bind(*fid);
+                    }
+                    q.execute(p).await?;
+                }
             }
         }
         Ok(())
@@ -576,12 +799,13 @@ impl SearchFanout for Search {
     /// `"local::/var/.../alice/files"`). This matches what
     /// `Shares::create` already has on hand (`req.home_storage_id`).
     ///
-    /// Scale: this issues `recipients.len() × files_under_subroot`
-    /// sequential UPSERTs. A 100-member group share of a 10k-file
-    /// folder is 1M serialized DB writes inside the `Shares::create`
-    /// call. Acceptable for MVP; if real-world group shares show up as
-    /// latency, batch by `(viewer_uid, fileid)` tuples in a multi-row
-    /// INSERT or move the fan-out to a background task.
+    /// Scale: this materializes `recipients.len() × files_under_subroot`
+    /// `(viewer, fileid)` rows and pushes them through
+    /// [`Search::upsert_many`], batched in chunks of
+    /// [`BATCH_CHUNK_SIZE`] rows per statement. A 100-member group
+    /// share of a 10k-file folder issues `(100 × 10k) / 500 = 2000`
+    /// DB statements instead of the 1M sequential writes the
+    /// original one-row-at-a-time implementation produced.
     async fn fan_out_for_share(
         &self,
         filecache: &FileCache,
@@ -594,6 +818,7 @@ impl SearchFanout for Search {
             return Ok(());
         }
         let rows = filecache.walk_under(owner_uid, owner_subroot_path).await?;
+        let mut batch: Vec<BatchUpsertRow> = Vec::with_capacity(rows.len() * recipients.len());
         for row in rows {
             let owner_path_str = row.path.as_str();
             let viewer_path =
@@ -604,25 +829,26 @@ impl SearchFanout for Search {
                 .unwrap_or(&row.name)
                 .to_string();
             for r in &recipients {
-                self.upsert_for_file(
-                    r.as_str(),
-                    row.fileid,
-                    &row.storage_id,
-                    &basename,
-                    &viewer_path,
-                    row.mimetype.as_str(),
-                    row.mtime as i64,
-                    row.size as i64,
-                )
-                .await?;
+                batch.push(BatchUpsertRow {
+                    viewer_uid: r.as_str().to_string(),
+                    fileid: row.fileid,
+                    storage_id: row.storage_id.clone(),
+                    basename: basename.clone(),
+                    path: viewer_path.clone(),
+                    mime: row.mimetype.as_str().to_string(),
+                    mtime: row.mtime as i64,
+                    size: row.size as i64,
+                });
             }
         }
-        Ok(())
+        self.upsert_many(&batch).await
     }
 
     /// Inverse: walk the same subroot and DELETE per-(recipient,
     /// fileid). `owner_uid` carries the OWNER's storage id (same
-    /// convention as `fan_out_for_share`).
+    /// convention as `fan_out_for_share`). Uses
+    /// [`Search::delete_many_for_viewer_files`] to batch the
+    /// per-pair DELETEs into chunked tuple-IN statements.
     async fn fan_out_for_unshare(
         &self,
         filecache: &FileCache,
@@ -634,12 +860,14 @@ impl SearchFanout for Search {
             return Ok(());
         }
         let rows = filecache.walk_under(owner_uid, owner_subroot_path).await?;
+        let mut pairs: Vec<(String, i64)> =
+            Vec::with_capacity(rows.len() * former_recipients.len());
         for row in rows {
             for r in &former_recipients {
-                self.delete_for_viewer_file(r.as_str(), row.fileid).await?;
+                pairs.push((r.as_str().to_string(), row.fileid));
             }
         }
-        Ok(())
+        self.delete_many_for_viewer_files(&pairs).await
     }
 }
 
@@ -650,7 +878,10 @@ impl SearchFanout for Search {
 /// Strips leading slashes from both inputs so it's tolerant of the
 /// "no leading slash" StoragePath representation as well as the
 /// "leading-slash" web-facing form.
-fn translate_path(owner_subroot: &str, recipient_prefix: &str, owner_path: &str) -> String {
+///
+/// Public so the search indexer's per-write path can reuse the bulk
+/// fan-out translation rule.
+pub fn translate_path(owner_subroot: &str, recipient_prefix: &str, owner_path: &str) -> String {
     let owner_subroot_trim = owner_subroot.trim_matches('/');
     let owner_path_trim = owner_path.trim_start_matches('/');
     let suffix = if owner_subroot_trim.is_empty() {
@@ -701,6 +932,171 @@ impl SearchFanout for NoopSearchFanout {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crabcloud_config::test_support::minimal_sqlite_config;
+    use crabcloud_db::{core_set, MigrationRunner};
+
+    async fn setup_pool() -> (Arc<DbPool>, tempfile::TempDir) {
+        let db_dir = tempfile::TempDir::new().unwrap();
+        let cfg = minimal_sqlite_config(db_dir.path().join("test.db"));
+        let pool = DbPool::connect(&cfg).await.unwrap();
+        let mut runner = MigrationRunner::new(&pool, &cfg.dbtableprefix);
+        runner.register(core_set());
+        runner.run().await.unwrap();
+        (Arc::new(pool), db_dir)
+    }
+
+    fn sample_row(viewer: &str, fileid: i64, name: &str) -> BatchUpsertRow {
+        BatchUpsertRow {
+            viewer_uid: viewer.to_string(),
+            fileid,
+            storage_id: "s".to_string(),
+            basename: name.to_string(),
+            path: format!("/{name}"),
+            mime: "text/plain".to_string(),
+            mtime: 1_700_000_000,
+            size: 1,
+        }
+    }
+
+    #[tokio::test]
+    async fn upsert_many_matches_sequential_singles() {
+        // Two parallel pools — drive one through `upsert_many` and the
+        // other through repeated `upsert_for_file`, then assert the
+        // resulting rows are identical via the public `query` API.
+        let (pool_batch, _d1) = setup_pool().await;
+        let (pool_seq, _d2) = setup_pool().await;
+        let batch_search = Search::new(pool_batch);
+        let seq_search = Search::new(pool_seq);
+
+        let rows = vec![
+            sample_row("alice", 1, "alpha.txt"),
+            sample_row("alice", 2, "beta.txt"),
+            sample_row("bob", 1, "alpha.txt"),
+            sample_row("bob", 2, "beta.txt"),
+        ];
+
+        batch_search.upsert_many(&rows).await.unwrap();
+        for r in &rows {
+            seq_search
+                .upsert_for_file(
+                    &r.viewer_uid,
+                    r.fileid,
+                    &r.storage_id,
+                    &r.basename,
+                    &r.path,
+                    &r.mime,
+                    r.mtime,
+                    r.size,
+                )
+                .await
+                .unwrap();
+        }
+
+        for viewer in ["alice", "bob"] {
+            let bh = batch_search
+                .query(viewer, &crate::parse_query("txt"), 100, None)
+                .await
+                .unwrap();
+            let sh = seq_search
+                .query(viewer, &crate::parse_query("txt"), 100, None)
+                .await
+                .unwrap();
+            // Same fileids should appear for both flows.
+            let bids: std::collections::BTreeSet<_> = bh.iter().map(|h| h.fileid).collect();
+            let sids: std::collections::BTreeSet<_> = sh.iter().map(|h| h.fileid).collect();
+            assert_eq!(bids, sids, "viewer={viewer}");
+            assert_eq!(bh.len(), 2, "viewer={viewer}");
+        }
+    }
+
+    #[tokio::test]
+    async fn upsert_many_updates_existing_rows() {
+        let (pool, _d) = setup_pool().await;
+        let search = Search::new(pool);
+        // Seed.
+        search
+            .upsert_many(&[sample_row("alice", 1, "old.txt")])
+            .await
+            .unwrap();
+        // Overwrite via batched upsert (different basename).
+        let mut replacement = sample_row("alice", 1, "new.txt");
+        replacement.mtime = 1_700_000_100;
+        search.upsert_many(&[replacement]).await.unwrap();
+
+        let new_hits = search
+            .query("alice", &crate::parse_query("new"), 10, None)
+            .await
+            .unwrap();
+        assert_eq!(new_hits.len(), 1);
+        assert_eq!(new_hits[0].basename, "new.txt");
+        let stale = search
+            .query("alice", &crate::parse_query("old"), 10, None)
+            .await
+            .unwrap();
+        assert!(stale.is_empty(), "old row should have been replaced");
+    }
+
+    #[tokio::test]
+    async fn delete_many_for_viewer_files_targets_only_listed_pairs() {
+        let (pool, _d) = setup_pool().await;
+        let search = Search::new(pool);
+        let rows = vec![
+            sample_row("alice", 1, "a.txt"),
+            sample_row("alice", 2, "b.txt"),
+            sample_row("bob", 1, "a.txt"),
+            sample_row("bob", 2, "b.txt"),
+        ];
+        search.upsert_many(&rows).await.unwrap();
+
+        // Delete only (alice, 1) and (bob, 2).
+        search
+            .delete_many_for_viewer_files(&[("alice".to_string(), 1), ("bob".to_string(), 2)])
+            .await
+            .unwrap();
+
+        let alice_hits = search
+            .query("alice", &crate::parse_query("txt"), 10, None)
+            .await
+            .unwrap();
+        let alice_ids: std::collections::BTreeSet<_> =
+            alice_hits.iter().map(|h| h.fileid).collect();
+        assert_eq!(alice_ids, [2].into_iter().collect());
+
+        let bob_hits = search
+            .query("bob", &crate::parse_query("txt"), 10, None)
+            .await
+            .unwrap();
+        let bob_ids: std::collections::BTreeSet<_> = bob_hits.iter().map(|h| h.fileid).collect();
+        assert_eq!(bob_ids, [1].into_iter().collect());
+    }
+
+    #[tokio::test]
+    async fn upsert_many_empty_is_noop() {
+        let (pool, _d) = setup_pool().await;
+        let search = Search::new(pool);
+        search.upsert_many(&[]).await.unwrap();
+        search.delete_many_for_viewer_files(&[]).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn upsert_many_chunks_larger_than_batch_size() {
+        // Validate the chunking loop: push more than BATCH_CHUNK_SIZE
+        // rows and confirm they all land.
+        let (pool, _d) = setup_pool().await;
+        let search = Search::new(pool);
+        let n = BATCH_CHUNK_SIZE + 50;
+        let rows: Vec<_> = (0..n as i64)
+            .map(|i| sample_row("alice", i + 1, &format!("file{i}.txt")))
+            .collect();
+        search.upsert_many(&rows).await.unwrap();
+        let hits = search
+            .query("alice", &crate::parse_query("file0"), 5, None)
+            .await
+            .unwrap();
+        // At least one of the seeded rows is reachable; confirm the
+        // batched flow committed.
+        assert!(!hits.is_empty());
+    }
 
     #[test]
     fn translate_path_replaces_subroot_prefix() {

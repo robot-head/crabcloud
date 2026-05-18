@@ -83,6 +83,25 @@ pub struct ShareRow {
     pub last_warned: Option<DateTime<Utc>>,
 }
 
+/// Per-share fan-out context for one (covering-share, fileid) pair, used
+/// by the search indexer's per-write path to translate the OWNER's path
+/// into each RECIPIENT's view of the file. Each instance corresponds to
+/// a single `oc_share` row whose `item_source` is an ancestor of (or
+/// equal to) the queried fileid; `recipients` is the expanded UID set
+/// for that share (User → `[share_with]`, Group → group members).
+///
+/// `owner_subroot` is the OWNER-side filecache path of the share's
+/// `item_source`, leading-slashed; `recipient_prefix` is the share's
+/// `file_target` (the recipient's mount-relative path). These are the
+/// two inputs to `crabcloud_search::translate_path` for one file.
+#[derive(Debug, Clone)]
+pub struct ShareFanoutContext {
+    pub recipients: Vec<crabcloud_users::UserId>,
+    pub owner_storage_id: String,
+    pub owner_subroot: String,
+    pub recipient_prefix: String,
+}
+
 /// Caller-supplied create request. The service validates and normalizes
 /// before insertion. `requester` is the authenticated user driving the
 /// request; SP7 requires `requester == owner`.

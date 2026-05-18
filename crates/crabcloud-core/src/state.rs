@@ -343,8 +343,17 @@ impl AppStateBuilder {
 
         // Mount resolver: SP7 wraps HomeMountResolver with ShareMountResolver
         // so accepted incoming shares surface as extra mounts.
-        let storage_factory: Arc<dyn StorageFactory> =
-            Arc::new(LocalStorageFactory::new(self.config.datadirectory.clone()));
+        //
+        // The factory is wrapped in `RegisteringStorageFactory` so every
+        // home-storage minted at request time is also registered with
+        // the scanner. The scanner uses this both for drift-recovery
+        // full scans and as the lookup table behind `storage_for(id)`,
+        // which the search indexer consults to resolve `owner_uid()`
+        // for the just-emitted event.
+        let storage_factory: Arc<dyn StorageFactory> = Arc::new(RegisteringStorageFactory {
+            inner: Arc::new(LocalStorageFactory::new(self.config.datadirectory.clone())),
+            scanner: scanner.clone(),
+        });
 
         // Activity service + settings + daily sweeper. Constructed BEFORE
         // shares/trash/versions/views so each of those can take an
@@ -518,19 +527,19 @@ impl AppStateBuilder {
             std::mem::drop(tokio::spawn(async move { mail_queue_cleanup.run().await }));
         }
 
-        // SearchIndexer: subscribes to `storage_sink` and maintains the
-        // per-user `oc_search` index. Production default is enabled; the
-        // shutdown handle is always present so tests / callers can
-        // notify it without checking. The spawn is gated on
-        // `config.search_indexer_enabled` so test fixtures using
-        // `minimal_sqlite_config` (which defaults the flag to false)
-        // don't suffer sqlite write contention under workspace-parallel
-        // `cargo test --workspace`.
+        // SearchIndexer: subscribes to the scanner's post-apply
+        // broadcast and maintains the per-user `oc_search` index.
+        // Production default is enabled; the shutdown handle is always
+        // present so tests / callers can notify it without checking.
+        // The spawn is gated on `config.search_indexer_enabled` for
+        // operators who want to disable search entirely; the original
+        // CI-flake reason for the gate (scanner-race poll-with-backoff)
+        // is resolved by the scanner-applied signal.
         let (search_indexer, search_indexer_shutdown) = crate::SearchIndexer::new(
             search.clone(),
             shares.clone(),
             filecache.clone(),
-            &storage_sink,
+            scanner.clone(),
         );
         if self.config.search_indexer_enabled {
             std::mem::drop(tokio::spawn(async move { search_indexer.run().await }));
@@ -573,6 +582,32 @@ impl AppStateBuilder {
 
         self.registry.run(&state).await?;
         Ok(state)
+    }
+}
+
+/// `StorageFactory` decorator that registers every minted home
+/// storage with the scanner. Used so the search indexer's
+/// `scanner.storage_for(storage_id)` returns the live `Storage` (and
+/// therefore the live `owner_uid()`) for the just-emitted event,
+/// without the indexer falling back to a storage-id parse heuristic.
+///
+/// Registration is keyed on `storage.id()` inside `Scanner`'s
+/// `DashMap`, so repeated mints for the same user are idempotent
+/// (the latest Arc wins, same id).
+struct RegisteringStorageFactory {
+    inner: Arc<dyn StorageFactory>,
+    scanner: Arc<crabcloud_filecache::Scanner>,
+}
+
+#[async_trait::async_trait]
+impl StorageFactory for RegisteringStorageFactory {
+    async fn home_storage(
+        &self,
+        uid: &crabcloud_users::UserId,
+    ) -> crabcloud_fs::FsResult<Arc<dyn crabcloud_storage::Storage>> {
+        let storage = self.inner.home_storage(uid).await?;
+        self.scanner.register_storage(storage.clone());
+        Ok(storage)
     }
 }
 

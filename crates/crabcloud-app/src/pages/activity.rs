@@ -193,6 +193,7 @@ fn icon_for(event_type: &str) -> &'static str {
         "file_restored" => "♻",
         "share_created" => "🔗",
         "share_deleted" => "✂",
+        "share_unaccepted" => "🚫",
         "version_restored" => "🕘",
         _ => "•",
     }

@@ -28,13 +28,27 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeekExt};
 pub struct LocalStorage {
     root: PathBuf,
     id: String,
+    owner_uid: Option<String>,
 }
 
 impl LocalStorage {
     pub fn new(root: PathBuf) -> StorageResult<Self> {
         let root = root.canonicalize().map_err(map_io)?;
         let id = format!("local::{}", root.display());
-        Ok(Self { root, id })
+        Ok(Self {
+            root,
+            id,
+            owner_uid: None,
+        })
+    }
+
+    /// Tag this storage with the user it belongs to. Set by
+    /// `LocalStorageFactory::home_storage`; surfaced via
+    /// `Storage::owner_uid` so the search indexer can attribute writes
+    /// without parsing the storage id.
+    pub fn with_owner_uid(mut self, uid: impl Into<String>) -> Self {
+        self.owner_uid = Some(uid.into());
+        self
     }
 
     /// Translate `StoragePath` (relative, normalized) to an absolute path
@@ -119,6 +133,10 @@ impl LocalStorage {
 impl Storage for LocalStorage {
     fn id(&self) -> &str {
         &self.id
+    }
+
+    fn owner_uid(&self) -> Option<&str> {
+        self.owner_uid.as_deref()
     }
 
     async fn stat(&self, path: &StoragePath) -> StorageResult<FileMetadata> {

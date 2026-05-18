@@ -29,6 +29,7 @@ const EVENT_TYPES: &[(&str, &str)] = &[
     ("file_restored", "File restored from trash"),
     ("share_created", "Share created"),
     ("share_deleted", "Share removed"),
+    ("share_unaccepted", "Share declined"),
     ("version_restored", "Version restored"),
 ];
 

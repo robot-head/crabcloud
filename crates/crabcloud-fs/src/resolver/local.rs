@@ -29,7 +29,9 @@ impl StorageFactory for LocalStorageFactory {
         tokio::fs::create_dir_all(&home)
             .await
             .map_err(|e| FsError::Storage(crabcloud_storage::StorageError::Io(e)))?;
-        let storage = LocalStorage::new(home).map_err(FsError::Storage)?;
+        let storage = LocalStorage::new(home)
+            .map_err(FsError::Storage)?
+            .with_owner_uid(uid.as_str());
         Ok(Arc::new(storage))
     }
 }

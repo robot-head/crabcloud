@@ -36,6 +36,8 @@ fn template_for(subject_id: &str) -> Option<&'static str> {
         "share_created_you" => "You shared {file} with {recipient}",
         "share_deleted_by" => "{actor} unshared {file} from you",
         "share_deleted_you" => "You unshared {file} from {recipient}",
+        "share_unaccepted_by" => "{actor} declined your share of {file}",
+        "share_unaccepted_you" => "You declined a share of {file} from {actor}",
         "version_restored_by" => "{actor} restored a previous version of {file}",
         "version_restored_you" => "You restored a previous version of {file}",
         // Public-link variants (actor = "")

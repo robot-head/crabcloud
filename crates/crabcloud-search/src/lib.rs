@@ -29,5 +29,5 @@ mod types;
 
 pub use error::SearchError;
 pub use parse::parse_query;
-pub use service::{NoopSearchFanout, Search, SearchFanout};
-pub use types::{SearchHit, SearchQuery};
+pub use service::{translate_path, NoopSearchFanout, Search, SearchFanout};
+pub use types::{BatchUpsertRow, SearchHit, SearchQuery};

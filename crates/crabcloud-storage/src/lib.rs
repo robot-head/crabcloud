@@ -122,6 +122,17 @@ pub trait Storage: Send + Sync {
     /// and (in 4b) as the foreign-key value for `oc_filecache.storage`.
     fn id(&self) -> &str;
 
+    /// The user that owns this storage, when one can be attributed.
+    /// Returns `Some(uid)` for per-user home backends (e.g. `LocalStorage`
+    /// minted by `LocalStorageFactory::home_storage`) and `None` for
+    /// shared or unattributed backends. Used by the search indexer to
+    /// always include the owner in the per-write recipient set; backends
+    /// that return `None` skip owner-injection rather than fall back to
+    /// path-shape heuristics.
+    fn owner_uid(&self) -> Option<&str> {
+        None
+    }
+
     /// For wrappers that delegate to an inner storage at a sub-path:
     /// returns the inner storage and the owner-side path prefix.
     ///

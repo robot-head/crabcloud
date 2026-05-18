@@ -24,9 +24,20 @@ impl DbPool {
         let max = config.db_pool_max;
         match config.dbtype {
             DbType::Sqlite => {
+                // `busy_timeout` makes concurrent writers wait for the
+                // lock instead of erroring immediately with "database
+                // is locked". 5 s comfortably covers all in-tree
+                // background work (scanner apply, search indexer
+                // upserts, sweepers, mail worker) under typical
+                // contention. WAL is intentionally NOT enabled here:
+                // it interacts poorly with sqlx's default DEFERRED
+                // transactions, surfacing as SQLITE_BUSY_SNAPSHOT when
+                // an indexer read-then-write tx races a scanner
+                // commit, which busy_timeout does NOT retry.
                 let opts = SqliteConnectOptions::new()
                     .filename(&config.dbname)
-                    .create_if_missing(true);
+                    .create_if_missing(true)
+                    .busy_timeout(std::time::Duration::from_secs(5));
                 let pool = SqlitePoolOptions::new()
                     .max_connections(max)
                     .connect_with(opts)
