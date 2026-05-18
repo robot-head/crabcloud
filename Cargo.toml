@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "crates/crabcloud-activity",
     "crates/crabcloud-app",
     "crates/crabcloud-cache",
     "crates/crabcloud-config",
@@ -101,6 +102,7 @@ accept-language = "3.1"
 quick-xml = { version = "0.40", features = ["serialize"] }
 
 # Internal workspace deps. Entries are added by subsequent tasks when their crate exists.
+crabcloud-activity = { path = "crates/crabcloud-activity" }
 crabcloud-app = { path = "crates/crabcloud-app" }
 crabcloud-cache = { path = "crates/crabcloud-cache" }
 crabcloud-config = { path = "crates/crabcloud-config" }

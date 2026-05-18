@@ -44,8 +44,17 @@ pub async fn harness() -> Harness {
     let storage: Arc<dyn Storage> = Arc::new(MemoryStorage::new("alice"));
     let datadir = dir.path().to_path_buf();
     let pool_arc = Arc::new(pool.clone());
-    let versions = Arc::new(Versions::new(pool_arc.clone(), datadir.clone()));
-    let trash = Arc::new(Trash::new(pool_arc, datadir.clone(), versions.clone()));
+    let versions = Arc::new(Versions::new(
+        pool_arc.clone(),
+        datadir.clone(),
+        std::sync::Arc::new(crabcloud_activity::NoopEmitter),
+    ));
+    let trash = Arc::new(Trash::new(
+        pool_arc,
+        datadir.clone(),
+        versions.clone(),
+        std::sync::Arc::new(crabcloud_activity::NoopEmitter),
+    ));
     Harness {
         pool,
         filecache,
@@ -71,6 +80,7 @@ pub fn view_home(h: &Harness) -> View {
         h.sink.clone(),
         h.trash.clone(),
         h.versions_hooks(),
+        std::sync::Arc::new(crabcloud_activity::NoopEmitter),
     )
 }
 
@@ -89,6 +99,7 @@ pub fn view_home_for(h: &Harness, storage: Arc<dyn Storage>) -> View {
         h.sink.clone(),
         h.trash.clone(),
         h.versions_hooks(),
+        std::sync::Arc::new(crabcloud_activity::NoopEmitter),
     )
 }
 
@@ -114,6 +125,7 @@ pub fn view_with_two_mounts(h: &Harness) -> View {
         h.sink.clone(),
         h.trash.clone(),
         h.versions_hooks(),
+        std::sync::Arc::new(crabcloud_activity::NoopEmitter),
     )
 }
 
@@ -154,5 +166,6 @@ pub fn view_with_share_mount(
         h.sink.clone(),
         h.trash.clone(),
         h.versions_hooks(),
+        std::sync::Arc::new(crabcloud_activity::NoopEmitter),
     )
 }

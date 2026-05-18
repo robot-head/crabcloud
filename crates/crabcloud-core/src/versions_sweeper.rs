@@ -70,7 +70,11 @@ mod tests {
         let mut runner = MigrationRunner::new(&pool, &cfg.dbtableprefix);
         runner.register(core_set());
         runner.run().await.unwrap();
-        let versions = Arc::new(Versions::new(Arc::new(pool), data_dir.path().to_path_buf()));
+        let versions = Arc::new(Versions::new(
+            Arc::new(pool),
+            data_dir.path().to_path_buf(),
+            std::sync::Arc::new(crabcloud_activity::NoopEmitter),
+        ));
         (versions, db_dir, data_dir)
     }
 

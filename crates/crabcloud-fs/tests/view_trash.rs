@@ -8,6 +8,7 @@
 //! `MemoryStorage` has no on-disk presence and would error
 //! `SourceMissing`.
 
+use chrono as _;
 use crabcloud_config::test_support::minimal_sqlite_config;
 use crabcloud_db::{core_set, DbPool, MigrationRunner};
 use crabcloud_filecache::FileCache;
@@ -20,6 +21,7 @@ use crabcloud_storage::{ChannelEventSink, NoopEventSink, Storage, StorageError, 
 use crabcloud_trash::Trash;
 use crabcloud_users::UserId;
 use crabcloud_versions::Versions;
+use serde_json as _;
 use std::sync::Arc;
 use tempfile::TempDir;
 
@@ -53,8 +55,17 @@ async fn local_harness(uid: &str) -> LocalHarness {
     let uid = UserId::new(uid).unwrap();
     let storage = factory.home_storage(&uid).await.unwrap();
     let pool_arc = Arc::new(pool);
-    let versions = Arc::new(Versions::new(pool_arc.clone(), datadir.clone()));
-    let trash = Arc::new(Trash::new(pool_arc, datadir.clone(), versions.clone()));
+    let versions = Arc::new(Versions::new(
+        pool_arc.clone(),
+        datadir.clone(),
+        std::sync::Arc::new(crabcloud_activity::NoopEmitter),
+    ));
+    let trash = Arc::new(Trash::new(
+        pool_arc,
+        datadir.clone(),
+        versions.clone(),
+        std::sync::Arc::new(crabcloud_activity::NoopEmitter),
+    ));
     let view = View::new(
         uid.clone(),
         vec![Mount {
@@ -66,6 +77,7 @@ async fn local_harness(uid: &str) -> LocalHarness {
         sink,
         trash.clone(),
         VersionsHooks::permissive(versions),
+        std::sync::Arc::new(crabcloud_activity::NoopEmitter),
     );
     LocalHarness {
         view,
@@ -141,8 +153,17 @@ async fn share_harness(perms_wire: u32) -> ShareHarness {
     let datadir = dir.path().to_path_buf();
     let factory = LocalStorageFactory::new(datadir.clone());
     let pool_arc = Arc::new(pool);
-    let versions = Arc::new(Versions::new(pool_arc.clone(), datadir.clone()));
-    let trash = Arc::new(Trash::new(pool_arc, datadir.clone(), versions.clone()));
+    let versions = Arc::new(Versions::new(
+        pool_arc.clone(),
+        datadir.clone(),
+        std::sync::Arc::new(crabcloud_activity::NoopEmitter),
+    ));
+    let trash = Arc::new(Trash::new(
+        pool_arc,
+        datadir.clone(),
+        versions.clone(),
+        std::sync::Arc::new(crabcloud_activity::NoopEmitter),
+    ));
 
     let bob_uid = UserId::new("bob").unwrap();
     let alice_uid = UserId::new("alice").unwrap();
@@ -180,6 +201,7 @@ async fn share_harness(perms_wire: u32) -> ShareHarness {
         sink,
         trash.clone(),
         VersionsHooks::permissive(versions),
+        std::sync::Arc::new(crabcloud_activity::NoopEmitter),
     );
 
     ShareHarness {

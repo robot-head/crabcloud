@@ -9,6 +9,7 @@
 // `unused_crate_dependencies`. Silence it for test builds.
 #![cfg_attr(test, allow(unused_crate_dependencies))]
 
+mod activity_sweeper;
 mod appconfig;
 mod bootstrap;
 mod error;
@@ -22,6 +23,7 @@ mod state;
 mod trash_sweeper;
 mod versions_sweeper;
 
+pub use activity_sweeper::ActivitySweeper;
 pub use appconfig::AppConfigService;
 pub use bootstrap::{boxed_hook, BootstrapHook, BootstrapRegistry};
 pub use error::{CoreResult, Error};

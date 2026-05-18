@@ -206,6 +206,8 @@ async fn build_view(state: &AppState, ctx: &PublicLinkAuthContext) -> Result<Vie
             min_interval_secs: state.config.versions_min_interval_secs as i64,
             max_bytes: state.config.versions_max_bytes,
         },
+        // TODO sp14-followup: actor attributed to owner_uid; spec §6 wants "" for public-link writes
+        state.activity.clone() as Arc<dyn crabcloud_activity::ActivityEmitter>,
     ))
 }
 

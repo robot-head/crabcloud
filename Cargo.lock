@@ -834,6 +834,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "crabcloud-activity"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "crabcloud-config",
+ "crabcloud-db",
+ "crabcloud-users",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "crabcloud-app"
 version = "0.1.0"
 dependencies = [
@@ -841,6 +858,7 @@ dependencies = [
  "axum",
  "chrono",
  "clap",
+ "crabcloud-activity",
  "crabcloud-cache",
  "crabcloud-config",
  "crabcloud-core",
@@ -906,6 +924,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
+ "crabcloud-activity",
  "crabcloud-cache",
  "crabcloud-config",
  "crabcloud-db",
@@ -972,6 +991,8 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "base64",
+ "chrono",
+ "crabcloud-activity",
  "crabcloud-cache",
  "crabcloud-config",
  "crabcloud-core",
@@ -982,6 +1003,7 @@ dependencies = [
  "crabcloud-trash",
  "crabcloud-users",
  "crabcloud-versions",
+ "serde_json",
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
@@ -998,6 +1020,7 @@ dependencies = [
  "bytes",
  "chrono",
  "cookie",
+ "crabcloud-activity",
  "crabcloud-cache",
  "crabcloud-config",
  "crabcloud-core",
@@ -1129,6 +1152,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
+ "crabcloud-activity",
  "crabcloud-config",
  "crabcloud-core",
  "crabcloud-db",
@@ -1173,10 +1197,13 @@ name = "crabcloud-trash"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "crabcloud-activity",
  "crabcloud-config",
  "crabcloud-db",
+ "crabcloud-users",
  "crabcloud-versions",
  "serde",
+ "serde_json",
  "sqlx",
  "tempfile",
  "thiserror 2.0.18",
@@ -1219,9 +1246,13 @@ dependencies = [
 name = "crabcloud-versions"
 version = "0.1.0"
 dependencies = [
+ "chrono",
+ "crabcloud-activity",
  "crabcloud-config",
  "crabcloud-db",
+ "crabcloud-users",
  "serde",
+ "serde_json",
  "sqlx",
  "tempfile",
  "thiserror 2.0.18",
@@ -1236,6 +1267,7 @@ dependencies = [
  "axum",
  "bytes",
  "chrono",
+ "crabcloud-activity",
  "crabcloud-config",
  "crabcloud-db",
  "crabcloud-filecache",

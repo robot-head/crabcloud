@@ -58,6 +58,8 @@ pub fn minimal_sqlite_config(db_path: PathBuf) -> FileConfig {
         versions_min_interval_secs: 2,
         versions_max_bytes: 1024 * 1024 * 1024,
         versions_retention_disabled: false,
+        activity_retention_days: 365,
+        activity_coalesce_window_secs: 600,
         bootstrap_admin: None,
     }
 }

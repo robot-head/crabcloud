@@ -23,6 +23,9 @@ use crabcloud_versions as _;
 use thiserror as _;
 use tracing as _;
 
+use chrono as _;
+use crabcloud_activity as _;
+use serde_json as _;
 fn body(bytes: Vec<u8>) -> std::pin::Pin<Box<dyn tokio::io::AsyncRead + Send>> {
     Box::pin(std::io::Cursor::new(bytes))
 }
@@ -88,6 +91,36 @@ async fn appstate_view_for_distinct_users_get_distinct_storages() {
     let mut buf = Vec::new();
     reader.read_to_end(&mut buf).await.unwrap();
     assert_eq!(buf, b"bob");
+}
+
+#[tokio::test]
+async fn appstate_view_for_emits_activity_to_state_activity() {
+    // SP14 wiring: confirm that a put_file via state.view_for(uid) ends up
+    // emitting a row through state.activity (i.e. the View is constructed
+    // with the live emitter, not NoopEmitter).
+    let db_dir = tempdir().unwrap();
+    let data_dir = tempdir().unwrap();
+    let mut cfg = minimal_sqlite_config(db_dir.path().join("state.db"));
+    cfg.datadirectory = data_dir.path().to_path_buf();
+    let state = AppStateBuilder::new(cfg).build().await.unwrap();
+
+    let uid = UserId::new("alice").unwrap();
+    let view = state.view_for(&uid).await.unwrap();
+    view.put_file(
+        &UserPath::new("/wired.txt").unwrap(),
+        body(b"wired".to_vec()),
+    )
+    .await
+    .unwrap();
+
+    let rows = state.activity.list(uid.as_str(), None, 10).await.unwrap();
+    assert!(
+        rows.iter().any(|r| r.event_type == "file_created"),
+        "expected a file_created row in state.activity after put_file, got: {:?}",
+        rows.iter()
+            .map(|r| r.event_type.as_str())
+            .collect::<Vec<_>>(),
+    );
 }
 
 #[tokio::test]

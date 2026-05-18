@@ -28,6 +28,10 @@ pub struct Trash {
     /// the version rows + on-disk version bytes don't leak after a
     /// hard-delete (SP13 §6 / decision #10).
     versions: Arc<crabcloud_versions::Versions>,
+    /// Activity emitter. Best-effort; failures are logged + swallowed
+    /// because the user-visible restore must not be rolled back by a
+    /// down activity log (SP14 spec §6 emit-failure row).
+    activity: Arc<dyn crabcloud_activity::ActivityEmitter>,
 }
 
 impl Trash {
@@ -35,11 +39,13 @@ impl Trash {
         pool: Arc<DbPool>,
         datadir: PathBuf,
         versions: Arc<crabcloud_versions::Versions>,
+        activity: Arc<dyn crabcloud_activity::ActivityEmitter>,
     ) -> Self {
         Self {
             pool,
             datadir,
             versions,
+            activity,
         }
     }
 
@@ -586,6 +592,44 @@ impl Trash {
             );
             return Err(e);
         }
+
+        // Best-effort activity emit. Per SP14 spec §6 (emit-failure row),
+        // failure logs + continues; the user-visible restore must not be
+        // rolled back by a down activity log.
+        match crabcloud_users::UserId::new(uid) {
+            Ok(owner) => {
+                let event = crabcloud_activity::ActivityEvent {
+                    actor: uid.to_string(),
+                    event_type: crabcloud_activity::EventType::FileRestored,
+                    subject_id_actor: "file_restored_you".into(),
+                    subject_id_recipient: "file_restored_by".into(),
+                    subject_params: serde_json::json!({
+                        "actor": uid,
+                        "file": final_rel.clone(),
+                    }),
+                    object_type: crabcloud_activity::ObjectType::File,
+                    object_id: entry.fileid_legacy,
+                    recipients: vec![owner],
+                    occurred_at: chrono::Utc::now().timestamp(),
+                };
+                if let Err(e) = self.activity.emit(event).await {
+                    tracing::warn!(
+                        error = %e,
+                        uid,
+                        trash_id = id,
+                        "trash: activity emit failed"
+                    );
+                }
+            }
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    uid,
+                    "trash: skipping activity emit, invalid uid"
+                );
+            }
+        }
+
         Ok(RestoredTo { path: final_rel })
     }
 

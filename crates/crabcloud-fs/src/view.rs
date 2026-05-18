@@ -129,6 +129,10 @@ pub struct View {
     /// `put_file` + `rename` (overwrite path) before the storage
     /// backend mutates bytes.
     pub(crate) versions_hooks: VersionsHooks,
+    /// SP14 activity emitter. Emit-after-success in each write path;
+    /// failures are logged + swallowed because the user-visible write
+    /// must not be rolled back by a down activity log (spec §6).
+    pub(crate) activity: Arc<dyn crabcloud_activity::ActivityEmitter>,
 }
 
 impl View {
@@ -139,6 +143,7 @@ impl View {
         storage_sink: Arc<ChannelEventSink>,
         trash: Arc<crabcloud_trash::Trash>,
         versions_hooks: VersionsHooks,
+        activity: Arc<dyn crabcloud_activity::ActivityEmitter>,
     ) -> Self {
         Self {
             uid,
@@ -147,6 +152,7 @@ impl View {
             storage_sink,
             trash,
             versions_hooks,
+            activity,
         }
     }
 
@@ -354,11 +360,55 @@ impl View {
         body: Pin<Box<dyn AsyncRead + Send>>,
     ) -> FsResult<FileMetadata> {
         let (mount, storage_path) = self.resolve(user_path)?;
+        // Pre-write filecache probe so the activity event can be tagged
+        // as `file_created` vs `file_updated`. Best-effort: lookup
+        // failure degrades to `file_created` (less common path).
+        let (cache_storage, cache_path) = cache_key_for(&mount.storage, &storage_path)?;
+        let pre_existed = matches!(
+            self.filecache.lookup(cache_storage.id(), &cache_path).await,
+            Ok(Some(_))
+        );
         self.snapshot_before_overwrite(mount, &storage_path).await?;
         let meta = mount
             .storage
             .put_file(&storage_path, body, &*self.storage_sink)
             .await?;
+        // Post-write fileid (if the scanner has already filled the
+        // cache row by now); the cache may lag the storage write so
+        // this is best-effort.
+        let post_fileid = self
+            .filecache
+            .lookup(cache_storage.id(), &cache_path)
+            .await
+            .ok()
+            .flatten()
+            .map(|r| r.fileid);
+        let (event_type, sa, sr) = if pre_existed {
+            (
+                crabcloud_activity::EventType::FileUpdated,
+                "file_updated_you",
+                "file_updated_by",
+            )
+        } else {
+            (
+                crabcloud_activity::EventType::FileCreated,
+                "file_created_you",
+                "file_created_by",
+            )
+        };
+        self.try_emit_activity(
+            mount,
+            event_type,
+            sa,
+            sr,
+            post_fileid,
+            user_path.as_str(),
+            serde_json::json!({
+                "actor": self.uid.as_str(),
+                "file": user_path.as_str(),
+            }),
+        )
+        .await;
         Ok(meta)
     }
 
@@ -545,6 +595,19 @@ impl View {
                 path: storage_path,
             })
             .await;
+        self.try_emit_activity(
+            mount,
+            crabcloud_activity::EventType::FileDeleted,
+            "file_deleted_you",
+            "file_deleted_by",
+            fileid_legacy,
+            user_path.as_str(),
+            serde_json::json!({
+                "actor": self.uid.as_str(),
+                "file": user_path.as_str(),
+            }),
+        )
+        .await;
         Ok(())
     }
 
@@ -857,6 +920,19 @@ impl View {
                 path: owner_relative,
             })
             .await;
+        self.try_emit_activity(
+            mount,
+            crabcloud_activity::EventType::FileDeleted,
+            "file_deleted_you",
+            "file_deleted_by",
+            fileid_legacy,
+            user_path.as_str(),
+            serde_json::json!({
+                "actor": self.uid.as_str(),
+                "file": user_path.as_str(),
+            }),
+        )
+        .await;
         Ok(())
     }
 
@@ -866,10 +942,36 @@ impl View {
     /// handlers here), the trash sweeper itself, etc.
     pub async fn hard_delete(&self, user_path: &UserPath) -> FsResult<()> {
         let (mount, storage_path) = self.resolve(user_path)?;
+        // Pre-delete filecache probe so we can pass a fileid into the
+        // activity event (object_id may be needed for downstream UI
+        // linking). Best-effort.
+        let pre_fileid = match cache_key_for(&mount.storage, &storage_path) {
+            Ok((cs, cp)) => self
+                .filecache
+                .lookup(cs.id(), &cp)
+                .await
+                .ok()
+                .flatten()
+                .map(|r| r.fileid),
+            Err(_) => None,
+        };
         mount
             .storage
             .delete(&storage_path, &*self.storage_sink)
             .await?;
+        self.try_emit_activity(
+            mount,
+            crabcloud_activity::EventType::FileDeleted,
+            "file_deleted_you",
+            "file_deleted_by",
+            pre_fileid,
+            user_path.as_str(),
+            serde_json::json!({
+                "actor": self.uid.as_str(),
+                "file": user_path.as_str(),
+            }),
+        )
+        .await;
         Ok(())
     }
 
@@ -893,6 +995,31 @@ impl View {
             .storage
             .rename(&from_path, &to_path, &*self.storage_sink)
             .await?;
+        // Post-rename fileid (best-effort lookup against the destination).
+        let post_fileid = match cache_key_for(&to_mount.storage, &to_path) {
+            Ok((cs, cp)) => self
+                .filecache
+                .lookup(cs.id(), &cp)
+                .await
+                .ok()
+                .flatten()
+                .map(|r| r.fileid),
+            Err(_) => None,
+        };
+        self.try_emit_activity(
+            to_mount,
+            crabcloud_activity::EventType::FileRenamed,
+            "file_renamed_you",
+            "file_renamed_by",
+            post_fileid,
+            to.as_str(),
+            serde_json::json!({
+                "actor": self.uid.as_str(),
+                "file": to.as_str(),
+                "old": from.as_str(),
+            }),
+        )
+        .await;
         Ok(())
     }
 
@@ -931,6 +1058,30 @@ impl View {
             .storage
             .rename(&from_path, &to_path, &*self.storage_sink)
             .await?;
+        let post_fileid = match cache_key_for(&to_mount.storage, &to_path) {
+            Ok((cs, cp)) => self
+                .filecache
+                .lookup(cs.id(), &cp)
+                .await
+                .ok()
+                .flatten()
+                .map(|r| r.fileid),
+            Err(_) => None,
+        };
+        self.try_emit_activity(
+            to_mount,
+            crabcloud_activity::EventType::FileRenamed,
+            "file_renamed_you",
+            "file_renamed_by",
+            post_fileid,
+            to.as_str(),
+            serde_json::json!({
+                "actor": self.uid.as_str(),
+                "file": to.as_str(),
+                "old": from.as_str(),
+            }),
+        )
+        .await;
         Ok(())
     }
 
@@ -946,6 +1097,65 @@ impl View {
             .copy(&from_path, &to_path, &*self.storage_sink)
             .await?;
         Ok(())
+    }
+
+    /// Resolve the activity recipient list for an event tied to `mount`.
+    /// Home mount: just the operating uid. Share mount: deleter/writer
+    /// plus the share owner uid (so the owner also sees the action in
+    /// their own feed). Owners-with-no-uid degrades to actor-only.
+    ///
+    /// Future work: share mounts with group-share grants could fan out
+    /// to the full group recipient list, matching `Shares::create`'s
+    /// behavior. MVP keeps it to the owner only to bound emit-time
+    /// recipient fan-out per spec §6 ("group share with 1000 members").
+    fn resolve_activity_recipients(&self, mount: &Mount) -> Vec<crabcloud_users::UserId> {
+        let mut out: Vec<crabcloud_users::UserId> = vec![self.uid.clone()];
+        if let Some(owner_uid_str) = mount.metadata.as_ref().and_then(|m| m.owner_uid.clone()) {
+            if let Ok(owner) = crabcloud_users::UserId::new(owner_uid_str) {
+                if owner != self.uid {
+                    out.push(owner);
+                }
+            }
+        }
+        out
+    }
+
+    /// Best-effort `Activity::emit`. Failure is logged + swallowed per
+    /// SP14 spec §6 (the user-visible write must not be rolled back by
+    /// a down activity log).
+    #[allow(clippy::too_many_arguments)]
+    async fn try_emit_activity(
+        &self,
+        mount: &Mount,
+        event_type: crabcloud_activity::EventType,
+        subject_id_actor: &str,
+        subject_id_recipient: &str,
+        object_id: Option<i64>,
+        path: &str,
+        params: serde_json::Value,
+    ) {
+        let recipients = self.resolve_activity_recipients(mount);
+        let actor = self.uid.as_str().to_string();
+        let event = crabcloud_activity::ActivityEvent {
+            actor,
+            event_type,
+            subject_id_actor: subject_id_actor.to_string(),
+            subject_id_recipient: subject_id_recipient.to_string(),
+            subject_params: params,
+            object_type: crabcloud_activity::ObjectType::File,
+            object_id,
+            recipients,
+            occurred_at: chrono::Utc::now().timestamp(),
+        };
+        if let Err(e) = self.activity.emit(event).await {
+            tracing::warn!(
+                error = %e,
+                uid = self.uid.as_str(),
+                path,
+                ?event_type,
+                "view: activity emit failed"
+            );
+        }
     }
 }
 
@@ -991,11 +1201,13 @@ mod tests {
         let versions = Arc::new(crabcloud_versions::Versions::new(
             pool_arc.clone(),
             datadir.clone(),
+            std::sync::Arc::new(crabcloud_activity::NoopEmitter),
         ));
         let trash = Arc::new(crabcloud_trash::Trash::new(
             pool_arc,
             datadir,
             versions.clone(),
+            std::sync::Arc::new(crabcloud_activity::NoopEmitter),
         ));
 
         View::new(
@@ -1005,6 +1217,7 @@ mod tests {
             Arc::new(ChannelEventSink::new(8)),
             trash,
             VersionsHooks::permissive(versions),
+            std::sync::Arc::new(crabcloud_activity::NoopEmitter),
         )
     }
 

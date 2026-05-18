@@ -16,6 +16,7 @@ hmac.workspace = true
 httpdate.workspace = true
 quick-xml.workspace = true
 rand.workspace = true
+crabcloud-activity.workspace = true
 crabcloud-cache.workspace = true
 crabcloud-core.workspace = true
 crabcloud-fs.workspace = true

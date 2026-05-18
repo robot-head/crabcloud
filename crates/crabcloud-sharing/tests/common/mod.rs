@@ -39,6 +39,10 @@ pub struct Fixture {
     pub filecache: Arc<FileCache>,
     pub shares: Shares,
     pub mail: Arc<RecordingEnqueuer>,
+    /// Real `Activity` service wired into `shares` so tests can assert
+    /// `share_created` / `share_deleted` rows. Tests that don't care
+    /// simply ignore it.
+    pub activity: Arc<crabcloud_activity::Activity>,
     // Hold the tempdir alive for sqlite-backed fixtures so the file lasts.
     _tempdir: Option<TempDir>,
 }
@@ -153,6 +157,12 @@ impl Fixture {
         ));
         let filecache = Arc::new(FileCache::new((*pool_arc).clone()));
         let prefs = NotificationPrefs::new(pool_arc.clone());
+        let activity_settings = crabcloud_activity::ActivitySettings::new(pool_arc.clone());
+        let activity = Arc::new(crabcloud_activity::Activity::new(
+            pool_arc.clone(),
+            activity_settings,
+            0,
+        ));
         let shares = Shares::new(SharesConfig {
             pool: pool_arc.clone(),
             users: users.clone(),
@@ -160,6 +170,7 @@ impl Fixture {
             mail: enqueuer,
             prefs,
             instance_url: "https://test.example".to_string(),
+            activity: activity.clone(),
         });
         let mail = recorder.unwrap_or_else(|| Arc::new(RecordingEnqueuer::new()));
         Self {
@@ -168,6 +179,7 @@ impl Fixture {
             filecache,
             shares,
             mail,
+            activity,
             _tempdir: tempdir,
         }
     }
