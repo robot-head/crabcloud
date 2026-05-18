@@ -65,6 +65,14 @@ pub fn Sidebar() -> Element {
                     span { class: "sidebar-icon", "🗑" }
                     span { "Deleted files" }
                 }
+                li {
+                    class: "sidebar-item sidebar-link",
+                    onclick: move |_| {
+                        nav.push("/activity");
+                    },
+                    span { class: "sidebar-icon", "📰" }
+                    span { "Activity" }
+                }
             }
         }
     }

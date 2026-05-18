@@ -6,9 +6,10 @@
 
 use crate::context::RequestContext;
 use crate::pages::{
-    home::Home, login::Login, login_v2_flow::LoginV2Flow, not_found::NotFound,
-    public_link::PublicLink as PublicLinkPage, settings_notifications::SettingsNotifications,
-    settings_security::SettingsSecurity, trash::TrashPage,
+    activity::ActivityPage, activity_settings::ActivitySettingsPage, home::Home, login::Login,
+    login_v2_flow::LoginV2Flow, not_found::NotFound, public_link::PublicLink as PublicLinkPage,
+    settings_notifications::SettingsNotifications, settings_security::SettingsSecurity,
+    trash::TrashPage,
 };
 use dioxus::prelude::*;
 
@@ -48,6 +49,15 @@ pub enum Route {
     /// See SP12 spec (trash bin) §2.
     #[route("/trash")]
     TrashRoute {},
+
+    /// Activity feed — descending list of recent events affecting the
+    /// authed user. See SP14 spec §5.1.
+    #[route("/activity")]
+    ActivityRoute {},
+
+    /// Per-event-type activity stream toggles. See SP14 spec §5.2.
+    #[route("/activity/settings")]
+    ActivitySettingsRoute {},
 
     /// Anonymous public-link viewer root. `/s/<token>` renders the linked
     /// folder (or the password gate, depending on the auth context the
@@ -111,6 +121,18 @@ pub fn FilesRoute(segments: Vec<String>) -> Element {
 pub fn TrashRoute() -> Element {
     let ctx = use_context::<RequestContext>();
     rsx! { TrashPage { ctx } }
+}
+
+#[component]
+pub fn ActivityRoute() -> Element {
+    let ctx = use_context::<RequestContext>();
+    rsx! { ActivityPage { ctx } }
+}
+
+#[component]
+pub fn ActivitySettingsRoute() -> Element {
+    let ctx = use_context::<RequestContext>();
+    rsx! { ActivitySettingsPage { ctx } }
 }
 
 #[component]

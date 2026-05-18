@@ -311,3 +311,96 @@ form button { margin-top: 1rem; padding: 0.5rem 1rem; font: inherit; cursor: poi
 .versions-panel-error { color: #d33; font-style: normal; }
 
 .sidebar-link-disabled { color: #aaa; cursor: default; }
+
+/* ---- Activity feed page (SP14 Batch D) ----
+ * Visual rhythm mirrors the trash page: a header strip, a hover-
+ * highlighted row list, muted timestamp column, and centered
+ * placeholders for empty / loading. The error banner reuses the
+ * .trash-banner-* idiom under a different class so a future restyle
+ * can scope them independently. Hex literals match the rest of the
+ * file (#0082c9 accent, #d33 danger, #666/#888 muted) instead of
+ * routing through :root vars — a future theme refactor should sweep
+ * the whole file in one pass, not the activity section in isolation. */
+.activity-page { font-size: 13px; padding: 20px 24px; }
+.activity-settings-page { font-size: 13px; padding: 20px 24px; }
+
+/* Error banner: full-width across the page top, dismissable. */
+.activity-banner {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px; border-radius: 4px;
+  margin-bottom: 14px;
+  font-size: 13px;
+}
+.activity-banner-error { background: #fdecec; border: 1px solid #f5c6c6; color: #a02020; }
+.activity-banner-icon { font-size: 16px; line-height: 1; }
+.activity-banner-msg { flex: 1; }
+.activity-banner-close {
+  background: none; border: 0; padding: 2px 6px;
+  font: inherit; font-size: 14px;
+  color: inherit; cursor: pointer; opacity: 0.7;
+}
+.activity-banner-close:hover { opacity: 1; }
+
+/* Header: heading on the left + settings/back link on the right. */
+.activity-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding-bottom: 10px; margin-bottom: 14px;
+  border-bottom: 1px solid #eee;
+}
+.activity-header h2 { margin: 0; font-size: 18px; font-weight: 600; color: #333; }
+.activity-settings-link {
+  color: #0082c9; text-decoration: none; font-size: 13px;
+}
+.activity-settings-link:hover { text-decoration: underline; }
+
+/* Row list: hover-highlighted rows with grid alignment. Four columns:
+ * icon | subject (flex) | count badge (auto, optional) | when (fixed). */
+.activity-list { list-style: none; padding: 0; margin: 0; }
+.activity-row {
+  display: grid;
+  grid-template-columns: 32px 1fr auto 140px;
+  gap: 12px; align-items: center;
+  padding: 10px 4px;
+  border-bottom: 1px solid #f5f5f5;
+}
+.activity-row:hover { background: #f5fafd; }
+.activity-row-icon { text-align: center; font-size: 1.25em; opacity: 0.85; }
+.activity-row-subject { color: #333; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.activity-row-count {
+  font-size: 11px; color: #0082c9;
+  background: #eaf4fa; border-radius: 1em;
+  padding: 1px 8px;
+}
+.activity-row-when { color: #888; font-size: 12px; text-align: right; }
+
+/* Load-more button: centered below the list, accent border on hover. */
+.activity-load-more {
+  display: block; margin: 20px auto 0;
+  padding: 6px 18px; border-radius: 4px;
+  border: 1px solid #d0d0d0; background: white;
+  font: inherit; font-size: 12px; cursor: pointer;
+  transition: border-color 0.12s, color 0.12s, background 0.12s;
+}
+.activity-load-more:hover:not([disabled]) { border-color: #0082c9; color: #0082c9; background: #f5fafd; }
+.activity-load-more[disabled] { opacity: 0.5; cursor: not-allowed; }
+
+/* Placeholder states. */
+.activity-empty, .activity-loading {
+  text-align: center; color: #888;
+  padding: 64px 16px; font-style: italic;
+}
+
+/* Settings page: one labeled checkbox per event type, stacked. */
+.activity-settings-blurb { color: #666; margin: 0 0 16px; font-size: 12px; }
+.activity-settings-list { list-style: none; padding: 0; margin: 0; }
+.activity-settings-row {
+  padding: 10px 4px;
+  border-bottom: 1px solid #f5f5f5;
+}
+.activity-settings-row:hover { background: #f5fafd; }
+.activity-settings-label {
+  display: flex; align-items: center; gap: 10px;
+  cursor: pointer;
+}
+.activity-settings-row-text { color: #333; }
+
