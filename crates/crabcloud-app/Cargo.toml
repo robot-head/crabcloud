@@ -103,6 +103,7 @@ tracing-subscriber = { workspace = true }
 
 [dev-dependencies]
 axum = { workspace = true }
+crabcloud-activity = { workspace = true }
 crabcloud-config = { workspace = true, features = ["test-support"] }
 crabcloud-core = { workspace = true }
 crabcloud-http = { workspace = true }
@@ -145,6 +146,10 @@ required-features = ["server"]
 
 [[test]]
 name = "server_fns_versions"
+required-features = ["server"]
+
+[[test]]
+name = "server_fns_activity"
 required-features = ["server"]
 
 [lints]
