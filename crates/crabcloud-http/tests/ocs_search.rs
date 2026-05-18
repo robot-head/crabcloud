@@ -86,7 +86,10 @@ async fn empty_query_returns_empty_entries_and_is_last() {
     let app = crabcloud_http::build_router(state, axum::Router::new());
 
     let resp = app
-        .oneshot(ocs_get(&format!("{BASE}/search?query=&format=json"), &token))
+        .oneshot(ocs_get(
+            &format!("{BASE}/search?query=&format=json"),
+            &token,
+        ))
         .await
         .unwrap();
     let (status, v) = decode(resp).await;
@@ -160,8 +163,8 @@ async fn matching_query_returns_entries_in_unified_search_shape() {
         .iter()
         .map(|e| e["title"].as_str().unwrap())
         .collect();
-    assert!(titles.iter().any(|t| *t == "alpha.txt"));
-    assert!(titles.iter().any(|t| *t == "alpha-notes.txt"));
+    assert!(titles.contains(&"alpha.txt"));
+    assert!(titles.contains(&"alpha-notes.txt"));
     for e in entries {
         let title = e["title"].as_str().unwrap();
         let subline = e["subline"].as_str().unwrap();
