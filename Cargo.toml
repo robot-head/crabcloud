@@ -59,7 +59,7 @@ js-sys = "0.3"
 lettre = { version = "0.11", default-features = false, features = ["builder", "smtp-transport", "tokio1-rustls-tls"] }
 md-5 = "0.11"
 paste = "1"
-phf = { version = "0.13", features = ["macros"] }
+phf = { version = "0.14", features = ["macros"] }
 phf_codegen = "0.13"
 rand = "0.10"
 secrecy = { version = "0.10", features = ["serde"] }
