@@ -78,7 +78,7 @@ sqlx = { version = "0.9", default-features = false, features = [
 subtle = "2.6"
 thiserror = "2"
 tempfile = "3"
-tera = "1"
+tera = "2"
 testcontainers = "0.27"
 testcontainers-modules = { version = "0.15", features = ["mysql", "postgres"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "fs", "time"] }
