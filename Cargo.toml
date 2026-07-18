@@ -54,7 +54,7 @@ hmac = "0.13"
 httpdate = "1"
 hyper = { version = "1.5", features = ["http1", "server"] }
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "webp"] }
-infer = { version = "0.19", default-features = false }
+infer = { version = "0.22", default-features = false }
 js-sys = "0.3"
 lettre = { version = "0.11", default-features = false, features = ["builder", "smtp-transport", "tokio1-rustls-tls"] }
 md-5 = "0.11"
