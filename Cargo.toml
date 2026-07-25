@@ -37,7 +37,7 @@ repository = "https://github.com/robot-head/crabcloud"
 anyhow = "1.0"
 async-trait = "0.1"
 axum = { version = "0.8", default-features = false, features = ["http1", "json", "tokio", "tower-log", "matched-path", "original-uri", "query", "form"] }
-base64 = "0.22"
+base64 = "0.23"
 bcrypt = "0.19"
 bytes = "1"
 chrono = { version = "0.4", default-features = false, features = ["serde", "clock"] }
