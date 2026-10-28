@@ -117,7 +117,7 @@ jobs:
             @server --no-default-features --features server --target x86_64-unknown-linux-gnu
       - uses: actions/setup-node@v7.1.0
         with:
-          node-version: "24"
+          node-version: "26"
           cache: "npm"
           cache-dependency-path: e2e/package-lock.json
       - name: Install Playwright deps
