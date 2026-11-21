@@ -57,7 +57,7 @@ jobs:
           --health-timeout=5s
           --health-retries=12
       postgres:
-        image: postgres:18
+        image: postgres:19
         env:
           POSTGRES_DB: crabcloud
           POSTGRES_USER: crabcloud
